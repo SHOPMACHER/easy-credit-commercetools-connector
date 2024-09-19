@@ -1,0 +1,34 @@
+deployAs:
+  - name: processor
+    applicationType: service
+    endpoint: /processor
+    scripts:
+      postDeploy: npm install && npm run build && npm run connector:post-deploy
+      preUndeploy: npm install && npm run build && npm run connector:pre-undeploy
+    configuration:
+      standardConfiguration:
+        - key: CTP_REGION
+          description: Commercetools Composable Commerce API region
+          required: true
+          default: "europe-west1.gcp"
+        - key: CONNECTOR_MODE
+          description: Either test or live
+          required: true
+          default: "test"
+        - key: DEBUG
+          description: Debug mode (0 or 1)
+          required: false
+          default: "0"
+      securedConfiguration:
+        - key: CTP_PROJECT_KEY
+          description: Commercetools Composable Commerce project key
+          required: true
+        - key: CTP_CLIENT_ID
+          description: Commercetools Composable Commerce client ID
+          required: true
+        - key: CTP_CLIENT_SECRET
+          description: Commercetools Composable Commerce client secret
+          required: true
+        - key: CTP_SCOPE
+          description: Commercetools Composable Commerce client scope
+          required: true
