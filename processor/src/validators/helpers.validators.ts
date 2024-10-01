@@ -13,50 +13,21 @@ const required: Wrapper =
   (value, ...args) =>
     !(value === undefined || value === null) && fn(...[String(value), ...args]);
 
-export const standardString: ValidatorCreator = (
+export const standardString: ValidatorCreator = (path, message, overrideConfig = {}) => [
   path,
-  message,
-  overrideConfig = {}
-) => [
-  path,
-  [
-    [
-      required(validator.isLength),
-      message,
-      [{ min: 2, max: 20, ...overrideConfig }],
-    ],
-  ],
+  [[required(validator.isLength), message, [{ min: 2, max: 20, ...overrideConfig }]]],
 ];
 
-export const standardEmail: ValidatorCreator = (path, message) => [
-  path,
-  [[required(validator.isEmail), message]],
-];
+export const standardEmail: ValidatorCreator = (path, message) => [path, [[required(validator.isEmail), message]]];
 
 export const standardNaturalNumber = (path, message) => [
   path,
-  [
-    [
-      required((value) =>
-        validator.isNumeric(String(value), { no_symbols: true })
-      ),
-      message,
-    ],
-  ],
+  [[required((value) => validator.isNumeric(String(value), { no_symbols: true })), message]],
 ];
 
 export const standardKey = (path, message) => [
   path,
-  [
-    [
-      required(
-        (value) =>
-          validator.isLength(String(value), { min: 2 }) &&
-          /^[a-zA-Z0-9-_]+$/.test(value)
-      ),
-      message,
-    ],
-  ],
+  [[required((value) => validator.isLength(String(value), { min: 2 }) && /^[a-zA-Z0-9-_]+$/.test(value)), message]],
 ];
 
 export const standardUrl = (path, message, overrideOptions = {}) => [
@@ -83,10 +54,7 @@ export const standardUrl = (path, message, overrideOptions = {}) => [
   ],
 ];
 
-export const standardBoolean: ValidatorCreator = (path, message) => [
-  path,
-  [[required(validator.isBoolean), message]],
-];
+export const standardBoolean: ValidatorCreator = (path, message) => [path, [[required(validator.isBoolean), message]]];
 
 export const getValidateMessages = (validatorConfigs, item) =>
   validatorConfigs.flatMap(([path, validators]) => {
@@ -108,8 +76,7 @@ export const optional =
     return [
       path,
       validators.map(([fn, message, validatorArgs]) => [
-        (value, ...args) =>
-          value === undefined ? true : fn(...[value, ...args]),
+        (value, ...args) => (value === undefined ? true : fn(...[value, ...args])),
         message,
         validatorArgs,
       ]),
@@ -123,9 +90,7 @@ export const array =
     return [
       path,
       validators.map(([fn, message, validatorArgs]) => [
-        (value, ...args) =>
-          Array.isArray(value) &&
-          value.every((value) => fn(...[value, ...args])),
+        (value, ...args) => Array.isArray(value) && value.every((value) => fn(...[value, ...args])),
         message,
         validatorArgs,
       ]),
@@ -144,8 +109,8 @@ export const region: ValidatorCreator = (path, message) => [
             'europe-west1.gcp',
             'eu-central-1.aws',
             'australia-southeast1.gcp',
-          ])
-        )
+          ]),
+        ),
       ),
       message,
     ],

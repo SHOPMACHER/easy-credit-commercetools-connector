@@ -1,72 +1,32 @@
-import { logger } from '../utils/logger.utils';
-import { Request, Response } from 'express';
-import CustomError from '../errors/custom.error';
-import { apiError } from '../api/error.api';
-import { formatErrorResponse } from '../errors/easycredit.error';
-import {
-  createExtensionAndCustomFields,
-  removeExtension,
-} from '../service/connector.service';
+import { FastifyReply, FastifyRequest } from 'fastify';
+import { errorHandler } from '../libs/fastify/error-handler';
+import { log } from '../libs/logger';
+import { readConfiguration } from '../utils/config.utils';
 
-export const healthCheck = async (request: Request, response: Response) => {
+export const healthCheck = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    logger.debug('SCTM - healthCheck - The connector is running healthily.');
-    return response.status(200).json('The connector is running healthily.');
+    log.debug('SCTE - healthCheck - The connector is running healthily.');
+    return reply.code(200).send({
+      message: 'The connector is running healthily.',
+    });
   } catch (error) {
-    logger.error(
-      'SCTM - healthCheck - Unexpected error occurred when processing request',
-      error
-    );
-    return apiError(response, formatErrorResponse(error).errors);
+    log.error('SCTE - healthCheck - Unexpected error occurred when processing request', error);
+
+    if (error instanceof Error) {
+      return errorHandler(error, request, reply);
+    }
+
+    return reply.code(400).send();
   }
 };
 
-export const install = async (request: Request, response: Response) => {
-  const protocol = request.secure ? 'https' : 'http';
-  const extensionUrl = `${protocol}://${request.hostname}/processor`;
+export const isWidgetEnabled = async (request: FastifyRequest, reply: FastifyReply) => {
+  const config = readConfiguration();
 
-  if (!request.hostname) {
-    logger.debug('SCTM - install - Missing body parameters {extensionUrl}.');
-    return apiError(
-      response,
-      formatErrorResponse(new CustomError(400, 'Missing body parameters.'))
-        .errors
-    );
-  }
+  log.debug('SCTE - get PDP Widget config');
 
-  try {
-    await createExtensionAndCustomFields(extensionUrl);
-    logger.debug(
-      'SCTM - install - The connector was installed successfully with required extensions and custom fields.'
-    );
-    return response
-      .status(200)
-      .json(
-        'The connector was installed successfully with required extensions and custom fields.'
-      );
-  } catch (error) {
-    logger.error(
-      'SCTM - install - Unexpected error occurred when processing request',
-      error
-    );
-    return apiError(response, formatErrorResponse(error).errors);
-  }
-};
-
-export const uninstall = async (request: Request, response: Response) => {
-  try {
-    await removeExtension();
-    logger.debug(
-      'SCTM - uninstall - The connector was uninstalled successfully.'
-    );
-    return response
-      .status(200)
-      .json('The connector was uninstalled successfully.');
-  } catch (error) {
-    logger.error(
-      'SCTM - uninstallation - Unexpected error occurred when processing request',
-      error
-    );
-    return apiError(response, formatErrorResponse(error).errors);
-  }
+  return reply.code(200).send({
+    isEnabled: config.easyCredit.widgetEnabled === '1' ? true : false,
+    webShopId: config.easyCredit.webShopId,
+  });
 };

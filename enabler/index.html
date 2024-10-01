@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + TS</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css"
+      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://code.jquery.com/jquery-3.2.1.slim.min.js"
+      integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js"
+      integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js"
+      integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
+      crossorigin="anonymous"
+    ></script>
+    <script type="module" src="https://ratenkauf.easycredit.de/api/resource/webcomponents/v3/easycredit-components/easycredit-components.esm.js"></script>
+    <script>
+      var __VITE_PROCESSOR_URL__ = !'%VITE_PROCESSOR_URL%'.startsWith('%') && '%VITE_PROCESSOR_URL%';
+    </script>
+  
+  </head>
+  <body>
+    <main role="main">
+      <section class="jumbotron text-center">
+        <div class="container">
+          <form action="/action_page.php">
+            <div class="text-center mb-4">
+              <h1 class="h3 mb-3 font-weight-normal">Dev Site</h1>
+              <p>Use this site for development purposes</p>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <div class="album py-5 bg-light">
+        <div class="container" id="container">
+          <script type="module">
+            import { Enabler } from "/src/main.ts";
+
+            const enabler = new Enabler({
+              showPayButton: false,
+
+              processorUrl: __VITE_PROCESSOR_URL__,
+              sessionId: '',
+              currency: "EUR",
+              amount: 500,
+              dropinHasSubmit: true,
+              onComplete: ({ isSuccess, paymentReference }) => {
+                console.log("onComplete", { isSuccess, paymentReference });
+              },
+              onError: (err) => {
+                console.error("onError", err);
+              },
+              onDropinReady: () => {
+                console.log('dropin is ready');
+              },
+              onPayButtonClick: () => {
+                console.log('pay button handler');
+              }
+            });
+
+            const builder = await enabler.createDropinBuilder('embedded');
+            const component = await builder.build();
+
+            console.log('component', component);
+            component.mount("#container");
+          </script>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

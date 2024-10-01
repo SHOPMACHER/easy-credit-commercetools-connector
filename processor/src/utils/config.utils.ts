@@ -1,5 +1,4 @@
 import { ConnectorEnvVars } from '../types/index.types';
-import CustomError from '../errors/custom.error';
 import envValidators from '../validators/env.validators';
 import { getValidateMessages } from '../validators/helpers.validators';
 /**
@@ -17,19 +16,17 @@ export const readConfiguration = () => {
       scope: process.env.CTP_SCOPE as string,
       region: process.env.CTP_REGION as string,
     },
-    easycredit: {
-      mode: process.env.CONNECTOR_MODE as string,
-      debug: process.env.DEBUG as string,
+    easyCredit: {
+      widgetEnabled: process.env.WIDGET_ENABLED as string,
+      webShopId: process.env.WEBSHOP_ID as string,
     },
   };
 
   const validationErrors = getValidateMessages(envValidators, envVars);
 
   if (validationErrors.length) {
-    throw new CustomError(
-      'InvalidEnvironmentVariablesError',
-      'Invalid Environment Variables please check your .env file. Details: ' +
-        JSON.stringify(validationErrors)
+    throw new Error(
+      'Invalid Environment Variables please check your .env file. Details: ' + JSON.stringify(validationErrors),
     );
   }
 
