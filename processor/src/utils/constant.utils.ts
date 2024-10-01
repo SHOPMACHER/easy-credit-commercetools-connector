@@ -1,0 +1,1 @@
+export const EASYCREDIT_BASE_API_URL = 'https://ratenkauf.easycredit.de/api';

@@ -9,6 +9,7 @@ export type ConnectorEnvVars = {
   easyCredit: {
     widgetEnabled: string;
     webShopId: string;
+    apiPassword: string;
   };
 };
 

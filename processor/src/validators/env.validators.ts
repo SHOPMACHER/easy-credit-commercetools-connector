@@ -71,6 +71,19 @@ const envValidators = [
       max: 30,
     },
   ),
+
+  standardString(
+    ['easyCredit', 'apiPassword'],
+    {
+      code: 'InvalidWebShopId',
+      message: 'Easycredit API Password should be a valid string',
+      referencedBy: 'environmentVariables',
+    },
+    {
+      min: 1,
+      max: 50,
+    },
+  ),
 ];
 
 export default envValidators;
