@@ -2,12 +2,19 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { errorHandler } from '../libs/fastify/error-handler';
 import { log } from '../libs/logger';
 import { readConfiguration } from '../utils/config.utils';
+import { initEasyCreditClient } from '../client/easycredit.client';
 
 export const healthCheck = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
     log.debug('SCTE - healthCheck - The connector is running healthily.');
+
+    const checkIntegrationResponse = await initEasyCreditClient().integrationCheck({
+      message: 'ratenkauf by easyCredit',
+    });
+
     return reply.code(200).send({
-      message: 'The connector is running healthily.',
+      message:
+        'The connector is running healthily' + (checkIntegrationResponse ? ' and connected to EasyCredit.' : '.'),
     });
   } catch (error) {
     log.error('SCTE - healthCheck - Unexpected error occurred when processing request', error);
