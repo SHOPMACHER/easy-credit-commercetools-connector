@@ -14,7 +14,7 @@ readConfiguration();
   const HOST = '0.0.0.0';
   try {
     await server.listen({
-      port: 8188,
+      port: 8080,
       host: HOST,
     });
   } catch (err) {
