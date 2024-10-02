@@ -1,16 +1,15 @@
-import { createApplicationLogger } from '@commercetools-backend/loggers';
-import { defaultFieldsFormatter } from '@commercetools/connect-payments-sdk';
-import { getRequestContext } from '../fastify/context/context';
+import { createApplicationLogger, rewriteFieldsFormatter } from '@commercetools-backend/loggers';
+import { VERSION_STRING } from '../../utils/constant.utils';
+import { readConfiguration } from '../../utils/config.utils';
+import { toBoolean } from 'validator';
 
 export const log = createApplicationLogger({
+  level: toBoolean(readConfiguration().easyCredit.debug ?? '0', true) ? 'debug' : 'info',
+
   formatters: [
-    defaultFieldsFormatter({
-      projectKey: process.env.CTP_PROJECT_KEY,
-      version: process.env.npm_package_version,
-      name: process.env.npm_package_name,
-      correlationId: () => getRequestContext().correlationId,
-      pathTemplate: () => getRequestContext().pathTemplate,
-      path: () => getRequestContext().path,
+    rewriteFieldsFormatter({
+      fields: [{ from: 'message', to: 'message', replaceValue: (value) => `[${VERSION_STRING}] - ${value}` }],
     }),
   ],
+  json: true,
 });

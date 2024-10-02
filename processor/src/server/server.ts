@@ -13,14 +13,7 @@ import { errorHandler } from '../libs/fastify/error-handler';
  */
 export const setupFastify = async () => {
   // Create fastify server instance
-  const server = Fastify({
-    logger: {
-      level: process.env.LOGGER_LEVEL || 'info',
-    },
-    genReqId: () => randomUUID().toString(),
-    requestIdLogLabel: 'requestId',
-    requestIdHeader: 'x-request-id',
-  });
+  const server = Fastify();
 
   // Setup error handler
   server.setErrorHandler(errorHandler);
