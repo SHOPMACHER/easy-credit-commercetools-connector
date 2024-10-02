@@ -19,6 +19,7 @@ export const readConfiguration = () => {
     easyCredit: {
       widgetEnabled: process.env.WIDGET_ENABLED as string,
       webShopId: process.env.WEBSHOP_ID as string,
+      apiPassword: process.env.API_PASSWORD as string,
     },
   };
 

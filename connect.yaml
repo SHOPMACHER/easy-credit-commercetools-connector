@@ -35,7 +35,17 @@ deployAs:
           description: JWT Issuer for jwt validation (example - https://mc-api.europe-west1.gcp.commercetools.com)
           required: true
           default: https://mc-api.europe-west1.gcp.commercetools.com
+        - key: WIDGET_ENABLED
+          description: Toggle display the EasyCredit Widget on PDP (0 or 1)
+          required: true
+          default: '1'
       securedConfiguration:
         - key: CTP_CLIENT_SECRET
           description: commercetools client secret
+          required: true
+        - key: WEBSHOP_ID
+          description: EasyCredit WebShop ID
+          required: true
+        - key: API_PASSWORD
+          description: EasyCredit API password
           required: true
