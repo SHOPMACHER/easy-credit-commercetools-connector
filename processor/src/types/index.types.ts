@@ -10,6 +10,7 @@ export type ConnectorEnvVars = {
     widgetEnabled: string;
     webShopId: string;
     apiPassword: string;
+    debug: string;
   };
 };
 

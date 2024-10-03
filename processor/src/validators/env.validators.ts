@@ -84,6 +84,19 @@ const envValidators = [
       max: 50,
     },
   ),
+
+  standardString(
+    ['easyCredit', 'debug'],
+    {
+      code: 'InvalidDebug',
+      message: 'Mollie debug should be a valid string of either "0" or "1".',
+      referencedBy: 'environmentVariables',
+    },
+    {
+      min: 1,
+      max: 1,
+    },
+  ),
 ];
 
 export default envValidators;
