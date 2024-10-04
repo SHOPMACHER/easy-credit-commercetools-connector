@@ -4,6 +4,7 @@ import {
   PaymentDropinBuilder,
 } from "../payment-enabler/payment-enabler";
 import { BaseOptions } from "../payment-enabler/payment-enabler-mock";
+import { importEasyCreditScript } from "../utils/app.utils";
 
 export class DropinEmbeddedBuilder implements PaymentDropinBuilder {
   public dropinHasSubmit = false;
@@ -18,12 +19,13 @@ export class DropinEmbeddedBuilder implements PaymentDropinBuilder {
     const dropinOptions = {
       onDropinReady: this.config?.onDropinReady,
       onPayButtonClick: this.config?.onPayButtonClick,
+      amount: this.config.amount,
+      sessionId: this.config.sessionId
     }
 
     const dropin = new PdpWidgetComponent({
       dropinOptions: dropinOptions,
       processorUrl: this.config?.processorUrl,
-      amount: this.config?.amount
     });
 
     dropin.init();
@@ -34,12 +36,10 @@ export class DropinEmbeddedBuilder implements PaymentDropinBuilder {
 export class PdpWidgetComponent implements DropinComponent {
   public dropinOptions: DropinOptions;
   public processorUrl: string;
-  public amount: number;
 
-  constructor(opts: { dropinOptions: DropinOptions, processorUrl: string, amount: number }) {
+  constructor(opts: { dropinOptions: DropinOptions, processorUrl: string }) {
     this.dropinOptions = opts.dropinOptions;
     this.processorUrl = opts.processorUrl;
-    this.amount = opts.amount;
   }
 
   init(): void {
@@ -50,6 +50,8 @@ export class PdpWidgetComponent implements DropinComponent {
     const widgetConfig = await this.fetchConfig();
 
     if (widgetConfig.isEnabled === true) {
+      importEasyCreditScript();
+
       document
       .querySelector(selector)
       .insertAdjacentHTML("afterbegin", this._getTemplate(widgetConfig.webShopId));
@@ -61,6 +63,7 @@ export class PdpWidgetComponent implements DropinComponent {
       `${this.processorUrl}/operations/widget-enabled`,
       {
           method: "GET",
+          headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.dropinOptions.sessionId },
       }
     );
 
@@ -68,7 +71,13 @@ export class PdpWidgetComponent implements DropinComponent {
   }
 
   private _getTemplate(webShopId) {
-      return `<easycredit-widget amount="${this.amount}" webshop-id="${webShopId}" />`
+    try {
+      return `<easycredit-widget amount="${this.dropinOptions.amount}" webshop-id="${webShopId}" />`
+    } catch (error) {
+      console.log(error);
+
+      return '';
+    }
   }
 
   submit(): void {
