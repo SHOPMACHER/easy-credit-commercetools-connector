@@ -20,7 +20,6 @@ type OperationRouteOptions = {
   authorizationHook: AuthorityAuthorizationHook;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
   fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO }>(
     '/payment-method',

@@ -17,7 +17,6 @@ type OperationRouteOptions = {
   // paymentService: AbstractPaymentService;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
   fastify.get<{ Reply: HealthCheckResponseSchemaDTO }>(
     '/health-check',
