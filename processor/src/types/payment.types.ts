@@ -1,3 +1,3 @@
-import { GetOptionResponseSchemaDTO } from '../dtos/payments/getOption.dto';
+import { GetPaymentMethodResponseSchemaDTO } from '../dtos/payments/getPaymentMethod.dto';
 
-export type GetOptionResponse = GetOptionResponseSchemaDTO;
+export type GetPaymentMethodResponse = GetPaymentMethodResponseSchemaDTO;

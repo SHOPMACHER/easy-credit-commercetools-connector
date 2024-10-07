@@ -6,7 +6,7 @@ import {
   PaymentMethod
 } from '../../../payment-enabler/payment-enabler';
 import { BaseComponent } from "../../base";
-import { importEasyCreditScript } from '../../../utils/app.utils';
+import { findElement, importEasyCreditScript } from '../../../utils/app.utils';
 
 export class EasyCreditBuilder implements PaymentComponentBuilder {
   public componentHasSubmit = true
@@ -30,10 +30,18 @@ export class EasyCredit extends BaseComponent {
   async mount(selector: string) {
     importEasyCreditScript();
 
-    const response = await this.getPaymentMethod();
+    try {
+      const response = await this.getPaymentMethod();
 
-    if (response) {  
-      document.querySelector(selector).insertAdjacentHTML("afterbegin", this._getTemplate(response));
+      if (response) {  
+        const element = findElement(selector);
+
+        if (element) {
+          element.insertAdjacentHTML("afterbegin", this._getTemplate(response));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get EasyCredit payment method', error);
     }
   }
 
@@ -56,15 +64,24 @@ export class EasyCredit extends BaseComponent {
   private _getTemplate(response: any) {
     try {
       let errorMessage = '';
-      if (response.errors) {
+      let webShopId = '';
+
+      if (response?.errors) {
+        webShopId = response.errors[0].webShopId;
         response.errors.map((error) => {
-          errorMessage += error.message + '\n';
+          errorMessage += error.message + ' ';
         })
+      } else {
+        webShopId = response.webShopId;
       }
 
-      return `<easycredit-checkout amount="${this.baseOptions.amount}" webshop-id="${response.webShopId}" is-active="true" payment-type="INSTALLMENT" alert="${errorMessage}"/>`
+      if (webShopId === null || webShopId === '' || webShopId === undefined) {
+        throw new Error('Invalid WebShopId');
+      }
+
+      return `<easycredit-checkout amount="${this.baseOptions.amount}" webshop-id="${webShopId}" is-active="true" payment-type="INSTALLMENT" alert="${errorMessage}"/>`
     } catch (error) {
-      console.log(error);
+      console.error(error);
 
       return '';
     }

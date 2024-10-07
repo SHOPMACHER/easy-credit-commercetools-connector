@@ -54,9 +54,9 @@
           <script type="module">
             import { Enabler } from "/src/main.ts";
 
-            const testCardId = '5307942b-38b4-4cbc-95f5-c3ce2e386dd2';
+            const testCartId = '5307942b-38b4-4cbc-95f5-c3ce2e386dd2';
 
-            const sessionId = await getSessionId(testCardId);
+            const sessionId = await getSessionId(testCartId);
             console.log('sessionId', sessionId);
 
             const enabler = new Enabler({
@@ -67,7 +67,7 @@
               currency: "EUR",
               amount: 500,
               dropinHasSubmit: true,
-              cartId: testCardId,
+              cartId: testCartId,
               onComplete: ({ isSuccess, paymentReference }) => {
                 console.log("onComplete", { isSuccess, paymentReference });
               },

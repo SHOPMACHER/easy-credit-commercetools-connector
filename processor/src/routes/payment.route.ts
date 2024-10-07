@@ -1,4 +1,4 @@
-import { GetOptionResponseSchema, GetOptionResponseSchemaDTO } from './../dtos/payments/getOption.dto';
+import { ErrorResponse } from './../libs/fastify/dtos/error.dto';
 import {
   AuthorityAuthorizationHook,
   JWTAuthenticationHook,
@@ -7,7 +7,11 @@ import {
 } from '@commercetools/connect-payments-sdk';
 import { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from 'fastify';
 import { getEasyCreditPaymentMethod } from '../controllers/payment.controller';
-import { GetOptionQueryStringSchema } from '../dtos/payments/getOption.dto';
+import {
+  GetPaymentMethodQueryStringSchema,
+  GetPaymentMethodResponseSchema,
+  GetPaymentMethodResponseSchemaDTO,
+} from '../dtos/payments/getPaymentMethod.dto';
 
 type OperationRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -18,14 +22,15 @@ type OperationRouteOptions = {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
-  fastify.get<{ Reply: GetOptionResponseSchemaDTO }>(
+  fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO }>(
     '/payment-method',
     {
       preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
-        querystring: GetOptionQueryStringSchema,
+        querystring: GetPaymentMethodQueryStringSchema,
         response: {
-          200: GetOptionResponseSchema,
+          200: GetPaymentMethodResponseSchema,
+          400: ErrorResponse,
         },
       },
     },

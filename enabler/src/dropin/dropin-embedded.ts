@@ -4,7 +4,7 @@ import {
   PaymentDropinBuilder,
 } from "../payment-enabler/payment-enabler";
 import { BaseOptions } from "../payment-enabler/payment-enabler-mock";
-import { importEasyCreditScript } from "../utils/app.utils";
+import { findElement, importEasyCreditScript } from "../utils/app.utils";
 
 export class DropinEmbeddedBuilder implements PaymentDropinBuilder {
   public dropinHasSubmit = false;
@@ -47,14 +47,20 @@ export class PdpWidgetComponent implements DropinComponent {
   }
 
   async mount(selector: string) {
-    const widgetConfig = await this.fetchConfig();
+    try {
+      const widgetConfig = await this.fetchConfig();
 
-    if (widgetConfig.isEnabled === true) {
-      importEasyCreditScript();
+      if (widgetConfig.isEnabled === true) {
+        importEasyCreditScript();
 
-      document
-      .querySelector(selector)
-      .insertAdjacentHTML("afterbegin", this._getTemplate(widgetConfig.webShopId));
+        const element = findElement(selector);
+
+        if (element) {
+          element.insertAdjacentHTML("afterbegin", this._getTemplate(widgetConfig.webShopId));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get EasyCredit Widget', error);
     }
   }
 

@@ -36,7 +36,6 @@ export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPlu
     '/widget-enabled',
     {
       preHandler: [opts.sessionHeaderAuthHook.authenticate()],
-      // preHandler: [],
       schema: {
         response: {
           200: WidgetEnabledResponseSchema,
