@@ -13,14 +13,14 @@ import {
   GetPaymentMethodResponseSchemaDTO,
 } from '../dtos/payments/getPaymentMethod.dto';
 
-type OperationRouteOptions = {
+type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
   oauth2AuthHook: Oauth2AuthenticationHook;
   jwtAuthHook: JWTAuthenticationHook;
   authorizationHook: AuthorityAuthorizationHook;
 };
 
-export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
+export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & PaymentRouteOptions) => {
   fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO }>(
     '/payment-method',
     {

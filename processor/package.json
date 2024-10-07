@@ -11,7 +11,7 @@
     "build": "rm -rf /dist && tsc",
     "dev": "ts-node src/main.ts",
     "watch": "nodemon --watch \"src/**\" --ext \"ts,json\" --ignore \"src/**/*.spec.ts\" --exec \"ts-node src/main.ts\"",
-    "test": "jest --detectOpenHandles",
+    "test": "jest --detectOpenHandles --clearMocks --colors --config jest.config.ts --ci --ci --reporters=default --coverage",
     "connector:post-deploy": "node dist/connectors/post-deploy.js",
     "connector:pre-undeploy": "node dist/connectors/pre-undeploy.js"
   },
@@ -40,7 +40,7 @@
     "@eslint/js": "^9.11.0",
     "@jest/globals": "29.7.0",
     "@types/jest": "29.5.13",
-    "@types/node": "22.5.5",
+    "@types/node": "^22.5.5",
     "@types/validator": "^13.12.0",
     "@typescript-eslint/eslint-plugin": "8.6.0",
     "@typescript-eslint/parser": "8.6.0",
