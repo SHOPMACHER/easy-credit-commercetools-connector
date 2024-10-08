@@ -60,14 +60,13 @@
             console.log('sessionId', sessionId);
 
             const enabler = new Enabler({
-              showPayButton: false,
-
               processorUrl: __VITE_PROCESSOR_URL__,
               sessionId: sessionId,
-              currency: "EUR",
               amount: 500,
-              dropinHasSubmit: true,
               cartId: testCartId,
+
+              showPayButton: false,
+              dropinHasSubmit: true,
               onComplete: ({ isSuccess, paymentReference }) => {
                 console.log("onComplete", { isSuccess, paymentReference });
               },
@@ -82,11 +81,13 @@
               }
             });
 
+            /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
             // const dropinBuilder = await enabler.createDropinBuilder('embedded');
             // const pdpWdiget = await dropinBuilder.build();
 
             // pdpWdiget.mount("#container");
 
+            /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
             const componentBuilder = await enabler.createComponentBuilder('easycredit');
             const easyCreditPaymentMethod = await componentBuilder.build();
 
