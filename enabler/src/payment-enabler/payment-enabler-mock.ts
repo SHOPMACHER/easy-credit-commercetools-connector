@@ -4,11 +4,10 @@ import {
   PaymentComponentBuilder,
   PaymentDropinBuilder,
   PaymentEnabler,
-  PaymentMethod,
   PaymentResult,
-} from "./payment-enabler";
-import { DropinEmbeddedBuilder } from "../dropin/dropin-embedded";
-import { EasyCreditBuilder } from "../components/payment-methods/easycredit/easycredit";
+} from './payment-enabler';
+import { DropinEmbeddedBuilder } from '../dropin/dropin-embedded';
+import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easycredit/easycredit';
 
 declare global {
   interface ImportMeta {
@@ -39,14 +38,10 @@ export class MockPaymentEnabler implements PaymentEnabler {
     this.setupData = MockPaymentEnabler._Setup(options);
   }
 
-  private static _Setup = async (
-    options: EnablerOptions
-  ): Promise<{ baseOptions: BaseOptions }> => {
-
-    console.log('setup func', options);
+  private static _Setup = async (options: EnablerOptions): Promise<{ baseOptions: BaseOptions }> => {
     const sdkOptions = {
       // environment: configJson.environment,
-      environment: "test",
+      environment: 'test',
     };
 
     return Promise.resolve({
@@ -57,33 +52,28 @@ export class MockPaymentEnabler implements PaymentEnabler {
         onComplete: options.onComplete || (() => {}),
         onError: options.onError || (() => {}),
         amount: options?.amount,
-        cartId: options?.cartId
+        cartId: options?.cartId,
       },
     });
   };
 
-
   async createComponentBuilder(type: string): Promise<PaymentComponentBuilder | never> {
     const { baseOptions } = await this.setupData;
 
-    const supportedPaymentMethods ={
-      easycredit: EasyCreditBuilder
+    const supportedPaymentMethods = {
+      easycredit: EasyCreditCheckoutBuilder,
     };
 
     if (!Object.keys(supportedPaymentMethods).includes(type)) {
       throw new Error(
-        `Component type not supported: ${type}. Supported types: ${Object.keys(
-          supportedPaymentMethods
-        ).join(", ")}`
+        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedPaymentMethods).join(', ')}`,
       );
     }
 
     return new supportedPaymentMethods[type](baseOptions);
   }
 
-  async createDropinBuilder(
-    type: DropinType
-  ): Promise<PaymentDropinBuilder | never> {
+  async createDropinBuilder(type: DropinType): Promise<PaymentDropinBuilder | never> {
     const { baseOptions } = await this.setupData;
 
     const supportedMethods = {
@@ -92,9 +82,7 @@ export class MockPaymentEnabler implements PaymentEnabler {
 
     if (!Object.keys(supportedMethods).includes(type)) {
       throw new Error(
-        `Component type not supported: ${type}. Supported types: ${Object.keys(
-          supportedMethods
-        ).join(", ")}`
+        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedMethods).join(', ')}`,
       );
     }
 

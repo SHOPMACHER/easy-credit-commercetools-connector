@@ -9,7 +9,6 @@ import { compareAddress } from '../utils/commerceTools.utils';
 
 export const handleGetEasyCreditPaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
-    // throw new Error('test');
     const cart: Cart = await getCartById(cartId);
 
     const config = readConfiguration();

@@ -1,31 +1,25 @@
 import { BaseOptions } from '../../../payment-enabler/payment-enabler-mock';
-import {
-  ComponentOptions,
-  PaymentComponent,
-  PaymentComponentBuilder,
-  PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
-import { BaseComponent } from "../../base";
+import { PaymentComponent, PaymentComponentBuilder, PaymentMethod } from '../../../payment-enabler/payment-enabler';
+import { BaseComponent } from '../../base';
 import { findElement, importEasyCreditScript } from '../../../utils/app.utils';
 
-export class EasyCreditBuilder implements PaymentComponentBuilder {
-  public componentHasSubmit = true
+export class EasyCreditCheckoutBuilder implements PaymentComponentBuilder {
+  public componentHasSubmit = true;
 
   constructor(private baseOptions: BaseOptions) {}
 
-  build(config: ComponentOptions): PaymentComponent {
-    return new EasyCredit(this.baseOptions, config);
+  build(): PaymentComponent {
+    return new EasyCreditCheckout(this.baseOptions);
   }
 }
 
-export class EasyCredit extends BaseComponent {
-  private baseOptions: BaseOptions
-  
-  constructor(baseOptions: BaseOptions, componentOptions: ComponentOptions) {
-    super(PaymentMethod.easycredit, baseOptions, componentOptions);
+export class EasyCreditCheckout extends BaseComponent {
+  public baseOptions: BaseOptions;
+
+  constructor(baseOptions: BaseOptions) {
+    super(PaymentMethod.easycredit, baseOptions);
     this.baseOptions = baseOptions;
   }
-
 
   async mount(selector: string) {
     importEasyCreditScript();
@@ -33,11 +27,11 @@ export class EasyCredit extends BaseComponent {
     try {
       const response = await this.getPaymentMethod();
 
-      if (response) {  
+      if (response) {
         const element = findElement(selector);
 
         if (element) {
-          element.insertAdjacentHTML("afterbegin", this._getTemplate(response));
+          element.insertAdjacentHTML('afterbegin', this._getTemplate(response));
         }
       }
     } catch (error) {
@@ -49,13 +43,13 @@ export class EasyCredit extends BaseComponent {
     return;
   }
 
-  public async getPaymentMethod() {
+  async getPaymentMethod() {
     const res = await fetch(
-      `${this.processorUrl}/payments/payment-method?cartId=${this.baseOptions.cartId}`,
+      `${this.baseOptions.processorUrl}/payments/payment-method?cartId=${this.baseOptions.cartId}`,
       {
-          method: "GET",
-          headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.baseOptions.sessionId },
-      }
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.baseOptions.sessionId },
+      },
     );
 
     return await res.json();
@@ -70,16 +64,18 @@ export class EasyCredit extends BaseComponent {
         webShopId = response.errors[0].webShopId;
         response.errors.map((error) => {
           errorMessage += error.message + ' ';
-        })
+        });
       } else {
         webShopId = response.webShopId;
       }
+
+      errorMessage = errorMessage.trim();
 
       if (webShopId === null || webShopId === '' || webShopId === undefined) {
         throw new Error('Invalid WebShopId');
       }
 
-      return `<easycredit-checkout amount="${this.baseOptions.amount}" webshop-id="${webShopId}" is-active="true" payment-type="INSTALLMENT" alert="${errorMessage}"/>`
+      return `<easycredit-checkout amount="${this.baseOptions.amount}" webshop-id="${webShopId}" is-active="true" payment-type="INSTALLMENT" alert="${errorMessage}"/>`;
     } catch (error) {
       console.error(error);
 

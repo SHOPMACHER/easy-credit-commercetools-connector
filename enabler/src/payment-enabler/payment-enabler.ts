@@ -34,9 +34,7 @@ export interface PaymentEnabler {
    * @returns A promise that resolves to the payment component builder.
    * @throws {Error} If the payment component builder cannot be created.
    */
-  createComponentBuilder: (
-    type: string
-  ) => Promise<PaymentComponentBuilder | never>;
+  createComponentBuilder: (type: string) => Promise<PaymentComponentBuilder | never>;
 
   /**
    * Creates a payment drop-in builder of the specified type.
@@ -44,9 +42,7 @@ export interface PaymentEnabler {
    * @returns A promise that resolves to the payment drop-in builder.
    * @throws {Error} If the payment drop-in builder cannot be created.
    */
-  createDropinBuilder: (
-    type: DropinType
-  ) => Promise<PaymentDropinBuilder | never>;
+  createDropinBuilder: (type: DropinType) => Promise<PaymentDropinBuilder | never>;
 }
 
 /**
@@ -205,11 +201,11 @@ export enum DropinType {
   /*
    * The embedded drop-in type which is rendered within the page.
    */
-  embedded = "embedded",
+  embedded = 'embedded',
   /*
    * The hosted payment page (HPP) drop-in type which redirects the user to a hosted payment page.
    */
-  hpp = "hpp",
+  hpp = 'hpp',
 }
 
 /**
