@@ -2,10 +2,10 @@ import autoLoad from '@fastify/autoload';
 import cors from '@fastify/cors';
 import fastifyFormBody from '@fastify/formbody';
 import Fastify from 'fastify';
-import { randomUUID } from 'node:crypto';
 import { join } from 'path';
 import { requestContextPlugin } from '../libs/fastify/context/context';
 import { errorHandler } from '../libs/fastify/error-handler';
+import { parse as queryStringParse } from 'node:querystring';
 
 /**
  * Setup Fastify server instance
@@ -13,7 +13,9 @@ import { errorHandler } from '../libs/fastify/error-handler';
  */
 export const setupFastify = async () => {
   // Create fastify server instance
-  const server = Fastify();
+  const server = Fastify({
+    querystringParser: (str) => queryStringParse(str),
+  });
 
   // Setup error handler
   server.setErrorHandler(errorHandler);

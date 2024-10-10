@@ -15,6 +15,7 @@ export const readConfiguration = () => {
       projectKey: process.env.CTP_PROJECT_KEY as string,
       scope: process.env.CTP_SCOPE as string,
       region: process.env.CTP_REGION as string,
+      sessionUrl: process.env.CTP_SESSION_URL as string,
     },
     easyCredit: {
       widgetEnabled: process.env.WIDGET_ENABLED as string,
