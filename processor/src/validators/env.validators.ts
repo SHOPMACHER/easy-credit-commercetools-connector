@@ -1,4 +1,4 @@
-import { optional, standardKey, standardString, region } from './helpers.validators';
+import { optional, standardKey, standardString, region, standardUrl } from './helpers.validators';
 
 /**
  * Create here your own validators
@@ -43,6 +43,12 @@ const envValidators = [
   region(['commerceTools', 'region'], {
     code: 'InvalidRegion',
     message: 'Not a valid region.',
+    referencedBy: 'environmentVariables',
+  }),
+
+  standardUrl(['commerceTools', 'sessionUrl'], {
+    code: 'InvalidSessionUrl',
+    message: 'Invalid Session URL.',
     referencedBy: 'environmentVariables',
   }),
 

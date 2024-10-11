@@ -5,6 +5,7 @@ export type ConnectorEnvVars = {
     projectKey: string;
     scope: string;
     region: string;
+    sessionUrl: string;
   };
   easyCredit: {
     widgetEnabled: string;
