@@ -7,7 +7,6 @@ import {
   PaymentResult,
 } from './payment-enabler';
 import { DropinEmbeddedBuilder } from '../dropin/dropin-embedded';
-import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easycredit/easycredit';
 
 declare global {
   interface ImportMeta {
@@ -20,8 +19,6 @@ export type BaseOptions = {
   sessionId: string;
   environment: string;
   locale?: string;
-  amount: number;
-  cartId?: string;
   onComplete: (result: PaymentResult) => void;
   onError: (error?: any) => void;
 
@@ -39,6 +36,15 @@ export class MockPaymentEnabler implements PaymentEnabler {
   }
 
   private static _Setup = async (options: EnablerOptions): Promise<{ baseOptions: BaseOptions }> => {
+    // Fetch SDK config from processor if needed, for example:
+
+    // const configResponse = await fetch(instance.processorUrl + '/config', {
+    //   method: 'GET',
+    //   headers: { 'Content-Type': 'application/json', 'X-Session-Id': options.sessionId },
+    // });
+
+    // const configJson = await configResponse.json();
+
     const sdkOptions = {
       // environment: configJson.environment,
       environment: 'test',
@@ -51,26 +57,13 @@ export class MockPaymentEnabler implements PaymentEnabler {
         environment: sdkOptions.environment,
         onComplete: options.onComplete || (() => {}),
         onError: options.onError || (() => {}),
-        amount: options?.amount,
-        cartId: options?.cartId,
+        amount: options.amount,
       },
     });
   };
 
-  async createComponentBuilder(type: string): Promise<PaymentComponentBuilder | never> {
-    const { baseOptions } = await this.setupData;
-
-    const supportedPaymentMethods = {
-      easycredit: EasyCreditCheckoutBuilder,
-    };
-
-    if (!Object.keys(supportedPaymentMethods).includes(type)) {
-      throw new Error(
-        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedPaymentMethods).join(', ')}`,
-      );
-    }
-
-    return new supportedPaymentMethods[type](baseOptions);
+  async createComponentBuilder(): Promise<PaymentComponentBuilder | never> {
+    return;
   }
 
   async createDropinBuilder(type: DropinType): Promise<PaymentDropinBuilder | never> {

@@ -34,11 +34,9 @@ describe('DropinEmbeddedBuilder', () => {
     expect(pdpWidgetComponent.dropinOptions).toEqual({
       onDropinReady: mockBaseOptions.onDropinReady,
       onPayButtonClick: mockBaseOptions.onPayButtonClick,
-      amount: mockBaseOptions.amount,
-      sessionId: mockBaseOptions.sessionId,
     });
     expect(pdpWidgetComponent.processorUrl).toBe(mockBaseOptions.processorUrl);
-    expect(pdpWidgetComponent.dropinOptions.amount).toBe(mockBaseOptions.amount);
+    expect(pdpWidgetComponent.amount).toBe(mockBaseOptions.amount);
   });
 
   test('should call onDropinReady when initialized', () => {
@@ -62,14 +60,19 @@ describe('PdpWidgetComponent', () => {
       howPayButton: true,
       onDropinReady: jest.fn(),
       onPayButtonClick: jest.fn(),
-      amount: 100,
     };
 
     component = new PdpWidgetComponent({
       dropinOptions: dropinOptionsMock,
       processorUrl: 'https://test-processor-url.com',
+      amount: 100,
     });
   });
+
+  // const document = {
+  //   querySelector: jest.fn(),
+  //   insertAdjacentHTML: jest.fn(),
+  // };
 
   test('should call onDropinReady when init is called', () => {
     component.init();
@@ -85,7 +88,8 @@ describe('PdpWidgetComponent', () => {
 
     await component.mount('#widget');
 
-    expect(document.querySelector('#widget')?.innerHTML).toContain(
+    // @ts-ignore
+    expect(document.querySelector('#widget').innerHTML).toContain(
       '<easycredit-widget amount="100" webshop-id="123"></easycredit-widget>',
     );
   });
@@ -97,11 +101,12 @@ describe('PdpWidgetComponent', () => {
 
     await component.mount('#widget');
 
-    expect(document.querySelector('#widget')?.innerHTML).toBe('');
+    // @ts-ignore
+    expect(document.querySelector('#widget').innerHTML).toBe('');
   });
 
   test('should fetch configuration from the correct URL', async () => {
-    // @ts-expect-error Expect error on document
+    // @ts-ignore
     global.fetch = jest.fn(() =>
       Promise.resolve({
         json: () => Promise.resolve({ isEnabled: true, webShopId: '123' }),
@@ -112,10 +117,6 @@ describe('PdpWidgetComponent', () => {
 
     expect(fetch).toHaveBeenCalledWith('https://test-processor-url.com/operations/widget-enabled', {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Session-Id': undefined,
-      },
     });
     expect(config).toEqual({ isEnabled: true, webShopId: '123' });
   });

@@ -139,7 +139,7 @@ describe('test EasyCreditCheckout', () => {
   });
 
   // @ts-expect-error: Mock fetch globally
-  // eslint-disable-next-line no-global-assign
+
   fetch = jest.fn() as jest.Mock;
 
   test('able to call getPaymentMethod()', async () => {
