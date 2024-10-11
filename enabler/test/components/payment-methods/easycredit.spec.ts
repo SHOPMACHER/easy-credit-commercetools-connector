@@ -10,16 +10,14 @@ import { BaseOptions } from '../../../src/payment-enabler/payment-enabler-mock';
 import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 
 describe('test EasyCreditCheckoutBuilder', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  jest.spyOn(require('node-fetch'), 'fetch');
-
   let mockBaseOptions: BaseOptions;
 
   beforeEach(() => {
     mockBaseOptions = {
-      sessionId: '',
+      sessionId: 'test-session-id',
       environment: '',
       locale: '',
+      cartId: '',
       showPayButton: true,
       onDropinReady: jest.fn<() => Promise<void>>(() => Promise.resolve()),
       onPayButtonClick: jest.fn<() => Promise<void>>(() => Promise.resolve()),
@@ -134,12 +132,11 @@ describe('test EasyCreditCheckout', () => {
     expect(consoleError).toBeCalledWith('Failed to get EasyCredit payment method', error);
   });
 
-  test('able to call submit()', () => {
-    expect(component.submit()).toBe(undefined);
+  test('able to call submit()', async () => {
+    expect(await component.submit()).toBe(undefined);
   });
 
   // @ts-expect-error: Mock fetch globally
-
   fetch = jest.fn() as jest.Mock;
 
   test('able to call getPaymentMethod()', async () => {

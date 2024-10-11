@@ -7,25 +7,21 @@ import {
   PaymentResult,
 } from './payment-enabler';
 import { DropinEmbeddedBuilder } from '../dropin/dropin-embedded';
-
-declare global {
-  interface ImportMeta {
-    env: any;
-  }
-}
+import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easycredit/easycredit';
 
 export type BaseOptions = {
   processorUrl: string;
   sessionId: string;
   environment: string;
   locale?: string;
+  amount: number;
+  cartId?: string;
   onComplete: (result: PaymentResult) => void;
-  onError: (error?: any) => void;
+  onError: (error?: unknown) => void;
 
   showPayButton?: boolean;
   onDropinReady?: () => Promise<void>;
   onPayButtonClick?: () => Promise<void>;
-  [key: string]: any;
 };
 
 export class MockPaymentEnabler implements PaymentEnabler {
@@ -36,17 +32,7 @@ export class MockPaymentEnabler implements PaymentEnabler {
   }
 
   private static _Setup = async (options: EnablerOptions): Promise<{ baseOptions: BaseOptions }> => {
-    // Fetch SDK config from processor if needed, for example:
-
-    // const configResponse = await fetch(instance.processorUrl + '/config', {
-    //   method: 'GET',
-    //   headers: { 'Content-Type': 'application/json', 'X-Session-Id': options.sessionId },
-    // });
-
-    // const configJson = await configResponse.json();
-
     const sdkOptions = {
-      // environment: configJson.environment,
       environment: 'test',
     };
 
@@ -58,12 +44,25 @@ export class MockPaymentEnabler implements PaymentEnabler {
         onComplete: options.onComplete || (() => {}),
         onError: options.onError || (() => {}),
         amount: options.amount,
+        cartId: options?.cartId,
       },
     });
   };
 
-  async createComponentBuilder(): Promise<PaymentComponentBuilder | never> {
-    return;
+  async createComponentBuilder(type: string): Promise<PaymentComponentBuilder | never> {
+    const { baseOptions } = await this.setupData;
+
+    const supportedPaymentMethods = {
+      easycredit: EasyCreditCheckoutBuilder,
+    };
+
+    if (!Object.keys(supportedPaymentMethods).includes(type)) {
+      throw new Error(
+        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedPaymentMethods).join(', ')}`,
+      );
+    }
+
+    return new supportedPaymentMethods[type](baseOptions);
   }
 
   async createDropinBuilder(type: DropinType): Promise<PaymentDropinBuilder | never> {

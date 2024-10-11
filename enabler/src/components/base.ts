@@ -1,5 +1,5 @@
 // import { FakeSdk } from '../fake-sdk';
-import { ComponentOptions, PaymentComponent, PaymentMethod, PaymentResult } from '../payment-enabler/payment-enabler';
+import { PaymentComponent, PaymentMethod, PaymentResult } from '../payment-enabler/payment-enabler';
 import { BaseOptions } from '../payment-enabler/payment-enabler-mock';
 
 export type ElementOptions = {
@@ -16,9 +16,9 @@ export abstract class BaseComponent implements PaymentComponent {
   protected sessionId: BaseOptions['sessionId'];
   protected environment: BaseOptions['environment'];
   protected onComplete: (result: PaymentResult) => void;
-  protected onError: (error?: any) => void;
+  protected onError: (error?: unknown) => void;
 
-  constructor(paymentMethod: PaymentMethod, baseOptions: BaseOptions, _componentOptions: ComponentOptions) {
+  constructor(paymentMethod: PaymentMethod, baseOptions: BaseOptions) {
     this.paymentMethod = paymentMethod;
     // this.sdk = baseOptions.sdk;
     this.processorUrl = baseOptions.processorUrl;
