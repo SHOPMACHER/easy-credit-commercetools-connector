@@ -55,6 +55,7 @@ export class EasyCreditCheckout extends BaseComponent {
     return await res.json();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getTemplate(response: any) {
     try {
       let errorMessage = '';
