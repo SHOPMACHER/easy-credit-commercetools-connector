@@ -1,4 +1,4 @@
-name: Build
+name: build
 
 on:
   push:
@@ -43,13 +43,3 @@ jobs:
       - name: Build project
         run: npm run build
         working-directory: ${{ matrix.directory }}
-
-      - name: Run tests
-        run: npm run test
-        working-directory: ${{ matrix.directory }}
-
-      - name: Archive code coverage results
-        uses: actions/upload-artifact@v4
-        with:
-          name: code-coverage-report-${{ matrix.directory }}
-          path: ${{ matrix.directory }}/coverage/lcov.info
