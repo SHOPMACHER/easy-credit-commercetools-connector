@@ -153,7 +153,7 @@ describe('test paymentRoute', () => {
         },
         {
           code: 'AddressesUnmatched',
-          message: 'Liefer- und Rechnungsadresse sind identisch und in Deutschland.',
+          message: 'Liefer- und Rechnungsadresse sind nicht identisch oder nicht in Deutschland.',
           webShopId: webShopId,
         },
         {
@@ -163,7 +163,7 @@ describe('test paymentRoute', () => {
         },
         {
           code: 'InvalidAmount',
-          message: `Summe des Warenkorbs beträgt zwischen ${MIN_CART_AMOUNT.toLocaleString()}€ und ${MAX_CART_AMOUNT.toLocaleString()}€.`,
+          message: `Die Summe des Warenkorbs muss zwischen ${MIN_CART_AMOUNT.toLocaleString()}€ und ${MAX_CART_AMOUNT.toLocaleString()}€ liegen.`,
           webShopId: webShopId,
         },
       ],

@@ -7,7 +7,7 @@ import {
   PaymentResult,
 } from './payment-enabler';
 import { DropinEmbeddedBuilder } from '../dropin/dropin-embedded';
-import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easycredit/easycredit';
+import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easy-credit/easy-credit';
 
 export type BaseOptions = {
   processorUrl: string;

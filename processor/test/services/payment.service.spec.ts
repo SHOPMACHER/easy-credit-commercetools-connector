@@ -1,151 +1,96 @@
-import { handleGetEasyCreditPaymentMethod } from '../../src/services/payment.service';
 import { Cart, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { describe, expect, it, jest } from '@jest/globals';
 import { getCartById } from '../../src/commercetools/cart.commercetools';
-import { MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../../src/utils/constant.utils';
 import { readConfiguration } from '../../src/utils/config.utils';
-import { compareAddress } from '../../src/utils/commerceTools.utils';
+import { validateAddresses, validateCartAmount, validateCurrency } from '../../src/validators/payment.validators';
+import { handlePaymentMethod } from '../../src/services/payment.service';
+import { log } from '../../src/libs/logger';
 
-const cart: Cart = {
-  id: '5307942b-38b4-4cbc-95f5-c3ce2e386dd212312',
-  version: 1,
-  lineItems: [],
-  customLineItems: [],
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'GBP',
-    centAmount: 100000000,
-    fractionDigits: 2,
-  },
-  taxMode: '',
-  taxRoundingMode: '',
-  taxCalculationMode: '',
-  inventoryMode: '',
-  cartState: '',
-  shippingMode: '',
-  shipping: [],
-  itemShippingAddresses: [],
-  discountCodes: [],
-  directDiscounts: [],
-  refusedGifts: [],
-  origin: '',
-  createdAt: '',
-  lastModifiedAt: '',
-};
-
-const validCart: Cart = {
-  id: '5307942b-38b4-4cbc-95f5-c3ce2e386dd2123',
-  version: 1,
-  lineItems: [],
-  customLineItems: [],
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'EUR',
-    centAmount: 100000,
-    fractionDigits: 2,
-  },
-  billingAddress: {
-    firstName: 'john',
-    lastName: 'doe',
-    streetName: 'dummy',
-    country: 'DE',
-    city: 'lorem',
-  },
-  shippingAddress: {
-    firstName: 'john',
-    lastName: 'doe',
-    streetName: 'dummy',
-    country: 'DE',
-    city: 'lorem',
-  },
-  taxMode: '',
-  taxRoundingMode: '',
-  taxCalculationMode: '',
-  inventoryMode: '',
-  cartState: '',
-  shippingMode: '',
-  shipping: [],
-  itemShippingAddresses: [],
-  discountCodes: [],
-  directDiscounts: [],
-  refusedGifts: [],
-  origin: '',
-  createdAt: '',
-  lastModifiedAt: '',
-};
-
-jest.mock('../../src/commercetools/cart.commercetools.ts', () => ({
+jest.mock('../../src/commercetools/cart.commercetools', () => ({
   getCartById: jest.fn(),
 }));
-describe('test handleGetEasyCreditPaymentMethod', () => {
-  it('should return only webshopId when all validation has passed', async () => {
-    (getCartById as jest.Mock).mockResolvedValue(validCart as never);
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    jest.spyOn(require('../../src/utils/config.utils'), 'readConfiguration');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    jest.spyOn(require('../../src/utils/commerceTools.utils'), 'compareAddress');
-    const result = await handleGetEasyCreditPaymentMethod(validCart.id);
 
-    expect(readConfiguration).toBeCalledTimes(1);
-    expect(getCartById).toBeCalledTimes(1);
-    expect(getCartById).toBeCalledWith(validCart.id);
-    expect(compareAddress).toBeCalledWith(validCart.billingAddress, validCart.shippingAddress);
-    expect(compareAddress).toBeTruthy();
-    expect(result).toStrictEqual({
-      webShopId: process.env.WEBSHOP_ID,
-    });
+jest.mock('../../src/utils/config.utils', () => ({
+  readConfiguration: jest.fn(),
+}));
+
+jest.mock('../../src/validators/payment.validators', () => ({
+  validateAddresses: jest.fn(),
+  validateCurrency: jest.fn(),
+  validateCartAmount: jest.fn(),
+}));
+
+jest.mock('../../src/libs/logger', () => ({
+  log: {
+    error: jest.fn(),
+  },
+}));
+
+describe('handlePaymentMethod', () => {
+  const mockCart = {
+    billingAddress: { country: 'DE' },
+    shippingAddress: { country: 'DE' },
+    totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+  } as Cart;
+
+  const mockConfig = { easyCredit: { webShopId: 'dummyWebShopId' } };
+
+  beforeEach(() => {
+    (getCartById as jest.Mock).mockResolvedValue(mockCart);
+    (readConfiguration as jest.Mock).mockReturnValue(mockConfig);
   });
 
-  it('should return all the existing errors', async () => {
-    (getCartById as jest.Mock).mockResolvedValue(cart as never);
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    jest.spyOn(require('../../src/utils/config.utils'), 'readConfiguration');
-    try {
-      await handleGetEasyCreditPaymentMethod(cart.id);
-    } catch (error) {
-      expect(readConfiguration).toBeCalledTimes(1);
-      expect(getCartById).toBeCalledTimes(1);
-      expect(getCartById).toBeCalledWith(cart.id);
-      expect(error).toBeInstanceOf(MultiErrorx);
+  it('should return ecConfig when no validation errors', async () => {
+    const result = await handlePaymentMethod('valid-cart-id');
+    expect(result).toEqual({ webShopId: 'dummyWebShopId' });
 
-      const ecConfig = {
-        webShopId: process.env.WEBSHOP_ID,
-      };
+    expect(validateAddresses).toHaveBeenCalledWith(
+      mockCart.billingAddress,
+      mockCart.shippingAddress,
+      mockConfig.easyCredit,
+      [],
+    );
+    expect(validateCurrency).toHaveBeenCalledWith(mockCart.totalPrice.currencyCode, mockConfig.easyCredit, []);
+    expect(validateCartAmount).toHaveBeenCalledWith(
+      mockCart.totalPrice.centAmount,
+      mockCart.totalPrice.fractionDigits,
+      mockConfig.easyCredit,
+      [],
+    );
+  });
 
-      const errors = new MultiErrorx([
-        new Errorx({
-          code: 'InvalidBillingAddress',
-          httpErrorStatus: 400,
-          message: `Rechnungsadresse kann nicht gefunden werden.`,
-          fields: ecConfig,
-        }),
-        new Errorx({
-          code: 'InvalidShippingAddress',
-          httpErrorStatus: 400,
-          message: `Lieferadresse kann nicht gefunden werden.`,
-          fields: ecConfig,
-        }),
-        new Errorx({
-          code: 'AddressesUnmatched',
-          httpErrorStatus: 400,
-          message: `Liefer- und Rechnungsadresse sind identisch und in Deutschland.`,
-          fields: ecConfig,
-        }),
-        new Errorx({
-          code: 'InvalidCurrency',
-          httpErrorStatus: 400,
-          message: `Die einzige verfügbare Währungsoption ist EUR.`,
-          fields: ecConfig,
-        }),
-        new Errorx({
-          code: 'InvalidAmount',
-          httpErrorStatus: 400,
-          message: `Summe des Warenkorbs beträgt zwischen ${MIN_CART_AMOUNT.toLocaleString()}€ und ${MAX_CART_AMOUNT.toLocaleString()}€.`,
-          fields: ecConfig,
-        }),
-      ]);
+  it('should throw MultiErrorx if there are validation errors', async () => {
+    const validationErrors = [
+      new Errorx({ code: 'InvalidCurrency', httpErrorStatus: 400, message: 'Currency error', fields: {} }),
+    ];
 
-      expect(error).toStrictEqual(errors);
-    }
+    (validateAddresses as jest.Mock).mockImplementation((_, __, ___, errors) => {
+      errors.push(...validationErrors);
+    });
+
+    await expect(handlePaymentMethod('invalid-cart-id')).rejects.toThrow(MultiErrorx);
+
+    expect(validateAddresses).toHaveBeenCalled();
+    expect(validateCurrency).toHaveBeenCalled();
+    expect(validateCartAmount).toHaveBeenCalled();
+  });
+
+  it('should log error and rethrow if getCartById fails', async () => {
+    const mockError = new Error('Cart retrieval failed');
+    (getCartById as jest.Mock).mockRejectedValue(mockError);
+
+    await expect(handlePaymentMethod('invalid-cart-id')).rejects.toThrow(mockError);
+
+    expect(log.error).toHaveBeenCalledWith('Error in getting EasyCredit Payment Method', mockError);
+  });
+
+  it('should log error and rethrow if validation throws unexpected error', async () => {
+    const mockError = new Error('Unexpected validation error');
+    (validateAddresses as jest.Mock).mockImplementation(() => {
+      throw mockError;
+    });
+
+    await expect(handlePaymentMethod('invalid-cart-id')).rejects.toThrow(mockError);
+
+    expect(log.error).toHaveBeenCalledWith('Error in getting EasyCredit Payment Method', mockError);
   });
 });

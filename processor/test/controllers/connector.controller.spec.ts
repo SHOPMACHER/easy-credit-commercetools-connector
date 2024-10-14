@@ -41,7 +41,7 @@ describe('healthCheck', () => {
 
     await healthCheck(req as FastifyRequest, res as FastifyReply);
     expect(log.debug).toBeCalledTimes(1);
-    expect(log.debug).toHaveBeenCalledWith('SCTE - healthCheck - The connector is running healthily.');
+    expect(log.debug).toHaveBeenCalledWith('healthCheck - The connector is running healthily.');
     expect(res.code).toBeCalledWith(200);
     expect(res.send).toBeCalledWith({
       message: 'The connector is running healthily and connected to EasyCredit.',
@@ -88,7 +88,7 @@ describe('isWidgetEnabled', () => {
     await isWidgetEnabled(req as FastifyRequest, res as FastifyReply);
     expect(readConfiguration).toBeCalledTimes(1);
     expect(log.debug).toBeCalledTimes(1);
-    expect(log.debug).toHaveBeenCalledWith('SCTE - get PDP Widget config');
+    expect(log.debug).toHaveBeenCalledWith('get PDP Widget config');
     expect(res.code).toBeCalledWith(200);
     expect(res.send).toBeCalledWith({
       isEnabled: process.env.WIDGET_ENABLED === '1' ? true : false,
