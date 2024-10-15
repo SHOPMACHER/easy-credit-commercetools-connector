@@ -11,3 +11,5 @@ export const VERSION_STRING = `${LIBRARY_NAME}/${LIBRARY_VERSION}`;
 export const MIN_CART_AMOUNT = 200;
 
 export const MAX_CART_AMOUNT = 10000;
+
+export const EASYCREDIT_PAYMENT_METHOD = 'easycredit';

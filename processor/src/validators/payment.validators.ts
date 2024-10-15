@@ -1,7 +1,8 @@
-import { Address, Errorx } from '@commercetools/connect-payments-sdk';
+import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
-import { MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
+import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
+import { getPendingTransaction } from '../utils/payment.utils';
 
 export const validateAddresses = (
   billingAddress: Address | undefined,
@@ -78,5 +79,22 @@ export const validateCartAmount = (
         fields: ecConfig,
       }),
     );
+  }
+};
+
+export const validatePayment = (payment: Payment) => {
+  if (
+    !payment.paymentMethodInfo?.paymentInterface ||
+    payment.paymentMethodInfo?.paymentInterface.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD
+  ) {
+    throw new Error('Invalid payment method');
+  }
+};
+
+export const validatePendingTransaction = (payment: Payment) => {
+  const pendingTransaction = getPendingTransaction(payment);
+
+  if (!pendingTransaction?.interactionId) {
+    throw new Error('Missing pending transaction');
   }
 };

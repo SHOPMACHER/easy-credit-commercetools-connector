@@ -4,6 +4,7 @@ import { readConfiguration } from '../../src/utils/config.utils';
 import { validateAddresses, validateCartAmount, validateCurrency } from '../../src/validators/payment.validators';
 import { handlePaymentMethod } from '../../src/services/payment.service';
 import { log } from '../../src/libs/logger';
+import {jest} from "@jest/globals";
 
 jest.mock('../../src/commercetools/cart.commercetools', () => ({
   getCartById: jest.fn(),
@@ -25,6 +26,10 @@ jest.mock('../../src/libs/logger', () => ({
   },
 }));
 
+jest.mock('../../src/client/create.client', () => ({
+  createApiRoot: jest.fn(),
+}));
+
 describe('handlePaymentMethod', () => {
   const mockCart = {
     billingAddress: { country: 'DE' },
@@ -35,6 +40,7 @@ describe('handlePaymentMethod', () => {
   const mockConfig = { easyCredit: { webShopId: 'dummyWebShopId' } };
 
   beforeEach(() => {
+    // @ts-expect-error testing purposes
     (getCartById as jest.Mock).mockResolvedValue(mockCart);
     (readConfiguration as jest.Mock).mockReturnValue(mockConfig);
   });
@@ -64,6 +70,7 @@ describe('handlePaymentMethod', () => {
     ];
 
     (validateAddresses as jest.Mock).mockImplementation((_, __, ___, errors) => {
+      // @ts-expect-error testing purposes
       errors.push(...validationErrors);
     });
 
@@ -76,6 +83,7 @@ describe('handlePaymentMethod', () => {
 
   it('should log error and rethrow if getCartById fails', async () => {
     const mockError = new Error('Cart retrieval failed');
+    // @ts-expect-error testing purposes
     (getCartById as jest.Mock).mockRejectedValue(mockError);
 
     await expect(handlePaymentMethod('invalid-cart-id')).rejects.toThrow(mockError);

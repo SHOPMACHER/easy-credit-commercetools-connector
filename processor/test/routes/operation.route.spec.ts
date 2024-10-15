@@ -5,15 +5,20 @@ import { initEasyCreditClient } from '../../src/client/easycredit.client';
 
 jest.mock('../../src/payment-sdk.ts', () => ({
   paymentSDK: {
-    jwtAuthHookFn: jest.fn(),
-    oauth2AuthHookFn: jest.fn(),
+    jwtAuthHookFn: {
+      authenticate: jest.fn(),
+    },
+    oauth2AuthHookFn: {
+      authenticate: jest.fn(),
+    },
     sessionHeaderAuthHookFn: {
       authenticate: jest.fn(),
     },
-    authorityAuthorizationHookFn: jest.fn(),
+    authorityAuthorizationHookFn: {
+      authenticate: jest.fn(),
+    },
   },
 }));
-
 jest.mock('../../src/client/easycredit.client.ts', () => ({
   initEasyCreditClient: jest.fn(),
 }));
@@ -21,6 +26,12 @@ jest.mock('../../src/client/easycredit.client.ts', () => ({
 describe('test operationRoute', () => {
   it('should call healthCheck handler', async () => {
     (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+      return async (request: any, reply: any) => {
+        console.log('Mock authenticate called');
+      };
+    });
+    (paymentSDK.oauth2AuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
       return async (request: any, reply: any) => {
         console.log('Mock authenticate called');

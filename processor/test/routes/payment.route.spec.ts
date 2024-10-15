@@ -1,172 +1,124 @@
-import { setupFastify } from '../../src/server/server';
-import { describe, jest, it, expect } from '@jest/globals';
-import { Cart } from '@commercetools/connect-payments-sdk';
-import { getCartById } from '../../src/commercetools/cart.commercetools';
-import { paymentSDK } from '../../src/payment-sdk';
-import { MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../../src/utils/constant.utils';
-import { getEasyCreditPaymentMethod } from '../../src/controllers/payment.controller';
+import { authorizePayment, getEasyCreditPaymentMethod } from '../../src/controllers/payment.controller';
+import { FastifyInstance } from 'fastify';
+import { ErrorResponse } from '../../src/libs/fastify/dtos/error.dto';
+import {
+  GetPaymentMethodQueryStringSchema,
+  GetPaymentMethodResponseSchema,
+} from '../../src/dtos/payments/getPaymentMethod.dto';
+import {
+  AuthorizePaymentBodySchema,
+  AuthorizePaymentResponseSchema,
+} from '../../src/dtos/payments/authorizePayment.dto';
+import { paymentsRoute } from '../../src/routes/payment.route';
 
-const cart: Cart = {
-  id: '5307942b-38b4-4cbc-95f5-c3ce2e386dd212312',
-  version: 1,
-  lineItems: [],
-  customLineItems: [],
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'GBP',
-    centAmount: 100000000,
-    fractionDigits: 2,
-  },
-  taxMode: '',
-  taxRoundingMode: '',
-  taxCalculationMode: '',
-  inventoryMode: '',
-  cartState: '',
-  shippingMode: '',
-  shipping: [],
-  itemShippingAddresses: [],
-  discountCodes: [],
-  directDiscounts: [],
-  refusedGifts: [],
-  origin: '',
-  createdAt: '',
-  lastModifiedAt: '',
-};
-
-const validCart: Cart = {
-  id: '5307942b-38b4-4cbc-95f5-c3ce2e386dd2123',
-  version: 1,
-  lineItems: [],
-  customLineItems: [],
-  totalPrice: {
-    type: 'centPrecision',
-    currencyCode: 'EUR',
-    centAmount: 100000,
-    fractionDigits: 2,
-  },
-  billingAddress: {
-    firstName: 'john',
-    lastName: 'doe',
-    streetName: 'dummy',
-    country: 'DE',
-    city: 'lorem',
-  },
-  shippingAddress: {
-    firstName: 'john',
-    lastName: 'doe',
-    streetName: 'dummy',
-    country: 'DE',
-    city: 'lorem',
-  },
-  taxMode: '',
-  taxRoundingMode: '',
-  taxCalculationMode: '',
-  inventoryMode: '',
-  cartState: '',
-  shippingMode: '',
-  shipping: [],
-  itemShippingAddresses: [],
-  discountCodes: [],
-  directDiscounts: [],
-  refusedGifts: [],
-  origin: '',
-  createdAt: '',
-  lastModifiedAt: '',
-};
-
-jest.mock('../../src/commercetools/cart.commercetools.ts', () => ({
-  getCartById: jest.fn(),
+// Mock the controllers
+jest.mock('../../src/controllers/payment.controller', () => ({
+  authorizePayment: jest.fn(),
+  getEasyCreditPaymentMethod: jest.fn(),
 }));
 
-jest.mock('../../src/payment-sdk.ts', () => ({
-  paymentSDK: {
-    jwtAuthHookFn: jest.fn(),
-    oauth2AuthHookFn: jest.fn(),
-    sessionHeaderAuthHookFn: {
-      authenticate: jest.fn(),
-    },
-    authorityAuthorizationHookFn: jest.fn(),
-  },
-}));
+describe('paymentsRoute', () => {
+  let fastify: FastifyInstance;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let opts: any;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-jest.spyOn(require('../../src/controllers/payment.controller.ts'), 'getEasyCreditPaymentMethod');
+  beforeEach(() => {
+    fastify = {
+      get: jest.fn(),
+      post: jest.fn(),
+    } as unknown as FastifyInstance;
 
-describe('test paymentRoute', () => {
-  it('should call getEasyCreditPaymentMethod and return 200 as status with correct body', async () => {
-    (getCartById as jest.Mock).mockReturnValue(validCart);
-
-    (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-      return async (request: any, reply: any) => {
-        console.log('Mock authenticate called');
-      };
-    });
-
-    const server = await setupFastify();
-
-    const response = await server.inject({
-      method: 'GET',
-      url: `/payments/payment-method?cartId=${validCart.id}`,
-    });
-
-    expect(getEasyCreditPaymentMethod).toBeCalledTimes(1);
-    expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toStrictEqual({
-      webShopId: process.env.WEBSHOP_ID,
-    });
+    opts = {
+      sessionHeaderAuthHook: {
+        authenticate: jest.fn(() => jest.fn()), // Mock session header auth hook
+      },
+      oauth2AuthHook: {
+        authenticate: jest.fn(() => jest.fn()), // Mock OAuth2 auth hook
+      },
+    };
   });
 
-  it('should call getEasyCreditPaymentMethod and return 400 as status with correct body', async () => {
-    (getCartById as jest.Mock).mockReturnValue(cart);
+  it('should register GET /payment-method route with correct schema and preHandler', async () => {
+    await paymentsRoute(fastify, opts);
 
-    (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-      return async (request: any, reply: any) => {
-        console.log('Mock authenticate called');
-      };
-    });
+    expect(fastify.get).toHaveBeenCalledWith(
+      '/payment-method',
+      expect.objectContaining({
+        preHandler: [expect.any(Function)], // Use expect.any(Function) to avoid comparing actual functions
+        schema: {
+          querystring: GetPaymentMethodQueryStringSchema,
+          response: {
+            200: GetPaymentMethodResponseSchema,
+            400: ErrorResponse,
+          },
+        },
+      }),
+      expect.any(Function),
+    );
+  });
 
-    const server = await setupFastify();
+  it('should call getEasyCreditPaymentMethod with the correct request and reply', async () => {
+    const mockRequest = { query: { cartId: '123' } } as any;
+    const mockReply = {} as any;
+    const getEasyCreditPaymentMethodMock = getEasyCreditPaymentMethod as jest.Mock;
 
-    const response = await server.inject({
-      method: 'GET',
-      url: `/payments/payment-method?cartId=${validCart.id}`,
-    });
+    await paymentsRoute(fastify, opts);
+    const handler = (fastify.get as jest.Mock).mock.calls[0][2]; // Get the handler function
+    await handler(mockRequest, mockReply);
 
-    const webShopId = process.env.WEBSHOP_ID;
-    expect(getEasyCreditPaymentMethod).toBeCalledTimes(1);
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toStrictEqual({
-      message: 'Rechnungsadresse kann nicht gefunden werden.',
-      statusCode: 400,
-      errors: [
-        {
-          code: 'InvalidBillingAddress',
-          message: 'Rechnungsadresse kann nicht gefunden werden.',
-          webShopId: webShopId,
+    expect(getEasyCreditPaymentMethodMock).toHaveBeenCalledWith(mockRequest, mockReply);
+  });
+
+  it('should register POST /authorize route with correct schema and preHandler', async () => {
+    await paymentsRoute(fastify, opts);
+
+    expect(fastify.post).toHaveBeenCalledWith(
+      '/authorize',
+      expect.objectContaining({
+        preHandler: [expect.any(Function)], // Use expect.any(Function) here as well
+        schema: {
+          body: AuthorizePaymentBodySchema,
+          response: {
+            200: AuthorizePaymentResponseSchema,
+            400: ErrorResponse,
+          },
         },
-        {
-          code: 'InvalidShippingAddress',
-          message: 'Lieferadresse kann nicht gefunden werden.',
-          webShopId: webShopId,
-        },
-        {
-          code: 'AddressesUnmatched',
-          message: 'Liefer- und Rechnungsadresse sind nicht identisch oder nicht in Deutschland.',
-          webShopId: webShopId,
-        },
-        {
-          code: 'InvalidCurrency',
-          message: 'Die einzige verfügbare Währungsoption ist EUR.',
-          webShopId: webShopId,
-        },
-        {
-          code: 'InvalidAmount',
-          message: `Die Summe des Warenkorbs muss zwischen ${MIN_CART_AMOUNT.toLocaleString()}€ und ${MAX_CART_AMOUNT.toLocaleString()}€ liegen.`,
-          webShopId: webShopId,
-        },
-      ],
-    });
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it('should call authorizePayment with the correct request and reply', async () => {
+    const mockRequest = { body: { paymentId: '456' } } as never;
+    const mockReply = {} as never;
+    const authorizePaymentMock = authorizePayment as jest.Mock;
+
+    await paymentsRoute(fastify, opts);
+    const handler = (fastify.post as jest.Mock).mock.calls[0][2]; // Get the handler function
+    await handler(mockRequest, mockReply);
+
+    expect(authorizePaymentMock).toHaveBeenCalledWith(mockRequest, mockReply);
+  });
+
+  it('should use session header authentication hook for GET /payment-method', async () => {
+    await paymentsRoute(fastify, opts);
+
+    const routeOptions = (fastify.get as jest.Mock).mock.calls[0][1]; // Get route options for GET
+    const preHandler = routeOptions.preHandler[0];
+
+    // Instead of comparing the function reference, check that it was called
+    expect(opts.sessionHeaderAuthHook.authenticate).toHaveBeenCalled();
+    expect(preHandler).toEqual(expect.any(Function));
+  });
+
+  it('should use oauth2 authentication hook for POST /authorize', async () => {
+    await paymentsRoute(fastify, opts);
+
+    const routeOptions = (fastify.post as jest.Mock).mock.calls[0][1]; // Get route options for POST
+    const preHandler = routeOptions.preHandler[0];
+
+    // Instead of comparing the function reference, check that it was called
+    expect(opts.oauth2AuthHook.authenticate).toHaveBeenCalled();
+    expect(preHandler).toEqual(expect.any(Function));
   });
 });

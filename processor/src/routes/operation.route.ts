@@ -14,7 +14,6 @@ type OperationRouteOptions = {
   oauth2AuthHook: Oauth2AuthenticationHook;
   jwtAuthHook: JWTAuthenticationHook;
   authorizationHook: AuthorityAuthorizationHook;
-  // paymentService: AbstractPaymentService;
 };
 
 export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {

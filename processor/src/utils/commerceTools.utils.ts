@@ -8,7 +8,7 @@ export const compareAddress = (addr1: Address, addr2: Address): boolean => {
     addr1.phone !== addr2.phone ||
     addr1.mobile !== addr2.mobile ||
     addr1.streetName !== addr2.streetName ||
-    addr1.streetNumber !== addr1.streetNumber ||
+    addr1.streetNumber !== addr2.streetNumber ||
     addr1.postalCode !== addr2.postalCode ||
     addr1.city !== addr2.city ||
     addr1.country !== addr2.country
