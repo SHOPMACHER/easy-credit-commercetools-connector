@@ -21,3 +21,57 @@ export const getPaymentById = async (paymentId: string) => {
     });
   }
 };
+
+export const updatePaymentStatus = async (paymentId: string, newStatus: string) => {
+  try {
+    // Get the payment to retrieve the current version and transactions
+    const payment = await getPaymentById(paymentId);
+    const paymentVersion = payment.version;
+
+    // Find the transaction with type 'Authorization' and state 'Initial'
+    const transaction = payment.transactions?.find(
+        (tx) => tx.type === 'Authorization' && tx.state === 'Initial'
+    );
+
+    if (!transaction) {
+      throw new Errorx({
+        code: 'TransactionNotFound',
+        message: 'No Authorization transaction with Initial state found.',
+        httpErrorStatus: 404,
+      });
+    }
+
+    // Prepare the update request to change the payment status
+    const response = await createApiRoot()
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: paymentVersion, // The current payment version
+            actions: [
+              {
+                action: 'changeTransactionState',
+                transactionId: transaction.id, // Use the found transaction ID
+                state: newStatus, // Set the new status here
+              },
+            ],
+          },
+        })
+        .execute();
+
+    log.info(`Payment ${paymentId} cancelled successfully.`);
+
+    return response.body; // Return the updated payment object
+  } catch (error: any) {
+    log.error('Error in updating CommerceTools Payment status', error);
+
+    throw new Errorx({
+      code: error?.code as string,
+      message: error?.body?.message as string,
+      httpErrorStatus: error?.statusCode,
+      fields: error.body?.errors,
+    });
+  }
+};
+
+

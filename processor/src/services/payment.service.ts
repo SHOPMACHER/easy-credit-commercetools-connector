@@ -1,5 +1,5 @@
 import { Cart, Address, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { getCartById } from '../commercetools/cart.commercetools';
+import { getCartById, unfreezeCartById } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
 import { GetPaymentMethodResponse } from '../types/payment.types';
 import { log } from '../libs/logger';
@@ -10,7 +10,7 @@ import {
   validatePayment,
   validatePendingTransaction,
 } from '../validators/payment.validators';
-import { getPaymentById } from '../commercetools/payment.commercetools';
+import { getPaymentById, updatePaymentStatus } from '../commercetools/payment.commercetools';
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 
@@ -54,3 +54,34 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     throw error;
   }
 };
+
+export const handleCancelPayment = async (paymentId: string): Promise<string> => {
+  try {
+    // Update the payment status to "Cancelled"
+    await updatePaymentStatus(paymentId, 'Failure');
+
+    await unfreezeCartById(paymentId);
+
+    return paymentId;
+  } catch (error) {
+    log.error('Error in cancelling payment and unfreezing cart', error);
+    throw error;
+  }
+};
+
+export const handleDeniedPayment = async (paymentId: string): Promise<string> => {
+  try {
+    // Update the payment status to "Denied"
+    await updatePaymentStatus(paymentId, 'Failure');
+
+    // Unfreeze the cart associated with this payment
+    await unfreezeCartById(paymentId);
+
+    return paymentId;
+  } catch (error) {
+    log.error('Error in denying payment and unfreezing cart', error);
+    throw error;
+  }
+};
+
+
