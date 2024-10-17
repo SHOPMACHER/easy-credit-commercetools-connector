@@ -91,7 +91,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         },
     );
 
-    fastify.post<{
+    fastify.get<{
         Params: { paymentId: string };
         Querystring: { redirectUrl: string };
         Reply: DeniedPaymentResponseSchemaDTO

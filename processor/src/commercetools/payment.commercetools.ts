@@ -1,6 +1,7 @@
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { createApiRoot } from '../client/create.client';
 import { log } from '../libs/logger';
+import { initEasyCreditClient } from "../client/easycredit.client";
 
 export const getPaymentById = async (paymentId: string) => {
   try {
@@ -38,6 +39,16 @@ export const updatePaymentStatus = async (paymentId: string, newStatus: string) 
         code: 'TransactionNotFound',
         message: 'No Authorization transaction with Initial state found.',
         httpErrorStatus: 404,
+      });
+    }
+
+    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId || 'c2b818bb.1017101417aBEK0At8kUEJLJxGnygmuWm1' as string);
+
+    if (easyTransaction.status !== 'DECLINED') {
+      throw new Errorx({
+          code: 'TransactionNotDeclined',
+          message: 'Transaction status is not DECLINED.',
+          httpErrorStatus: 400,
       });
     }
 

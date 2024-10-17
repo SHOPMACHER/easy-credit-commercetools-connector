@@ -51,8 +51,23 @@ export const initEasyCreditClient = () => {
     return await response.json();
   };
 
+  const getPayment = async (technicalTransactionId: string, customHeaders?: HeadersInit) => {
+    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+
+    const response = await fetch(
+        `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}`,
+        {
+          method: 'GET',
+          headers,
+        },
+    );
+
+    return await response.json();
+  };
+
   return {
     integrationCheck,
     authorizePayment,
+    getPayment,
   };
 };
