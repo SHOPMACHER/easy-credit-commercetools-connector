@@ -3,8 +3,9 @@
  */
 
 import { DropinEmbeddedBuilder, PdpWidgetComponent } from '../../src/dropin/dropin-embedded';
+import { DropinOptions } from '../../src/payment-enabler/payment-enabler';
 import { BaseOptions } from '../../src/payment-enabler/payment-enabler-mock';
-import { describe, test, expect, jest, beforeEach, } from '@jest/globals';
+import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 
 describe('DropinEmbeddedBuilder', () => {
   let mockBaseOptions: BaseOptions;
@@ -20,7 +21,7 @@ describe('DropinEmbeddedBuilder', () => {
       processorUrl: 'https://test-processor-url.com',
       amount: 100,
       onComplete: jest.fn(),
-      onError: jest.fn()
+      onError: jest.fn(),
     };
   });
 
@@ -30,13 +31,15 @@ describe('DropinEmbeddedBuilder', () => {
 
     expect(dropin).toBeInstanceOf(PdpWidgetComponent);
 
-    const pdpWidgetComponent = (dropin as PdpWidgetComponent);
+    const pdpWidgetComponent = dropin as PdpWidgetComponent;
     expect(pdpWidgetComponent.dropinOptions).toEqual({
       onDropinReady: mockBaseOptions.onDropinReady,
       onPayButtonClick: mockBaseOptions.onPayButtonClick,
+      amount: mockBaseOptions.amount,
+      sessionId: mockBaseOptions.sessionId,
     });
     expect(pdpWidgetComponent.processorUrl).toBe(mockBaseOptions.processorUrl);
-    expect(pdpWidgetComponent.amount).toBe(mockBaseOptions.amount);
+    expect(pdpWidgetComponent.dropinOptions.amount).toBe(mockBaseOptions.amount);
   });
 
   test('should call onDropinReady when initialized', () => {
@@ -52,27 +55,22 @@ describe('DropinEmbeddedBuilder', () => {
 });
 
 describe('PdpWidgetComponent', () => {
-  let dropinOptionsMock;
+  let dropinOptionsMock: DropinOptions;
   let component: PdpWidgetComponent;
 
   beforeEach(() => {
     dropinOptionsMock = {
-      howPayButton: true,
       onDropinReady: jest.fn(),
       onPayButtonClick: jest.fn(),
-    };
+      amount: 100,
+      sessionId: 'test-session-id',
+    } as unknown as DropinOptions;
 
     component = new PdpWidgetComponent({
       dropinOptions: dropinOptionsMock,
       processorUrl: 'https://test-processor-url.com',
-      amount: 100,
     });
   });
-
-  // const document = {
-  //   querySelector: jest.fn(),
-  //   insertAdjacentHTML: jest.fn(),
-  // };
 
   test('should call onDropinReady when init is called', () => {
     component.init();
@@ -88,11 +86,9 @@ describe('PdpWidgetComponent', () => {
 
     await component.mount('#widget');
 
-    // @ts-ignore
-    expect(document.querySelector('#widget').innerHTML).toContain(
-      '<easycredit-widget amount="100" webshop-id="123"></easycredit-widget>'
+    expect(document.querySelector('#widget')?.innerHTML).toContain(
+      '<easycredit-widget amount="100" webshop-id="123"></easycredit-widget>',
     );
-
   });
 
   test('should not insert the widget if widget is not enabled', async () => {
@@ -102,22 +98,25 @@ describe('PdpWidgetComponent', () => {
 
     await component.mount('#widget');
 
-    // @ts-ignore
-    expect(document.querySelector('#widget').innerHTML).toBe('');
+    expect(document.querySelector('#widget')?.innerHTML).toBe('');
   });
 
   test('should fetch configuration from the correct URL', async () => {
-    // @ts-ignore
+    // @ts-expect-error Mock fetch
     global.fetch = jest.fn(() =>
       Promise.resolve({
         json: () => Promise.resolve({ isEnabled: true, webShopId: '123' }),
-      })
+      }),
     ) as jest.Mock;
 
     const config = await component.fetchConfig();
 
     expect(fetch).toHaveBeenCalledWith('https://test-processor-url.com/operations/widget-enabled', {
       method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': dropinOptionsMock.sessionId,
+      },
     });
     expect(config).toEqual({ isEnabled: true, webShopId: '123' });
   });

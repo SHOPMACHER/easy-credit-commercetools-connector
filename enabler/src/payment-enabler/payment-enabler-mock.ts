@@ -5,27 +5,23 @@ import {
   PaymentDropinBuilder,
   PaymentEnabler,
   PaymentResult,
-} from "./payment-enabler";
-import { DropinEmbeddedBuilder } from "../dropin/dropin-embedded";
-
-declare global {
-  interface ImportMeta {
-    env: any;
-  }
-}
+} from './payment-enabler';
+import { DropinEmbeddedBuilder } from '../dropin/dropin-embedded';
+import { EasyCreditCheckoutBuilder } from '../components/payment-methods/easy-credit/easy-credit';
 
 export type BaseOptions = {
   processorUrl: string;
   sessionId: string;
   environment: string;
   locale?: string;
+  amount: number;
+  cartId?: string;
   onComplete: (result: PaymentResult) => void;
-  onError: (error?: any) => void;
+  onError: (error?: unknown) => void;
 
   showPayButton?: boolean;
   onDropinReady?: () => Promise<void>;
   onPayButtonClick?: () => Promise<void>;
-  [key: string]: any;
 };
 
 export class MockPaymentEnabler implements PaymentEnabler {
@@ -35,21 +31,9 @@ export class MockPaymentEnabler implements PaymentEnabler {
     this.setupData = MockPaymentEnabler._Setup(options);
   }
 
-  private static _Setup = async (
-    options: EnablerOptions
-  ): Promise<{ baseOptions: BaseOptions }> => {
-    // Fetch SDK config from processor if needed, for example:
-
-    // const configResponse = await fetch(instance.processorUrl + '/config', {
-    //   method: 'GET',
-    //   headers: { 'Content-Type': 'application/json', 'X-Session-Id': options.sessionId },
-    // });
-
-    // const configJson = await configResponse.json();
-
+  private static _Setup = async (options: EnablerOptions): Promise<{ baseOptions: BaseOptions }> => {
     const sdkOptions = {
-      // environment: configJson.environment,
-      environment: "test",
+      environment: 'test',
     };
 
     return Promise.resolve({
@@ -60,18 +44,28 @@ export class MockPaymentEnabler implements PaymentEnabler {
         onComplete: options.onComplete || (() => {}),
         onError: options.onError || (() => {}),
         amount: options.amount,
+        cartId: options?.cartId,
       },
     });
   };
 
+  async createComponentBuilder(type: string): Promise<PaymentComponentBuilder | never> {
+    const { baseOptions } = await this.setupData;
 
-  async createComponentBuilder(): Promise<PaymentComponentBuilder | never> {
-    return;
+    const supportedPaymentMethods = {
+      easycredit: EasyCreditCheckoutBuilder,
+    };
+
+    if (!Object.keys(supportedPaymentMethods).includes(type)) {
+      throw new Error(
+        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedPaymentMethods).join(', ')}`,
+      );
+    }
+
+    return new supportedPaymentMethods[type](baseOptions);
   }
 
-  async createDropinBuilder(
-    type: DropinType
-  ): Promise<PaymentDropinBuilder | never> {
+  async createDropinBuilder(type: DropinType): Promise<PaymentDropinBuilder | never> {
     const { baseOptions } = await this.setupData;
 
     const supportedMethods = {
@@ -80,9 +74,7 @@ export class MockPaymentEnabler implements PaymentEnabler {
 
     if (!Object.keys(supportedMethods).includes(type)) {
       throw new Error(
-        `Component type not supported: ${type}. Supported types: ${Object.keys(
-          supportedMethods
-        ).join(", ")}`
+        `Component type not supported: ${type}. Supported types: ${Object.keys(supportedMethods).join(', ')}`,
       );
     }
 

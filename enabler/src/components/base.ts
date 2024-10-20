@@ -1,6 +1,6 @@
 // import { FakeSdk } from '../fake-sdk';
-import { ComponentOptions, PaymentComponent, PaymentMethod, PaymentResult } from '../payment-enabler/payment-enabler';
-import { BaseOptions } from "../payment-enabler/payment-enabler-mock";
+import { PaymentComponent, PaymentMethod, PaymentResult } from '../payment-enabler/payment-enabler';
+import { BaseOptions } from '../payment-enabler/payment-enabler-mock';
 
 export type ElementOptions = {
   paymentMethod: PaymentMethod;
@@ -16,9 +16,9 @@ export abstract class BaseComponent implements PaymentComponent {
   protected sessionId: BaseOptions['sessionId'];
   protected environment: BaseOptions['environment'];
   protected onComplete: (result: PaymentResult) => void;
-  protected onError: (error?: any) => void;
+  protected onError: (error?: unknown) => void;
 
-  constructor(paymentMethod: PaymentMethod, baseOptions: BaseOptions, _componentOptions: ComponentOptions) {
+  constructor(paymentMethod: PaymentMethod, baseOptions: BaseOptions) {
     this.paymentMethod = paymentMethod;
     // this.sdk = baseOptions.sdk;
     this.processorUrl = baseOptions.processorUrl;
@@ -30,7 +30,7 @@ export abstract class BaseComponent implements PaymentComponent {
 
   abstract submit(): void;
 
-  abstract mount(selector: string): void ;
+  abstract mount(selector: string): void;
 
   showValidation?(): void;
   isValid?(): boolean;
@@ -38,8 +38,8 @@ export abstract class BaseComponent implements PaymentComponent {
     card?: {
       endDigits?: string;
       brand?: string;
-      expiryDate? : string;
-    }
+      expiryDate?: string;
+    };
   };
   isAvailable?(): Promise<boolean>;
 }

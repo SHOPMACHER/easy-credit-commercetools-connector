@@ -8,4 +8,5 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/src/jest.setupAfterEnv.ts'],
   modulePathIgnorePatterns: ['<rootDir>/src/jest.setup.ts'],
   roots: ['./test'],
+  reporters: ['default'],
 };

@@ -14,10 +14,8 @@ type OperationRouteOptions = {
   oauth2AuthHook: Oauth2AuthenticationHook;
   jwtAuthHook: JWTAuthenticationHook;
   authorizationHook: AuthorityAuthorizationHook;
-  // paymentService: AbstractPaymentService;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
   fastify.get<{ Reply: HealthCheckResponseSchemaDTO }>(
     '/health-check',
@@ -35,8 +33,7 @@ export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPlu
   fastify.get<{ Reply: WidgetEnabledResponseSchemaDTO }>(
     '/widget-enabled',
     {
-      // preHandler: [opts.jwtAuthHook.authenticate()],
-      preHandler: [],
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         response: {
           200: WidgetEnabledResponseSchema,

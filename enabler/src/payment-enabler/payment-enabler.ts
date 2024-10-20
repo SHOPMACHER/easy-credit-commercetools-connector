@@ -34,9 +34,7 @@ export interface PaymentEnabler {
    * @returns A promise that resolves to the payment component builder.
    * @throws {Error} If the payment component builder cannot be created.
    */
-  createComponentBuilder: (
-    type: string
-  ) => Promise<PaymentComponentBuilder | never>;
+  createComponentBuilder: (type: string) => Promise<PaymentComponentBuilder | never>;
 
   /**
    * Creates a payment drop-in builder of the specified type.
@@ -44,9 +42,7 @@ export interface PaymentEnabler {
    * @returns A promise that resolves to the payment drop-in builder.
    * @throws {Error} If the payment drop-in builder cannot be created.
    */
-  createDropinBuilder: (
-    type: DropinType
-  ) => Promise<PaymentDropinBuilder | never>;
+  createDropinBuilder: (type: DropinType) => Promise<PaymentDropinBuilder | never>;
 }
 
 /**
@@ -108,7 +104,7 @@ export interface PaymentComponentBuilder {
    * @param config - The configuration options for the payment component.
    * @returns The built payment component.
    */
-  build(config: ComponentOptions): PaymentComponent;
+  build(): PaymentComponent;
 }
 
 /**
@@ -146,41 +142,18 @@ export type EnablerOptions = {
    * A callback function that is called when an error occurs during the payment process.
    * @param error - The error that occurred.
    */
-  onError?: (error: any) => void;
+  onError?: (error: unknown) => void;
 
   amount?: number;
+
+  cartId?: string;
 };
 
 /**
  * Represents the payment method code.
  */
 export enum PaymentMethod {
-  /* Apple Pay */
-  applepay = "applepay",
-  /* Bancontact card */
-  bancontactcard = "bcmc",
-  /* Card */
-  card = "card",
-  /* EPS */
-  eps = "eps",
-  /* Google Pay */
-  googlepay = "googlepay",
-  /* iDeal */
-  ideal = "ideal",
-  /* iDeal */
-  invoice = "invoice",
-  /* Klarna Pay Later */
-  klarna_pay_later = "klarna",
-  /* Klarna Pay Now */
-  klarna_pay_now = "klarna_paynow",
-  /* Klarna Pay Over Time */
-  klarna_pay_overtime = "klarna_account",
-  /* PayPal */
-  paypal = "paypal",
-  /* Purchase Order */
-  purchaseorder = "purchaseorder",
-  /* TWINT */
-  twint = "twint",
+  easycredit = 'easycredit',
 }
 
 /**
@@ -228,11 +201,11 @@ export enum DropinType {
   /*
    * The embedded drop-in type which is rendered within the page.
    */
-  embedded = "embedded",
+  embedded = 'embedded',
   /*
    * The hosted payment page (HPP) drop-in type which redirects the user to a hosted payment page.
    */
-  hpp = "hpp",
+  hpp = 'hpp',
 }
 
 /**
@@ -271,6 +244,10 @@ export type DropinOptions = {
    * @returns A Promise indicating whether the payment should proceed.
    */
   onPayButtonClick?: () => Promise<void>;
+
+  amount: number;
+
+  sessionId: string;
 };
 
 /**
@@ -287,5 +264,5 @@ export interface PaymentDropinBuilder {
    * @param config - The configuration options for the drop-in component.
    * @returns The built drop-in component.
    */
-  build(config: DropinOptions): DropinComponent;
+  build(): DropinComponent;
 }

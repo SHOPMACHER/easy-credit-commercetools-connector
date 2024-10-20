@@ -26,11 +26,15 @@
       integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
       crossorigin="anonymous"
     ></script>
-    <script type="module" src="https://ratenkauf.easycredit.de/api/resource/webcomponents/v3/easycredit-components/easycredit-components.esm.js"></script>
     <script>
-      var __VITE_PROCESSOR_URL__ = !'%VITE_PROCESSOR_URL%'.startsWith('%') && '%VITE_PROCESSOR_URL%';
-    </script>
-  
+      var __VITE_CTP_AUTH_URL__ = !'%VITE_CTP_AUTH_URL%'.startsWith('%') && '%VITE_CTP_AUTH_URL%';
+      var __VITE_CTP_API_URL__ = !'%VITE_CTP_API_URL%'.startsWith('%') && '%VITE_CTP_API_URL%';
+      var __VITE_CTP_SESSION_URL__ = !'%VITE_CTP_SESSION_URL%'.startsWith('%') && '%VITE_CTP_SESSION_URL%';
+      var __VITE_CTP_CLIENT_ID__ = !'%VITE_CTP_CLIENT_ID%'.startsWith('%') && '%VITE_CTP_CLIENT_ID%';
+      var __VITE_CTP_CLIENT_SECRET__ = !'%VITE_CTP_CLIENT_SECRET%'.startsWith('%') && '%VITE_CTP_CLIENT_SECRET%';
+      var __VITE_CTP_PROJECT_KEY__ = !'%VITE_CTP_PROJECT_KEY%'.startsWith('%') && '%VITE_CTP_PROJECT_KEY%';
+      var __VITE_PROCESSOR_URL__ = !'%VITE_PROCESSOR_URL%'.startsWith('%') && '%VITE_PROCESSOR_URL%';    </script>
+    <script src="../dev-utils/session.js"></script>
   </head>
   <body>
     <main role="main">
@@ -50,13 +54,18 @@
           <script type="module">
             import { Enabler } from "/src/main.ts";
 
-            const enabler = new Enabler({
-              showPayButton: false,
+            const testCartId = '5307942b-38b4-4cbc-95f5-c3ce2e386dd2';
 
+            const sessionId = await getSessionId(testCartId);
+            console.log('sessionId', sessionId);
+
+            const enabler = new Enabler({
               processorUrl: __VITE_PROCESSOR_URL__,
-              sessionId: '',
-              currency: "EUR",
+              sessionId: sessionId,
               amount: 500,
+              cartId: testCartId,
+
+              showPayButton: false,
               dropinHasSubmit: true,
               onComplete: ({ isSuccess, paymentReference }) => {
                 console.log("onComplete", { isSuccess, paymentReference });
@@ -72,11 +81,17 @@
               }
             });
 
-            const builder = await enabler.createDropinBuilder('embedded');
-            const component = await builder.build();
+            /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
+            // const dropinBuilder = await enabler.createDropinBuilder('embedded');
+            // const pdpWdiget = await dropinBuilder.build();
 
-            console.log('component', component);
-            component.mount("#container");
+            // pdpWdiget.mount("#container");
+
+            /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
+            const componentBuilder = await enabler.createComponentBuilder('easycredit');
+            const easyCreditPaymentMethod = await componentBuilder.build();
+
+            easyCreditPaymentMethod.mount('#container');
           </script>
         </div>
       </div>
