@@ -17,5 +17,5 @@ export const authMiddlewareOptions: AuthMiddlewareOptions = {
     clientId: readConfiguration().commerceTools.clientId,
     clientSecret: readConfiguration().commerceTools.clientSecret,
   },
-  scopes: [readConfiguration().commerceTools.scope ? readConfiguration().commerceTools.scope : 'default'],
+  scopes: [readConfiguration().commerceTools.scopes || 'default'],
 };

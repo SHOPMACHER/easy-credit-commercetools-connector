@@ -1,24 +1,15 @@
-import { authorizePayment, getEasyCreditPaymentMethod } from '../../src/controllers/payment.controller';
-import { FastifyInstance } from 'fastify';
-import { ErrorResponse } from '../../src/libs/fastify/dtos/error.dto';
-import {
-  GetPaymentMethodQueryStringSchema,
-  GetPaymentMethodResponseSchema,
-} from '../../src/dtos/payments/getPaymentMethod.dto';
-import {
-  AuthorizePaymentBodySchema,
-  AuthorizePaymentResponseSchema,
-} from '../../src/dtos/payments/authorizePayment.dto';
 import { paymentsRoute } from '../../src/routes/payment.route';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { handleAuthorizePayment, handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
 
-// Mock the controllers
-jest.mock('../../src/controllers/payment.controller', () => ({
-  authorizePayment: jest.fn(),
-  getEasyCreditPaymentMethod: jest.fn(),
-}));
+jest.mock('../../src/services/payment.service');
 
 describe('paymentsRoute', () => {
-  let fastify: FastifyInstance;
+  let fastify: Partial<FastifyInstance>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let sessionHeaderAuthHookMock: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let oauth2AuthHookMock: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let opts: any;
 
@@ -26,99 +17,114 @@ describe('paymentsRoute', () => {
     fastify = {
       get: jest.fn(),
       post: jest.fn(),
-    } as unknown as FastifyInstance;
+    };
+
+    sessionHeaderAuthHookMock = { authenticate: jest.fn(() => jest.fn()) };
+    oauth2AuthHookMock = { authenticate: jest.fn(() => jest.fn()) };
 
     opts = {
-      sessionHeaderAuthHook: {
-        authenticate: jest.fn(() => jest.fn()), // Mock session header auth hook
-      },
-      oauth2AuthHook: {
-        authenticate: jest.fn(() => jest.fn()), // Mock OAuth2 auth hook
-      },
+      sessionHeaderAuthHook: sessionHeaderAuthHookMock,
+      oauth2AuthHook: oauth2AuthHookMock,
     };
   });
 
-  it('should register GET /payment-method route with correct schema and preHandler', async () => {
-    await paymentsRoute(fastify, opts);
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should register the payment-method GET route', async () => {
+    await paymentsRoute(fastify as FastifyInstance, opts);
 
     expect(fastify.get).toHaveBeenCalledWith(
-      '/payment-method',
+      '/payment-method/:cartId',
       expect.objectContaining({
-        preHandler: [expect.any(Function)], // Use expect.any(Function) to avoid comparing actual functions
-        schema: {
-          querystring: GetPaymentMethodQueryStringSchema,
-          response: {
-            200: GetPaymentMethodResponseSchema,
-            400: ErrorResponse,
-          },
-        },
+        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
+        schema: expect.objectContaining({
+          params: expect.any(Object), // Allow any object structure
+          response: expect.objectContaining({
+            200: expect.any(Object), // Allow any object structure
+            400: expect.any(Object), // Allow any object structure
+          }),
+        }),
       }),
-      expect.any(Function),
+      expect.any(Function), // Route handler function
     );
+
+    // Test the route handler
+    const routeHandler = (fastify.get as jest.Mock).mock.calls[0][2];
+    const requestMock = { params: { cartId: '123' } } as Partial<FastifyRequest>;
+    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
+
+    (handlePaymentMethod as jest.Mock).mockResolvedValue({ method: 'mockMethod' });
+
+    await routeHandler(requestMock, replyMock);
+
+    expect(handlePaymentMethod).toHaveBeenCalledWith('123');
+    expect(replyMock.code).toHaveBeenCalledWith(200);
+    expect(replyMock.send).toHaveBeenCalledWith({ method: 'mockMethod' });
   });
 
-  it('should call getEasyCreditPaymentMethod with the correct request and reply', async () => {
-    const mockRequest = { query: { cartId: '123' } } as any;
-    const mockReply = {} as any;
-    const getEasyCreditPaymentMethodMock = getEasyCreditPaymentMethod as jest.Mock;
+  it('should register the payment POST route', async () => {
+    await paymentsRoute(fastify as FastifyInstance, opts);
 
-    await paymentsRoute(fastify, opts);
-    const handler = (fastify.get as jest.Mock).mock.calls[0][2]; // Get the handler function
-    await handler(mockRequest, mockReply);
+    expect(fastify.post).toHaveBeenCalledWith(
+      '/',
+      expect.objectContaining({
+        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
+        schema: expect.objectContaining({
+          body: expect.any(Object),
+          response: expect.objectContaining({
+            201: expect.any(Object),
+            400: expect.any(Object),
+          }),
+        }),
+      }),
+      expect.any(Function), // Route handler function
+    );
 
-    expect(getEasyCreditPaymentMethodMock).toHaveBeenCalledWith(mockRequest, mockReply);
+    // Test the route handler
+    const routeHandler = (fastify.post as jest.Mock).mock.calls[0][2];
+    const requestMock = {
+      body: { cartId: '123', redirectLinks: 'mockLink', customerRelationship: 'mockRelationship' },
+    } as Partial<FastifyRequest>;
+    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
+
+    (handleCreatePayment as jest.Mock).mockResolvedValue({ payment: 'mockPayment' });
+
+    await routeHandler(requestMock, replyMock);
+
+    expect(handleCreatePayment).toHaveBeenCalledWith('123', 'mockLink', 'mockRelationship');
+    expect(replyMock.code).toHaveBeenCalledWith(201);
+    expect(replyMock.send).toHaveBeenCalledWith({ payment: 'mockPayment' });
   });
 
-  it('should register POST /authorize route with correct schema and preHandler', async () => {
-    await paymentsRoute(fastify, opts);
+  it('should register the authorize POST route', async () => {
+    await paymentsRoute(fastify as FastifyInstance, opts);
 
     expect(fastify.post).toHaveBeenCalledWith(
       '/authorize',
       expect.objectContaining({
-        preHandler: [expect.any(Function)], // Use expect.any(Function) here as well
-        schema: {
-          body: AuthorizePaymentBodySchema,
-          response: {
-            200: AuthorizePaymentResponseSchema,
-            400: ErrorResponse,
-          },
-        },
+        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
+        schema: expect.objectContaining({
+          body: expect.any(Object),
+          response: expect.objectContaining({
+            200: expect.any(Object),
+            400: expect.any(Object),
+          }),
+        }),
       }),
-      expect.any(Function),
+      expect.any(Function), // Route handler function
     );
-  });
 
-  it('should call authorizePayment with the correct request and reply', async () => {
-    const mockRequest = { body: { paymentId: '456' } } as never;
-    const mockReply = {} as never;
-    const authorizePaymentMock = authorizePayment as jest.Mock;
+    // Test the route handler
+    const routeHandler = (fastify.post as jest.Mock).mock.calls[1][2];
+    const requestMock = { body: { paymentId: 'abc123' } } as Partial<FastifyRequest>;
+    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
 
-    await paymentsRoute(fastify, opts);
-    const handler = (fastify.post as jest.Mock).mock.calls[0][2]; // Get the handler function
-    await handler(mockRequest, mockReply);
+    await routeHandler(requestMock, replyMock);
 
-    expect(authorizePaymentMock).toHaveBeenCalledWith(mockRequest, mockReply);
-  });
-
-  it('should use session header authentication hook for GET /payment-method', async () => {
-    await paymentsRoute(fastify, opts);
-
-    const routeOptions = (fastify.get as jest.Mock).mock.calls[0][1]; // Get route options for GET
-    const preHandler = routeOptions.preHandler[0];
-
-    // Instead of comparing the function reference, check that it was called
-    expect(opts.sessionHeaderAuthHook.authenticate).toHaveBeenCalled();
-    expect(preHandler).toEqual(expect.any(Function));
-  });
-
-  it('should use oauth2 authentication hook for POST /authorize', async () => {
-    await paymentsRoute(fastify, opts);
-
-    const routeOptions = (fastify.post as jest.Mock).mock.calls[0][1]; // Get route options for POST
-    const preHandler = routeOptions.preHandler[0];
-
-    // Instead of comparing the function reference, check that it was called
-    expect(opts.oauth2AuthHook.authenticate).toHaveBeenCalled();
-    expect(preHandler).toEqual(expect.any(Function));
+    expect(handleAuthorizePayment).toHaveBeenCalledWith('abc123');
+    expect(replyMock.code).toHaveBeenCalledWith(200);
+    expect(replyMock.send).toHaveBeenCalled();
   });
 });

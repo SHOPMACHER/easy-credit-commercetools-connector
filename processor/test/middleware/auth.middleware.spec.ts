@@ -14,7 +14,7 @@ describe('Test auth.middleware.ts', () => {
   });
 
   it('should return correct scopes', () => {
-    expect(authMiddlewareOptions.scopes).toEqual([process.env.CTP_SCOPE as string]);
+    expect(authMiddlewareOptions.scopes).toEqual([process.env.CTP_SCOPES as string]);
   });
 
   it('should return correct credentials', () => {
