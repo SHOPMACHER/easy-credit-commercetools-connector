@@ -1,8 +1,22 @@
 import * as dotenv from 'dotenv';
+import { assertString } from '../utils/assert.utils';
+import { updateCustomObject } from '../commercetools/customObject.commercetools';
+import { EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL } from '../utils/constant.utils';
 dotenv.config();
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function postDeploy(_properties: Map<string, unknown>) {}
+const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
+
+async function postDeploy(_properties: Map<string, unknown>) {
+  const applicationUrl = _properties.get(CONNECT_APPLICATION_URL_KEY);
+
+  assertString(applicationUrl, CONNECT_APPLICATION_URL_KEY);
+
+  await updateCustomObject({
+    container: EASYCREDIT_CONNECTOR_KEY,
+    key: EASYCREDIT_CONNECTOR_URL,
+    value: applicationUrl,
+  });
+}
 
 async function runPostDeployScripts() {
   try {

@@ -21,8 +21,13 @@ describe('error-handler', () => {
     fastify.get('/', () => {
       throw new Errorx({
         code: 'ErrorCode',
-        message: 'someMessage',
         httpErrorStatus: 404,
+        fields: [
+          {
+            test: 'field1',
+          },
+        ],
+        message: 'someMessage',
       });
     });
 
@@ -38,6 +43,11 @@ describe('error-handler', () => {
         {
           code: 'ErrorCode',
           message: 'someMessage',
+          fields: [
+            {
+              test: 'field1',
+            },
+          ],
         },
       ],
     });
@@ -49,9 +59,11 @@ describe('error-handler', () => {
         code: 'ErrorCode',
         message: 'someMessage',
         httpErrorStatus: 404,
-        fields: {
-          test: 'field1',
-        },
+        fields: [
+          {
+            test: 'field1',
+          },
+        ],
       });
     });
 
@@ -63,13 +75,7 @@ describe('error-handler', () => {
     expect(response.json()).toStrictEqual({
       message: 'someMessage',
       statusCode: 404,
-      errors: [
-        {
-          code: 'ErrorCode',
-          message: 'someMessage',
-          test: 'field1',
-        },
-      ],
+      errors: [{ code: 'ErrorCode', message: 'someMessage', fields: [{ test: 'field1' }] }],
     });
   });
 
@@ -125,8 +131,8 @@ describe('error-handler', () => {
       errors: [
         {
           code: 'RequiredField',
-          field: 'dummy-field',
           message: 'A value is required for field dummy-field.',
+          fields: { field: 'dummy-field' },
         },
       ],
     });
@@ -150,15 +156,11 @@ describe('error-handler', () => {
       method: 'GET',
       url: '/',
     });
+
     expect(response.json()).toStrictEqual({
       message: 'someMessage',
       statusCode: 401,
-      errors: [
-        {
-          code: '401',
-          message: 'someMessage',
-        },
-      ],
+      errors: [{ code: '401', message: 'someMessage', fields: {} }],
       error: '401',
       error_description: 'someMessage',
     });

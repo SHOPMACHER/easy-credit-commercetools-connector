@@ -72,7 +72,7 @@ const transformErrorxToHTTPModel = (errors: Errorx[]): TErrorObject[] => {
     const tErrObj: TErrorObject = {
       code: err.code,
       message: err.message,
-      ...(err.fields ? err.fields : {}), // Add any additional field to the response object (which will differ per type of error)
+      ...(err.fields ? { fields: err.fields } : {}), // Add any additional field to the response object (which will differ per type of error)
     };
 
     errorObjectList.push(tErrObj);

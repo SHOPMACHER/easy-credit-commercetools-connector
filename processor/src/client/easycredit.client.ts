@@ -1,5 +1,7 @@
 import { readConfiguration } from '../utils/config.utils';
 import { EASYCREDIT_BASE_API_URL } from '../utils/constant.utils';
+import { ECCreatePaymentResponse, ECTransaction, ECTransactionError } from '../types/payment.types';
+import { Errorx } from '@commercetools/connect-payments-sdk';
 
 /**
  * Initializes the EasyCredit client
@@ -37,6 +39,36 @@ export const initEasyCreditClient = () => {
     return await response.json();
   };
 
+  const createPayment = async (
+    payload: ECTransaction,
+    customHeaders?: HeadersInit,
+  ): Promise<ECCreatePaymentResponse> => {
+    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+
+    try {
+      const response = await fetch(`${EASYCREDIT_BASE_API_URL}/payment/v3/transaction`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw await response.json();
+      }
+
+      return await response.json();
+    } catch (error: unknown) {
+      console.error('Error in easycredit createPayment', error);
+
+      throw new Errorx({
+        code: (error as ECTransactionError).title,
+        message: (error as ECTransactionError).title,
+        httpErrorStatus: 400,
+        fields: (error as ECTransactionError).violations,
+      });
+    }
+  };
+
   const authorizePayment = async (technicalTransactionId: string, customHeaders?: HeadersInit) => {
     const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
 
@@ -67,6 +99,7 @@ export const initEasyCreditClient = () => {
 
   return {
     integrationCheck,
+    createPayment,
     authorizePayment,
     getPayment,
   };
