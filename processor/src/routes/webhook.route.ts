@@ -21,7 +21,13 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/authorizePayment.dto';
-import { handleAuthorizePayment, handleCreatePayment, handlePaymentMethod } from '../services/payment.service';
+import {
+  handleAuthorizePayment,
+  handleCancelPayment,
+  handleCreatePayment,
+  handlePaymentMethod
+} from '../services/payment.service';
+import {CancelPaymentResponseSchema, CancelPaymentResponseSchemaDTO} from "../dtos/payments/updatePaymentMethod.dto";
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -30,68 +36,26 @@ type PaymentRouteOptions = {
   authorizationHook: AuthorityAuthorizationHook;
 };
 
-export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & PaymentRouteOptions) => {
-  fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO; Params: { cartId: string } }>(
-    '/payment-method/:cartId',
-    {
-      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
-      schema: {
-        params: GetPaymentMethodParamsSchema,
-        response: {
-          200: GetPaymentMethodResponseSchema,
-          400: ErrorResponse,
+export const webhookRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & PaymentRouteOptions) => {
+  fastify.post<{ Params: { paymentId: string }; Querystring: { redirectUrl: string }; Reply: CancelPaymentResponseSchemaDTO }>(
+      '/:paymentId/cancel',
+      {
+        schema: {
+          params: { type: 'object', properties: { paymentId: { type: 'string' } }, required: ['paymentId'] },
+          querystring: { type: 'object', properties: { redirectUrl: { type: 'string' } }, required: ['redirectUrl'] },
+          response: {
+            200: CancelPaymentResponseSchema,
+            400: ErrorResponse,
+          },
         },
       },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      // @ts-expect-error - params should be defined
-      const { cartId } = request.params;
+      async (request: FastifyRequest<{ Params: { paymentId: string }; Querystring: { redirectUrl: string } }>, reply: FastifyReply) => {
+        const { paymentId } = request.params;
+        const { redirectUrl } = request.query;
 
-      const method = await handlePaymentMethod(cartId);
+        await handleCancelPayment(paymentId);
 
-      reply.code(200).send(method);
-    },
-  );
-
-  fastify.post<{ Body: CreatePaymentRequestSchemaDTO; Reply: CreatePaymentResponseSchemaDTO }>(
-    '/',
-    {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
-      schema: {
-        body: CreatePaymentBodySchema,
-        response: {
-          201: CreatePaymentResponseSchema,
-          400: ErrorResponse,
-        },
+        return reply.redirect(redirectUrl, 302);
       },
-    },
-    async (request, reply) => {
-      const { cartId, redirectLinks, customerRelationship } = request.body;
-
-      const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship);
-
-      reply.code(201).send(response);
-    },
-  );
-
-  fastify.post<{ Body: AuthorizePaymentRequestSchemaDTO; Reply: AuthorizePaymentResponseSchemaDTO }>(
-    '/authorize',
-    {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
-      schema: {
-        body: AuthorizePaymentBodySchema,
-        response: {
-          200: AuthorizePaymentResponseSchema,
-          400: ErrorResponse,
-        },
-      },
-    },
-    async (request, reply) => {
-      const { paymentId } = request.body;
-
-      await handleAuthorizePayment(paymentId);
-
-      reply.code(200).send();
-    },
   );
 };
