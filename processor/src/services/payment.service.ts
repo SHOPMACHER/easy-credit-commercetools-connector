@@ -69,19 +69,4 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
   }
 };
 
-export const handleDeniedPayment = async (paymentId: string): Promise<string> => {
-  try {
-    // Update the payment status to "Denied"
-    await updatePaymentStatus(paymentId, 'Failure');
-
-    // Unfreeze the cart associated with this payment
-    await unfreezeCartById(paymentId);
-
-    return paymentId;
-  } catch (error) {
-    log.error('Error in denying payment and unfreezing cart', error);
-    throw error;
-  }
-};
-
 

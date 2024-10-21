@@ -42,13 +42,13 @@ export const updatePaymentStatus = async (paymentId: string, newStatus: string) 
       });
     }
 
-    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId || 'c2b818bb.1017101417aBEK0At8kUEJLJxGnygmuWm1' as string);
+    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId as string);
 
     if (easyTransaction.status !== 'DECLINED') {
       throw new Errorx({
-          code: 'TransactionNotDeclined',
-          message: 'Transaction status is not DECLINED.',
-          httpErrorStatus: 400,
+        code: 'TransactionNotDeclined',
+        message: 'Transaction status is not DECLINED.',
+        httpErrorStatus: 400,
       });
     }
 
