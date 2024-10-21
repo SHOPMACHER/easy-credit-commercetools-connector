@@ -3,6 +3,7 @@ import { createApiRoot } from '../client/create.client';
 import { log } from '../libs/logger';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/payment';
 import { initEasyCreditClient } from "../client/easycredit.client";
+import { CTTransactionState, CTTransactionType } from "../types/payment.types";
 
 export const getPaymentById = async (paymentId: string) => {
   try {
@@ -84,7 +85,7 @@ export const updatePaymentStatus = async (paymentId: string, newStatus: string) 
 
     // Find the transaction with type 'Authorization' and state 'Initial'
     const transaction = payment.transactions?.find(
-        (tx) => tx.type === 'Authorization' && tx.state === 'Initial'
+        (tx) => tx.type === CTTransactionType.Authorization && tx.state === CTTransactionState.Initial
     );
 
     if (!transaction) {
