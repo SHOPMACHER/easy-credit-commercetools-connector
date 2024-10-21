@@ -278,4 +278,111 @@ describe('Cart Functions', () => {
         expect.anything() // Since error is dynamic, you can check any error
     );
   });
+
+  describe('updateCart', () => {
+    it('should throw an error if no payments are found for the paymentId', async () => {
+      const paymentId = 'payment-id-no-payments';
+
+      // Mock the response for carts().get() with an empty array for results
+      const cartsMock = jest.fn();
+      (createApiRoot as jest.Mock).mockImplementation(() => ({
+        carts: jest.fn().mockImplementation(() => ({
+          get: cartsMock,
+        })),
+      }));
+
+      cartsMock.mockImplementation(() => ({
+        execute: jest.fn().mockResolvedValue({
+          body: {
+            count: 0,
+            results: [],
+          },
+        }),
+      }));
+
+      // Test for the case when no payments are found
+      await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
+
+      expect(log.error).toHaveBeenCalledWith(
+          'Error in unfreezing CommerceTools Cart',
+          expect.anything() // Matching any dynamic error
+      );
+    });
+
+    it('should handle a network error during cart retrieval', async () => {
+      const paymentId = 'payment-id-123';
+
+      // Simulate a network error from carts().get()
+      const cartsMock = jest.fn();
+      (createApiRoot as jest.Mock).mockImplementation(() => ({
+        carts: jest.fn().mockImplementation(() => ({
+          get: cartsMock,
+        })),
+      }));
+
+      cartsMock.mockImplementation(() => ({
+        execute: jest.fn().mockRejectedValue(new Error('Network error')),
+      }));
+
+      await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
+
+      expect(log.error).toHaveBeenCalledWith(
+          'Error in unfreezing CommerceTools Cart',
+          expect.anything()
+      );
+    });
+
+    it('should handle a cart version conflict during the unfreeze action', async () => {
+      const mockCartId = 'cart-id-123';
+      const mockCartVersion = 1;
+      const paymentId = 'payment-id-123';
+
+      // Mock the responses for API carts and getCartById
+      const cartsMock = jest.fn();
+      const postMock = jest.fn();
+      // @ts-ignore
+      const getCartByIdMock = jest.fn().mockResolvedValue({
+        id: mockCartId,
+        version: mockCartVersion,
+      });
+
+      (createApiRoot as jest.Mock).mockImplementation(() => ({
+        carts: jest.fn().mockImplementation(() => ({
+          get: cartsMock,
+          withId: jest.fn().mockReturnValue({
+            post: postMock,
+          }),
+        })),
+      }));
+
+      // Mock the response for carts().get()
+      cartsMock.mockImplementation(() => ({
+        execute: jest.fn().mockResolvedValue({
+          body: {
+            count: 1,
+            results: [{ id: mockCartId }],
+          },
+        }),
+      }));
+
+      // Simulate a version conflict error during the unfreeze action
+      postMock.mockImplementation(() => ({
+        execute: jest.fn().mockRejectedValue({
+          code: 'VersionConflict',
+          body: { message: 'Version mismatch', errors: [{ field: 'version', message: 'Outdated version' }] },
+          statusCode: 409,
+        }),
+      }));
+
+      // Spy on getCartById to use the mock
+      jest.spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById').mockImplementation(getCartByIdMock);
+
+      await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
+
+      expect(log.error).toHaveBeenCalledWith(
+          'Error in unfreezing CommerceTools Cart',
+          expect.anything() // Matching any dynamic error
+      );
+    });
+  });
 });
