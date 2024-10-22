@@ -161,6 +161,16 @@ export type ECCreatePaymentResponse = {
   };
 };
 
+export enum ECTransactionStatus {
+  PENDING = 'PENDING',
+  SUCCESS = 'SUCCESS',
+  FAILURE = 'FAILURE',
+}
+
+export type ECGetPaymentResponse = {
+  status: ECTransactionStatus;
+};
+
 type ECTransactionViolation = {
   field: string;
   message: string;

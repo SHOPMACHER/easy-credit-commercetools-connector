@@ -1,6 +1,11 @@
 import { readConfiguration } from '../utils/config.utils';
 import { EASYCREDIT_BASE_API_URL } from '../utils/constant.utils';
-import { ECCreatePaymentResponse, ECTransaction, ECTransactionError } from '../types/payment.types';
+import {
+  ECCreatePaymentResponse,
+  ECGetPaymentResponse,
+  ECTransaction,
+  ECTransactionError,
+} from '../types/payment.types';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 
 /**
@@ -83,18 +88,33 @@ export const initEasyCreditClient = () => {
     return await response.json();
   };
 
-  const getPayment = async (technicalTransactionId: string, customHeaders?: HeadersInit) => {
-    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+  const getPayment = async (
+    technicalTransactionId: string,
+    customHeaders?: HeadersInit,
+  ): Promise<ECGetPaymentResponse> => {
+    try {
+      const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
 
-    const response = await fetch(
-        `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}`,
-        {
-          method: 'GET',
-          headers,
-        },
-    );
+      const response = await fetch(`${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}`, {
+        method: 'GET',
+        headers,
+      });
 
-    return await response.json();
+      if (!response.ok) {
+        throw await response.json();
+      }
+
+      return await response.json();
+    } catch (error: unknown) {
+      console.error('Error in easycredit getPayment', error);
+
+      throw new Errorx({
+        code: (error as ECTransactionError).title,
+        message: (error as ECTransactionError).title,
+        httpErrorStatus: 400,
+        fields: (error as ECTransactionError).violations,
+      });
+    }
   };
 
   return {

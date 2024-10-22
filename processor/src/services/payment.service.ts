@@ -1,5 +1,5 @@
-import { Cart, Address, Errorx, MultiErrorx, Transaction } from '@commercetools/connect-payments-sdk';
-import { getCartById, updateCart, unfreezeCartById } from '../commercetools/cart.commercetools';
+import { Address, Cart, Errorx, MultiErrorx, Transaction } from '@commercetools/connect-payments-sdk';
+import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
 import {
   CTCartState,
@@ -9,6 +9,7 @@ import {
   ECTransactionCustomerRelationship,
   ECTransactionDecision,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  ECTransactionStatus,
   GetPaymentMethodResponse,
 } from '../types/payment.types';
 import { log } from '../libs/logger';
@@ -19,7 +20,7 @@ import {
   validatePayment,
   validatePendingTransaction,
 } from '../validators/payment.validators';
-import { createPayment, getPaymentById, updatePayment, updatePaymentStatus } from '../commercetools/payment.commercetools';
+import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
@@ -144,10 +145,30 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
 
 export const handleCancelPayment = async (paymentId: string): Promise<string> => {
   try {
-    // Update the payment status to "Cancelled"
-    await updatePaymentStatus(paymentId, 'Failure');
+    const payment = await getPaymentById(paymentId);
 
-    await unfreezeCartById(paymentId);
+    validatePayment(payment);
+    validatePendingTransaction(payment);
+
+    const transaction = getPendingTransaction(payment) as Transaction;
+    const interactionId = transaction.interactionId as string;
+
+    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId as string);
+
+    if (easyTransaction.status !== ECTransactionStatus.FAILURE) {
+      throw new Errorx({
+        code: 'TransactionNotDeclined',
+        message: 'Transaction status is not DECLINED.',
+        httpErrorStatus: 400,
+      });
+    }
+
+    await updatePayment(payment, [
+      { action: 'changeTransactionState', transactionId: interactionId, state: 'Failure' },
+    ]);
+    const cart = await getCartByPaymentId(payment.id);
+
+    await updateCart(cart, [{ action: 'unfreezeCart' }]);
 
     return paymentId;
   } catch (error) {
@@ -155,5 +176,3 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     throw error;
   }
 };
-
-
