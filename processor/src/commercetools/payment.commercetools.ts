@@ -4,6 +4,7 @@ import { log } from '../libs/logger';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/payment';
 import { initEasyCreditClient } from "../client/easycredit.client";
 import { CTTransactionState, CTTransactionType } from "../types/payment.types";
+import { EASYCREDIT_PAYMENT_METHOD } from "../utils/constant.utils";
 
 export const getPaymentById = async (paymentId: string) => {
   try {
@@ -81,6 +82,15 @@ export const updatePaymentStatus = async (paymentId: string, newStatus: string) 
   try {
     // Get the payment to retrieve the current version and transactions
     const payment = await getPaymentById(paymentId);
+
+    if (payment.paymentMethodInfo?.paymentInterface?.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD) {
+        throw new Errorx({
+            code: 'InvalidPaymentMethod',
+            message: 'Payment method is not EasyCredit.',
+            httpErrorStatus: 400,
+        });
+    }
+
     const paymentVersion = payment.version;
 
     // Find the transaction with type 'Authorization' and state 'Initial'
