@@ -51,7 +51,7 @@ export class EasyCreditCheckout extends BaseComponent {
     // Intentionally left blank for future functionality.
   }
 
-  public async getPaymentMethod(): Promise<PaymentMethodResponse> {
+  public async getPaymentMethod(): Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse> {
     const { processorUrl, cartId, sessionId } = this.baseOptions;
 
     const res = await fetch(`${processorUrl}/payments/payment-method/${cartId}`, {
