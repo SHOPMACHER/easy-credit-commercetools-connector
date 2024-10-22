@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         directory:
-          - enabler
+          - web-component
           - processor
 
     steps:

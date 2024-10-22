@@ -13,11 +13,20 @@ export class EasyCreditCheckoutBuilder implements PaymentComponentBuilder {
   }
 }
 
-interface PaymentMethodResponse {
-  webShopId?: string;
-  errors?: {
-    webShopId: string;
+interface PaymentMethodSuccessResponse {
+  webShopId: string;
+}
+
+interface PaymentMethodErrorResponse {
+  statusCode: number;
+  message: string;
+  errors: {
+    code: string;
     message: string;
+    fields?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any;
+    };
   }[];
 }
 
@@ -42,10 +51,10 @@ export class EasyCreditCheckout extends BaseComponent {
     // Intentionally left blank for future functionality.
   }
 
-  public async getPaymentMethod(): Promise<PaymentMethodResponse> {
+  public async getPaymentMethod(): Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse> {
     const { processorUrl, cartId, sessionId } = this.baseOptions;
 
-    const res = await fetch(`${processorUrl}/payments/payment-method?cartId=${cartId}`, {
+    const res = await fetch(`${processorUrl}/payments/payment-method/${cartId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -53,19 +62,16 @@ export class EasyCreditCheckout extends BaseComponent {
       },
     });
 
-    if (!res.ok) {
-      throw new Error('Error fetching payment method.');
-    }
-
     return res.json();
   }
 
-  private generateTemplate(response: PaymentMethodResponse): string {
+  private generateTemplate(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): string {
     const errorMessages: string[] = [];
     let webShopId: string = '';
 
-    if (response?.errors) {
-      webShopId = response.errors[0].webShopId;
+    if ('errors' in response) {
+      webShopId = response.errors[0]?.fields?.webShopId;
+
       response.errors.forEach((error) => {
         errorMessages.push(error.message);
       });

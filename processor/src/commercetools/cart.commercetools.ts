@@ -53,12 +53,15 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
 export const unfreezeCartById = async (paymentId: string) => {
   try {
-    const carts = await createApiRoot().carts().get({
-      queryArgs: {
-        where: 'paymentInfo(payments(id="' + paymentId + '"))',
-        limit: 1
-      }
-    }).execute();
+    const carts = await createApiRoot()
+      .carts()
+      .get({
+        queryArgs: {
+          where: 'paymentInfo(payments(id="' + paymentId + '"))',
+          limit: 1,
+        },
+      })
+      .execute();
 
     // throw error if cart is not found
     if (carts.body.count === 0) {
@@ -94,6 +97,8 @@ export const unfreezeCartById = async (paymentId: string) => {
     log.info(`${cartId} cart unfrozen.`);
 
     return response.body;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in unfreezing CommerceTools Cart', error);
 
@@ -105,4 +110,3 @@ export const unfreezeCartById = async (paymentId: string) => {
     });
   }
 };
-

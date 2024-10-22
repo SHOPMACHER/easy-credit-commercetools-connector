@@ -1,5 +1,5 @@
 deployAs:
-  - name: enabler
+  - name: web-component
     applicationType: assets
   - name: processor
     applicationType: service

@@ -1,5 +1,4 @@
-import {Static, Type} from '@sinclair/typebox';
-import {GetPaymentMethodResponseSchema} from "./getPaymentMethod.dto";
+import { Static, Type } from '@sinclair/typebox';
 
 export const CancelPaymentResponseSchema = Type.Object({
   paymentId: Type.String(),
