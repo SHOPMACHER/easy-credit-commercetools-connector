@@ -69,6 +69,7 @@ describe('updatePaymentStatus', () => {
     const mockPayment = {
       id: paymentId,
       version: 1,
+      paymentMethodInfo: { paymentInterface: 'easycredit' },
       transactions: [
         { id: 'transaction-1', type: 'Authorization', state: 'Initial', interactionId: 'interaction-1' },
       ],
@@ -76,10 +77,8 @@ describe('updatePaymentStatus', () => {
     const mockEasyTransaction = { status: 'DECLINED' };
     const mockResponse = { body: { success: true } };
 
-    // Use jest.spyOn to spy and mock getPaymentById
     jest.spyOn(require('../../src/commercetools/payment.commercetools'), 'getPaymentById').mockResolvedValue(mockPayment);
 
-    // Mock initEasyCreditClient and the response returned from the API
     (initEasyCreditClient as jest.Mock).mockReturnValue({
       getPayment: jest.fn().mockResolvedValue(mockEasyTransaction),
     });
@@ -105,10 +104,10 @@ describe('updatePaymentStatus', () => {
     const mockPayment = {
       id: paymentId,
       version: 1,
+      paymentMethodInfo: { paymentInterface: 'easycredit' },
       transactions: [],
     };
 
-    // Use jest.spyOn to mock getPaymentById
     jest.spyOn(require('../../src/commercetools/payment.commercetools'), 'getPaymentById').mockResolvedValue(mockPayment);
 
     await expect(updatePaymentStatus(paymentId, newStatus)).rejects.toThrow(Errorx);
@@ -119,16 +118,15 @@ describe('updatePaymentStatus', () => {
     const mockPayment = {
       id: paymentId,
       version: 1,
+      paymentMethodInfo: { paymentInterface: 'easycredit' },
       transactions: [
         { id: 'transaction-1', type: 'Authorization', state: 'Initial', interactionId: 'interaction-1' },
       ],
     };
     const mockEasyTransaction = { status: 'APPROVED' };
 
-    // Use jest.spyOn to mock getPaymentById
     jest.spyOn(require('../../src/commercetools/payment.commercetools'), 'getPaymentById').mockResolvedValue(mockPayment);
 
-    // Mock initEasyCreditClient
     (initEasyCreditClient as jest.Mock).mockReturnValue({
       getPayment: jest.fn().mockResolvedValue(mockEasyTransaction),
     });
@@ -136,4 +134,21 @@ describe('updatePaymentStatus', () => {
     await expect(updatePaymentStatus(paymentId, newStatus)).rejects.toThrow(Errorx);
     expect(log.error).toHaveBeenCalled();
   });
+
+  it('should throw an error if payment method is not EasyCredit', async () => {
+    const mockPayment = {
+      id: paymentId,
+      version: 1,
+      paymentMethodInfo: { paymentInterface: 'not-easycredit' },
+      transactions: [
+        { id: 'transaction-1', type: 'Authorization', state: 'Initial', interactionId: 'interaction-1' },
+      ],
+    };
+
+    jest.spyOn(require('../../src/commercetools/payment.commercetools'), 'getPaymentById').mockResolvedValue(mockPayment);
+
+    await expect(updatePaymentStatus(paymentId, newStatus)).rejects.toThrow(Errorx);
+    expect(log.error).toHaveBeenCalledWith('Error in updating CommerceTools Payment status', expect.anything());
+  });
 });
+
