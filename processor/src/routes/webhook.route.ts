@@ -4,7 +4,7 @@ import { handleCancelPayment } from '../services/payment.service';
 import { CancelPaymentResponseSchema, CancelPaymentResponseSchemaDTO } from '../dtos/payments/updatePaymentMethod.dto';
 
 export const webhookRoute = async (fastify: FastifyInstance) => {
-  fastify.post<{
+  fastify.get<{
     Params: { paymentId: string };
     Querystring: { redirectUrl: string };
     Reply: CancelPaymentResponseSchemaDTO;
@@ -29,6 +29,9 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
 
       await handleCancelPayment(paymentId);
 
+      if (!redirectUrl) {
+        return reply.code(200).send({ paymentId });
+      }
       return reply.redirect(redirectUrl, 302);
     },
   );

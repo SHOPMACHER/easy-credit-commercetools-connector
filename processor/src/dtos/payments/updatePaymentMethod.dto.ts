@@ -1,6 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 
-export const CancelPaymentResponseSchema = Type.Object({
+export const CancelPaymentResponseSchema = Type.Null({
   paymentId: Type.String(),
 });
 
