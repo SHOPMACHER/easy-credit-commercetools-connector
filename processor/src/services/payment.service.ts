@@ -1,5 +1,5 @@
 import { Cart, Address, Errorx, MultiErrorx, Transaction } from '@commercetools/connect-payments-sdk';
-import { getCartById, updateCart } from '../commercetools/cart.commercetools';
+import { getCartById, updateCart, unfreezeCartById } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
 import {
   CTCartState,
@@ -19,7 +19,7 @@ import {
   validatePayment,
   validatePendingTransaction,
 } from '../validators/payment.validators';
-import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
+import { createPayment, getPaymentById, updatePayment, updatePaymentStatus } from '../commercetools/payment.commercetools';
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
@@ -141,3 +141,19 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     throw error;
   }
 };
+
+export const handleCancelPayment = async (paymentId: string): Promise<string> => {
+  try {
+    // Update the payment status to "Cancelled"
+    await updatePaymentStatus(paymentId, 'Failure');
+
+    await unfreezeCartById(paymentId);
+
+    return paymentId;
+  } catch (error) {
+    log.error('Error in cancelling payment and unfreezing cart', error);
+    throw error;
+  }
+};
+
+
