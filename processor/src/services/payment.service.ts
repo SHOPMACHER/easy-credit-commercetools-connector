@@ -19,7 +19,12 @@ import {
   validatePayment,
   validatePendingTransaction,
 } from '../validators/payment.validators';
-import { createPayment, getPaymentById, updatePayment, updatePaymentStatus } from '../commercetools/payment.commercetools';
+import {
+  createPayment,
+  getPaymentById,
+  updatePayment,
+  updatePaymentStatus,
+} from '../commercetools/payment.commercetools';
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
@@ -155,5 +160,3 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     throw error;
   }
 };
-
-

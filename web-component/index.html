@@ -54,7 +54,7 @@
           <script type="module">
             import { Enabler } from "/src/main.ts";
 
-            const testCartId = '5307942b-38b4-4cbc-95f5-c3ce2e386dd2';
+            const testCartId = '8f2c0166-373d-487e-b402-8ab2ecde3a3a';
 
             const sessionId = await getSessionId(testCartId);
             console.log('sessionId', sessionId);
@@ -82,16 +82,16 @@
             });
 
             /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
-            // const dropinBuilder = await enabler.createDropinBuilder('embedded');
-            // const pdpWdiget = await dropinBuilder.build();
+            const dropinBuilder = await enabler.createDropinBuilder('embedded');
+            const pdpWdiget = await dropinBuilder.build();
 
-            // pdpWdiget.mount("#container");
+            pdpWdiget.mount("#container");
 
             /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
-            const componentBuilder = await enabler.createComponentBuilder('easycredit');
-            const easyCreditPaymentMethod = await componentBuilder.build();
+            // const componentBuilder = await enabler.createComponentBuilder('easycredit');
+            // const easyCreditPaymentMethod = await componentBuilder.build();
 
-            easyCreditPaymentMethod.mount('#container');
+            // easyCreditPaymentMethod.mount('#container');
           </script>
         </div>
       </div>
