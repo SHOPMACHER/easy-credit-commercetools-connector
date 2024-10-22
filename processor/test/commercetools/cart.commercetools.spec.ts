@@ -3,6 +3,7 @@ import { createApiRoot } from '../../src/client/create.client';
 import { log } from '../../src/libs/logger';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { CartUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/cart';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 jest.mock('../../src/client/create.client');
 jest.mock('../../src/libs/logger');
@@ -22,6 +23,7 @@ describe('Cart Functions', () => {
         carts: () => ({
           withId: () => ({
             get: () => ({
+              // @ts-expect-error expect-never-as-type
               execute: jest.fn().mockResolvedValue(mockResponse),
             }),
           }),
@@ -45,6 +47,7 @@ describe('Cart Functions', () => {
         carts: () => ({
           withId: () => ({
             get: () => ({
+              // @ts-expect-error expect-never-as-type
               execute: jest.fn().mockRejectedValue(errorResponse),
             }),
           }),
@@ -98,6 +101,7 @@ describe('Cart Functions', () => {
         carts: () => ({
           withId: () => ({
             post: () => ({
+              // @ts-expect-error expect-never-as-type
               execute: jest.fn().mockResolvedValue(mockResponse),
             }),
           }),
@@ -122,6 +126,7 @@ describe('Cart Functions', () => {
         carts: () => ({
           withId: () => ({
             post: () => ({
+              // @ts-expect-error expect-never-as-type
               execute: jest.fn().mockRejectedValue(errorResponse),
             }),
           }),
@@ -142,7 +147,8 @@ describe('Cart Functions', () => {
     // Mock responses for API carts and getCartById
     const cartsMock = jest.fn();
     const postMock = jest.fn();
-    // @ts-ignore
+
+    // @ts-expect-error expect-never-as-type
     const getCartByIdMock = jest.fn().mockResolvedValue({
       id: mockCartId,
       version: mockCartVersion,
@@ -159,7 +165,7 @@ describe('Cart Functions', () => {
 
     // Mock the response for carts().get()
     cartsMock.mockImplementation(() => ({
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       execute: jest.fn().mockResolvedValue({
         body: {
           count: 1,
@@ -170,7 +176,7 @@ describe('Cart Functions', () => {
 
     // Mock the response for carts().withId().post()
     postMock.mockImplementation(() => ({
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       execute: jest.fn().mockResolvedValue({
         body: {
           success: true,
@@ -179,7 +185,10 @@ describe('Cart Functions', () => {
     }));
 
     // Spy on getCartById to use the mock
-    jest.spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById').mockImplementation(getCartByIdMock);
+    jest
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      .spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById')
+      .mockImplementation(getCartByIdMock);
 
     const result = await unfreezeCartById(paymentId);
 
@@ -211,7 +220,7 @@ describe('Cart Functions', () => {
     }));
 
     cartsMock.mockImplementation(() => ({
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       execute: jest.fn().mockResolvedValue({
         body: {
           count: 0,
@@ -223,8 +232,8 @@ describe('Cart Functions', () => {
     await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
 
     expect(log.error).toHaveBeenCalledWith(
-        'Error in unfreezing CommerceTools Cart',
-        expect.anything() // Since error is dynamic, you can check any error
+      'Error in unfreezing CommerceTools Cart',
+      expect.anything(), // Since error is dynamic, you can check any error
     );
   });
 
@@ -236,7 +245,7 @@ describe('Cart Functions', () => {
     // Mock responses for API carts and getCartById
     const cartsMock = jest.fn();
     const postMock = jest.fn();
-    // @ts-ignore
+    // @ts-expect-error expect-never-as-type
     const getCartByIdMock = jest.fn().mockResolvedValue({
       id: mockCartId,
       version: mockCartVersion,
@@ -253,7 +262,7 @@ describe('Cart Functions', () => {
 
     // Mock the response for carts().get()
     cartsMock.mockImplementation(() => ({
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       execute: jest.fn().mockResolvedValue({
         body: {
           count: 1,
@@ -264,18 +273,21 @@ describe('Cart Functions', () => {
 
     // Mock error for carts().withId().post()
     postMock.mockImplementation(() => ({
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       execute: jest.fn().mockRejectedValue(new Error('Unfreeze action failed')),
     }));
 
     // Spy on getCartById to use the mock
-    jest.spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById').mockImplementation(getCartByIdMock);
+    jest
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      .spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById')
+      .mockImplementation(getCartByIdMock);
 
     await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
 
     expect(log.error).toHaveBeenCalledWith(
-        'Error in unfreezing CommerceTools Cart',
-        expect.anything() // Since error is dynamic, you can check any error
+      'Error in unfreezing CommerceTools Cart',
+      expect.anything(), // Since error is dynamic, you can check any error
     );
   });
 
@@ -292,6 +304,7 @@ describe('Cart Functions', () => {
       }));
 
       cartsMock.mockImplementation(() => ({
+        // @ts-expect-error expect-never-as-type
         execute: jest.fn().mockResolvedValue({
           body: {
             count: 0,
@@ -304,8 +317,8 @@ describe('Cart Functions', () => {
       await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
 
       expect(log.error).toHaveBeenCalledWith(
-          'Error in unfreezing CommerceTools Cart',
-          expect.anything() // Matching any dynamic error
+        'Error in unfreezing CommerceTools Cart',
+        expect.anything(), // Matching any dynamic error
       );
     });
 
@@ -321,15 +334,13 @@ describe('Cart Functions', () => {
       }));
 
       cartsMock.mockImplementation(() => ({
+        // @ts-expect-error expect-never-as-type
         execute: jest.fn().mockRejectedValue(new Error('Network error')),
       }));
 
       await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
 
-      expect(log.error).toHaveBeenCalledWith(
-          'Error in unfreezing CommerceTools Cart',
-          expect.anything()
-      );
+      expect(log.error).toHaveBeenCalledWith('Error in unfreezing CommerceTools Cart', expect.anything());
     });
 
     it('should handle a cart version conflict during the unfreeze action', async () => {
@@ -340,7 +351,7 @@ describe('Cart Functions', () => {
       // Mock the responses for API carts and getCartById
       const cartsMock = jest.fn();
       const postMock = jest.fn();
-      // @ts-ignore
+      // @ts-expect-error expect-never-as-type
       const getCartByIdMock = jest.fn().mockResolvedValue({
         id: mockCartId,
         version: mockCartVersion,
@@ -357,6 +368,7 @@ describe('Cart Functions', () => {
 
       // Mock the response for carts().get()
       cartsMock.mockImplementation(() => ({
+        // @ts-expect-error expect-never-as-type
         execute: jest.fn().mockResolvedValue({
           body: {
             count: 1,
@@ -367,6 +379,7 @@ describe('Cart Functions', () => {
 
       // Simulate a version conflict error during the unfreeze action
       postMock.mockImplementation(() => ({
+        // @ts-expect-error expect-never-as-type
         execute: jest.fn().mockRejectedValue({
           code: 'VersionConflict',
           body: { message: 'Version mismatch', errors: [{ field: 'version', message: 'Outdated version' }] },
@@ -375,13 +388,16 @@ describe('Cart Functions', () => {
       }));
 
       // Spy on getCartById to use the mock
-      jest.spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById').mockImplementation(getCartByIdMock);
+      jest
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        .spyOn(require('../../src/commercetools/cart.commercetools'), 'getCartById')
+        .mockImplementation(getCartByIdMock);
 
       await expect(unfreezeCartById(paymentId)).rejects.toThrow(Errorx);
 
       expect(log.error).toHaveBeenCalledWith(
-          'Error in unfreezing CommerceTools Cart',
-          expect.anything() // Matching any dynamic error
+        'Error in unfreezing CommerceTools Cart',
+        expect.anything(), // Matching any dynamic error
       );
     });
   });
