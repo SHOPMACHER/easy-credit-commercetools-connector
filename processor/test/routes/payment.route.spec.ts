@@ -55,13 +55,13 @@ describe('paymentsRoute', () => {
     const requestMock = { params: { cartId: '123' } } as Partial<FastifyRequest>;
     const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
 
-    (handlePaymentMethod as jest.Mock).mockResolvedValue({ method: 'mockMethod' });
+    (handlePaymentMethod as jest.Mock).mockResolvedValue({ webShopId: '123', amount: 10 });
 
     await routeHandler(requestMock, replyMock);
 
     expect(handlePaymentMethod).toHaveBeenCalledWith('123');
     expect(replyMock.code).toHaveBeenCalledWith(200);
-    expect(replyMock.send).toHaveBeenCalledWith({ method: 'mockMethod' });
+    expect(replyMock.send).toHaveBeenCalledWith({ webShopId: '123', amount: 10 });
   });
 
   it('should register the payment POST route', async () => {

@@ -11,6 +11,7 @@ export const GetPaymentMethodParamsSchema = {
 
 export const GetPaymentMethodResponseSchema = Type.Object({
   webShopId: Type.String(),
+  amount: Type.Number(),
 });
 
 export type GetPaymentMethodResponseSchemaDTO = Static<typeof GetPaymentMethodResponseSchema>;

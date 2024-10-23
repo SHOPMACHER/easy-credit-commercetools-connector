@@ -62,28 +62,13 @@
             const enabler = new Enabler({
               processorUrl: __VITE_PROCESSOR_URL__,
               sessionId: sessionId,
-              amount: 500,
-              cartId: testCartId,
-
-              showPayButton: false,
-              dropinHasSubmit: true,
-              onComplete: ({ isSuccess, paymentReference }) => {
-                console.log("onComplete", { isSuccess, paymentReference });
-              },
-              onError: (err) => {
-                console.error("onError", err);
-              },
-              onDropinReady: () => {
-                console.log('dropin is ready');
-              },
-              onPayButtonClick: () => {
-                console.log('pay button handler');
-              }
             });
 
             /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
-            const dropinBuilder = await enabler.createDropinBuilder('embedded');
-            const pdpWdiget = await dropinBuilder.build();
+            const widgetBuilder = await enabler.createWidgetBuilder();
+            const pdpWdiget = await widgetBuilder.build({
+              amount: 500
+            });
 
             pdpWdiget.mount("#container");
 

@@ -55,7 +55,7 @@ describe('Payment handlers', () => {
       const mockCart = {
         billingAddress: {},
         shippingAddress: {},
-        totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
+        totalPrice: { currencyCode: 'EUR', centAmount: 1000, fractionDigits: 2 },
       };
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       (validateAddresses as jest.Mock).mockReturnValue([]);
@@ -64,7 +64,7 @@ describe('Payment handlers', () => {
 
       const result = await handlePaymentMethod('cart123');
 
-      expect(result).toEqual({ webShopId: 'webShopId123' });
+      expect(result).toEqual({ webShopId: 'webShopId123', amount: 10 });
       expect(getCartById).toHaveBeenCalledWith('cart123');
     });
 

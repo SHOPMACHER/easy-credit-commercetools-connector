@@ -24,6 +24,7 @@ import { createPayment, getPaymentById, updatePayment } from '../commercetools/p
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
+import { convertCentsToEur } from '../utils/app.utils';
 
 // Helper to handle validation and return errors
 const validateCart = (cart: Cart): Errorx[] => {
@@ -55,7 +56,10 @@ export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMet
       throw new MultiErrorx(errors);
     }
 
-    return { webShopId: readConfiguration().easyCredit.webShopId };
+    return {
+      webShopId: readConfiguration().easyCredit.webShopId,
+      amount: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
+    };
   } catch (error: unknown) {
     log.error('Error in getting EasyCredit Payment Method', error);
     throw error;

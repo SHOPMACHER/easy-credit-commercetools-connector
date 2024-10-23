@@ -24,9 +24,9 @@ jobs:
         with:
           node-version: '20.9.0'
 
-      - name: Run tests on web-component
+      - name: Run tests on assets
         run: npm ci && npm run test
-        working-directory: web-component
+        working-directory: assets
 
       - name: Run tests processor
         run: npm ci && npm run test

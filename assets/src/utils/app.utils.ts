@@ -11,11 +11,7 @@ export const importEasyCreditScript = () => {
   g.src =
     'https://ratenkauf.easycredit.de/api/resource/webcomponents/v3/easycredit-components/easycredit-components.esm.js';
 
-  const s = document.getElementsByTagName('script')[0];
-
-  if (s && s.parentNode) {
-    s.parentNode.insertBefore(g, s);
-  }
+  document.head.appendChild(g);
 };
 
 export const findElement = (selector: string): Element => {

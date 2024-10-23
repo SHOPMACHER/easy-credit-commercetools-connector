@@ -5,7 +5,7 @@ PSPs provide libraries that can be used on client side to load on browser or oth
 
 
 ## Getting Started
-Please run following npm commands under `enabler` folder for development work in local environment.
+Please run following npm commands under `web-component` folder for development work in local environment.
 
 #### Install dependencies
 ```
