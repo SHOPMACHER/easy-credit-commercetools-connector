@@ -60,7 +60,7 @@ export class ECCheckoutComponent implements CheckoutComponent {
 
     const template = this.generateTemplate(response);
     findElement(selector).insertAdjacentHTML('afterbegin', template);
-    document.querySelector('easycredit-checkout')?.addEventListener('submit', this.submit);
+    document.querySelector('easycredit-checkout')?.addEventListener('submit', () => this.submit());
   }
 
   async submit(): Promise<void> {

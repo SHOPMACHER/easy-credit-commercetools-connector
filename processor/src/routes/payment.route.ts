@@ -56,7 +56,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   fastify.post<{ Body: CreatePaymentRequestSchemaDTO; Reply: CreatePaymentResponseSchemaDTO }>(
     '/',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         body: CreatePaymentBodySchema,
         response: {
@@ -77,7 +77,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   fastify.post<{ Body: AuthorizePaymentRequestSchemaDTO; Reply: AuthorizePaymentResponseSchemaDTO }>(
     '/authorize',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         body: AuthorizePaymentBodySchema,
         response: {
