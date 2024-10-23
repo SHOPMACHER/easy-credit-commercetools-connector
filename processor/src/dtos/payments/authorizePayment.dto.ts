@@ -37,7 +37,7 @@ export const AuthorizePaymentBodySchema = Type.Object({
 
 export const CreatePaymentResponseSchema = Type.Object({
   technicalTransactionId: Type.String(),
-  transactionId: Type.String(),
+  paymentId: Type.String(),
   redirectUrl: Type.String(),
   transactionInformation: Type.Object({
     status: Type.String(),

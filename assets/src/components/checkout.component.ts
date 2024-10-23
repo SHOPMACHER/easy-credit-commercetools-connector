@@ -64,6 +64,10 @@ export class ECCheckoutComponent implements CheckoutComponent {
   }
 
   async submit(): Promise<void> {
+    if (this.checkoutComponentOptions.onLoading) {
+      this.checkoutComponentOptions.onLoading();
+    }
+
     const body = {
       cartId: this.checkoutComponentOptions.cartId,
       redirectLinks: this.checkoutComponentOptions.redirectLinks,
@@ -84,11 +88,7 @@ export class ECCheckoutComponent implements CheckoutComponent {
     } else {
       const response = (await res.json()) as CreatePaymentResponse;
 
-      if (this.checkoutComponentOptions.onSuccess) {
-        this.checkoutComponentOptions.onSuccess(response);
-      } else {
-        window.location.replace(response.redirectUrl);
-      }
+      this.checkoutComponentOptions.onSuccess(response);
     }
   }
 

@@ -181,3 +181,16 @@ export type ECTransactionError = {
   title: string;
   violations: ECTransactionViolation[];
 };
+
+export type PaymentResponse = {
+  technicalTransactionId: string;
+  paymentId: string;
+  redirectUrl: string;
+  transactionInformation: {
+    status: string;
+    decision: {
+      decisionOutcome: string;
+      decisionOutcomeText: string;
+    };
+  };
+};

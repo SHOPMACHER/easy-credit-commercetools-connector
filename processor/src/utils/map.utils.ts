@@ -6,11 +6,13 @@ import {
   VERSION_STRING,
 } from './constant.utils';
 import {
+  ECCreatePaymentResponse,
   ECTransaction,
   ECTransactionCustomerRelationship,
   ECTransactionOrderDetailsShoppingCartInformation,
   ECTransactionPaymentType,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  PaymentResponse,
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft } from '@commercetools/connect-payments-sdk';
 import { convertCentsToEur } from './app.utils';
@@ -85,5 +87,18 @@ export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
     method: EASYCREDIT_PAYMENT_METHOD,
+  },
+});
+
+export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, payment: Payment): PaymentResponse => ({
+  technicalTransactionId: ecPayment.transactionId,
+  paymentId: payment.id,
+  redirectUrl: ecPayment.redirectUrl,
+  transactionInformation: {
+    status: ecPayment.transactionInformation.status,
+    decision: {
+      decisionOutcome: ecPayment.transactionInformation.decision.decisionOutcome,
+      decisionOutcomeText: ecPayment.transactionInformation.decision.decisionOutcomeText,
+    },
   },
 });

@@ -5,12 +5,12 @@ import {
   CTCartState,
   CTTransactionState,
   CTTransactionType,
-  ECCreatePaymentResponse,
   ECTransactionCustomerRelationship,
   ECTransactionDecision,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
   ECTransactionStatus,
   GetPaymentMethodResponse,
+  PaymentResponse,
 } from '../types/payment.types';
 import { log } from '../libs/logger';
 import {
@@ -23,7 +23,7 @@ import {
 import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
 import { getPendingTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
-import { mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
+import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 
 // Helper to handle validation and return errors
@@ -71,7 +71,7 @@ export const handleCreatePayment = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
-): Promise<ECCreatePaymentResponse> => {
+): Promise<PaymentResponse> => {
   let cart: Cart | null = null;
   try {
     cart = await getCartById(cartId);
@@ -111,9 +111,17 @@ export const handleCreatePayment = async (
 
     if (transactionState === CTTransactionState.Failure) {
       await updateCart(cart, [{ action: 'unfreezeCart' }]);
+
+      throw new MultiErrorx([
+        new Errorx({
+          code: 'TransactionNotSuccess',
+          message: ecPayment.transactionInformation.decision.decisionOutcomeText,
+          httpErrorStatus: 400,
+        }),
+      ]);
     }
 
-    return ecPayment;
+    return mapCreatePaymentResponse(ecPayment, ctPayment);
   } catch (error: unknown) {
     log.error('Error in handleCreatePayment', error);
 

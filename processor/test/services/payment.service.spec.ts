@@ -20,6 +20,7 @@ import { readConfiguration } from '../../src/utils/config.utils';
 import { getPendingTransaction } from '../../src/utils/payment.utils';
 import { Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
 import { ECTransactionStatus } from '../../src/types/payment.types';
+import { mapCreatePaymentResponse } from '../../src/utils/map.utils';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
@@ -100,7 +101,7 @@ describe('Payment handlers', () => {
       const mockPayment = { id: 'payment123' };
       const mockECPayment = {
         transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } },
-        transactionId: 'ecTransaction123',
+        paymentId: 'ecTransaction123',
       };
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       (createPayment as jest.Mock).mockResolvedValue(mockPayment);
@@ -109,6 +110,7 @@ describe('Payment handlers', () => {
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
       (readConfiguration as jest.Mock).mockReturnValue({ easyCredit: { webShopId: 'webShopId123' } });
+      (mapCreatePaymentResponse as jest.Mock).mockReturnValue(mockECPayment);
 
       const result = await handleCreatePayment(
         'cart123',
@@ -133,7 +135,7 @@ describe('Payment handlers', () => {
       const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
       const mockPayment = { id: 'payment123' };
       const mockECPayment = {
-        transactionInformation: { decision: { decisionOutcome: 'NEGATIVE' } },
+        transactionInformation: { decision: { decisionOutcome: 'NEGATIVE', decisionOutcomeText: 'NEGATIVE' } },
         transactionId: 'ecTransaction123',
       };
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
@@ -143,20 +145,29 @@ describe('Payment handlers', () => {
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
 
-      const data = await handleCreatePayment(
-        'cart123',
-        {
-          urlSuccess: 'https://example.com/success',
-          urlCancellation: 'https://example.com/cancel',
-          urlDenial: 'https://example.com/cancel',
-        },
-        {
-          customerStatus: 'NEW_CUSTOMER',
-          customerSince: '2024-01-01',
-          numberOfOrders: 0,
-        },
+      await expect(
+        handleCreatePayment(
+          'cart123',
+          {
+            urlSuccess: 'https://example.com/success',
+            urlCancellation: 'https://example.com/cancel',
+            urlDenial: 'https://example.com/cancel',
+          },
+          {
+            customerStatus: 'NEW_CUSTOMER',
+            customerSince: '2024-01-01',
+            numberOfOrders: 0,
+          },
+        ),
+      ).rejects.toThrow(
+        new MultiErrorx([
+          new Errorx({
+            code: 'TransactionNotSuccess',
+            message: 'NEGATIVE',
+            httpErrorStatus: 400,
+          }),
+        ]),
       );
-      await expect(data).toBe(mockECPayment);
       expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
     });
 

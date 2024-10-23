@@ -33,6 +33,7 @@ describe('ECCheckoutComponentBuilder', () => {
         customerSince: '',
         numberOfOrders: 0,
       },
+      onLoading: jest.fn(),
       onSuccess: jest.fn(),
       onError: jest.fn(),
     };
@@ -68,6 +69,8 @@ describe('ECCheckoutComponent', () => {
         numberOfOrders: 0,
       },
       onError: jest.fn(),
+      onSuccess: jest.fn(),
+      onLoading: jest.fn(),
     };
 
     component = new ECCheckoutComponent({
@@ -75,11 +78,6 @@ describe('ECCheckoutComponent', () => {
       sessionId: baseOptions.sessionId,
       checkoutComponentOptions: checkoutOptions,
     });
-
-    // Mock window.location.replace
-    delete window.location; // Delete the existing window.location
-    // @ts-expect-error test
-    window.location = { replace: jest.fn() }; // Mock the replace method
   });
 
   afterEach(() => {
@@ -157,7 +155,9 @@ describe('ECCheckoutComponent', () => {
         customerRelationship: checkoutOptions.customerRelationship,
       }),
     });
-    expect(window.location.replace).toHaveBeenCalledWith('https://redirect.com');
+    expect(checkoutOptions.onLoading).toHaveBeenCalledTimes(1);
+    expect(checkoutOptions.onError).toHaveBeenCalledTimes(0);
+    expect(checkoutOptions.onSuccess).toHaveBeenCalledWith({ redirectUrl: 'https://redirect.com' });
   });
 
   it('should call onError callback when the submission fails', async () => {
@@ -172,6 +172,8 @@ describe('ECCheckoutComponent', () => {
 
     await component.submit();
 
+    expect(checkoutOptions.onLoading).toHaveBeenCalledTimes(1);
     expect(checkoutOptions.onError).toHaveBeenCalledWith(errorResponse);
+    expect(checkoutOptions.onSuccess).toHaveBeenCalledTimes(0);
   });
 });

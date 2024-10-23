@@ -19,19 +19,22 @@
  *                customerSince: "2024-01-01",
  *                numberOfOrders: 0
  *            },
- *            onError: (error) => {},
- *            onSuccess: (response) => {},
+ *            onLoading: () => {},
+ *            onError: (error) => {
+ *            },
+ *            onSuccess: (response) => {
+ *            },
  *          });
  *          checkoutElement.mount('#checkout-component')
- *      })
+ *    });
  *
- *    webComponent.createWidgetComponentBuilder(')
+ *    webComponent.createWidgetBuilder()
  *      .then(builder => {
  *          const widgetElement = builder.build({
  *            amount: 100,
  *          });
  *          widgetElement.mount('#widget-component')
- *      })
+ *    });
  */
 export interface WebComponent {
   createCheckoutBuilder: () => Promise<CheckoutComponentBuilder>;
@@ -65,7 +68,7 @@ export type WebComponentOptions = {
 
 export type CreatePaymentResponse = {
   technicalTransactionId: string;
-  transactionId: string;
+  paymentId: string;
   redirectUrl: string;
   transactionInformation: {
     status: string;
@@ -88,8 +91,9 @@ export type CheckoutComponentOptions = {
     customerSince?: string;
     numberOfOrders: number;
   };
+  onLoading?: () => void;
   onError: (error: Error) => void;
-  onSuccess?: (error: CreatePaymentResponse) => void;
+  onSuccess: (response: CreatePaymentResponse) => void;
 };
 
 export type WidgetComponentOptions = {
