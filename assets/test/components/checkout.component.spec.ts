@@ -29,7 +29,7 @@ describe('ECCheckoutComponentBuilder', () => {
         urlDenial: '',
       },
       customerRelationship: {
-        customerStatus: '',
+        customerStatus: 'NEW_CUSTOMER',
         customerSince: '',
         numberOfOrders: 0,
       },
@@ -63,7 +63,7 @@ describe('ECCheckoutComponent', () => {
         urlDenial: '',
       },
       customerRelationship: {
-        customerStatus: '',
+        customerStatus: 'NEW_CUSTOMER',
         customerSince: '',
         numberOfOrders: 0,
       },

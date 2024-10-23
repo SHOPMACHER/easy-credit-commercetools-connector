@@ -84,8 +84,8 @@ export type CheckoutComponentOptions = {
     urlDenial: string;
   };
   customerRelationship: {
-    customerStatus: string;
-    customerSince: string;
+    customerStatus: 'NEW_CUSTOMER' | 'EXISTING_CUSTOMER' | 'PREMIUM_CUSTOMER';
+    customerSince?: string;
     numberOfOrders: number;
   };
   onError: (error: Error) => void;
