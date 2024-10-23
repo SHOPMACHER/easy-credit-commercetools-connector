@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         directory:
-          - insertAdjacentHTML
+          - assets
           - processor
 
     steps:
