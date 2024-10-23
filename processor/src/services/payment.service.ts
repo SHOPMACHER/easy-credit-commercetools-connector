@@ -125,8 +125,7 @@ export const handleCreatePayment = async (
   }
 };
 
-// Handle payment authorization
-export const handleAuthorizePayment = async (paymentId: string): Promise<void> => {
+export const handleAuthorizeECPayment = async (paymentId: string): Promise<void> => {
   try {
     const payment = await getPaymentById(paymentId);
 
@@ -143,6 +142,35 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing EasyCredit Payment', error);
+    throw error;
+  }
+};
+
+export const handleAuthorizePayment = async (paymentId: string): Promise<void> => {
+  try {
+    const payment = await getPaymentById(paymentId);
+
+    validatePayment(payment);
+    validatePendingTransaction(payment);
+
+    const transaction = getPendingTransaction(payment) as Transaction;
+    const interactionId = transaction.interactionId as string;
+
+    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
+
+    if (easyTransaction.status !== ECTransactionStatus.SUCCESS) {
+      throw new Errorx({
+        code: 'TransactionNotSuccess',
+        message: 'Transaction status is not SUCCESS.',
+        httpErrorStatus: 400,
+      });
+    }
+
+    await updatePayment(payment, [
+      { action: 'changeTransactionState', transactionId: interactionId, state: 'Success' },
+    ]);
+  } catch (error: unknown) {
+    log.error('Error in authorizing CT Payment', error);
     throw error;
   }
 };

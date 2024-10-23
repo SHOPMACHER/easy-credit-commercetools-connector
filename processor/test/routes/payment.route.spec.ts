@@ -1,6 +1,6 @@
 import { paymentsRoute } from '../../src/routes/payment.route';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { handleAuthorizePayment, handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
+import { handleAuthorizeECPayment, handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
 
 jest.mock('../../src/services/payment.service');
 
@@ -123,7 +123,7 @@ describe('paymentsRoute', () => {
 
     await routeHandler(requestMock, replyMock);
 
-    expect(handleAuthorizePayment).toHaveBeenCalledWith('abc123');
+    expect(handleAuthorizeECPayment).toHaveBeenCalledWith('abc123');
     expect(replyMock.code).toHaveBeenCalledWith(200);
     expect(replyMock.send).toHaveBeenCalled();
   });

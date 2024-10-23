@@ -21,7 +21,7 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/authorizePayment.dto';
-import { handleAuthorizePayment, handleCreatePayment, handlePaymentMethod } from '../services/payment.service';
+import { handleAuthorizeECPayment, handleCreatePayment, handlePaymentMethod } from '../services/payment.service';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -89,7 +89,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     async (request, reply) => {
       const { paymentId } = request.body;
 
-      await handleAuthorizePayment(paymentId);
+      await handleAuthorizeECPayment(paymentId);
 
       reply.code(200).send();
     },

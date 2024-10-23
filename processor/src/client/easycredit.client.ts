@@ -7,6 +7,7 @@ import {
   ECTransactionError,
 } from '../types/payment.types';
 import { Errorx } from '@commercetools/connect-payments-sdk';
+import { log } from '../libs/logger';
 
 /**
  * Initializes the EasyCredit client
@@ -63,7 +64,7 @@ export const initEasyCreditClient = () => {
 
       return await response.json();
     } catch (error: unknown) {
-      console.error('Error in easycredit createPayment', error);
+      log.error('Error in easycredit createPayment', error);
 
       throw new Errorx({
         code: (error as ECTransactionError).title,
@@ -106,7 +107,7 @@ export const initEasyCreditClient = () => {
 
       return await response.json();
     } catch (error: unknown) {
-      console.error('Error in easycredit getPayment', error);
+      log.error('Error in easycredit getPayment', error);
 
       throw new Errorx({
         code: (error as ECTransactionError).title,

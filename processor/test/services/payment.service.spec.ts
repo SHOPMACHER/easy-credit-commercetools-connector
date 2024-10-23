@@ -1,8 +1,9 @@
 import {
   handlePaymentMethod,
   handleCreatePayment,
-  handleAuthorizePayment,
+  handleAuthorizeECPayment,
   handleCancelPayment,
+  handleAuthorizePayment,
 } from '../../src/services/payment.service';
 import { getCartById, updateCart, getCartByPaymentId } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
@@ -206,7 +207,7 @@ describe('Payment handlers', () => {
     });
   });
 
-  describe('handleAuthorizePayment', () => {
+  describe('handleAuthorizeECPayment', () => {
     it('should successfully authorize a payment', async () => {
       const mockPayment = {
         id: 'payment123',
@@ -218,12 +219,69 @@ describe('Payment handlers', () => {
       (validatePendingTransaction as jest.Mock).mockReturnValue(true);
       (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
-      await handleAuthorizePayment('payment123');
+      await handleAuthorizeECPayment('payment123');
 
       expect(initEasyCreditClient().authorizePayment).toHaveBeenCalledWith('interactionId123');
+    });
+
+    it('should throw and log error if payment authorization fails', async () => {
+      const mockError = new Error('Authorization failed');
+      (getPaymentById as jest.Mock).mockRejectedValue(mockError);
+
+      await expect(handleAuthorizeECPayment('payment123')).rejects.toThrow('Authorization failed');
+      expect(log.error).toHaveBeenCalledWith('Error in authorizing EasyCredit Payment', mockError);
+    });
+  });
+
+  describe('handleAuthorizePayment', () => {
+    it('should successfully authorize a payment', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+      };
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        getPayment: jest.fn().mockResolvedValue({
+          status: 'SUCCESS',
+        }),
+      });
+      (validatePayment as jest.Mock).mockReturnValue(true);
+      (validatePendingTransaction as jest.Mock).mockReturnValue(true);
+      (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+
+      await handleAuthorizePayment('payment123');
+
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, [
         { action: 'changeTransactionState', transactionId: 'interactionId123', state: 'Success' },
       ]);
+    });
+
+    it('should throw error on not success payment', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+      };
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        getPayment: jest.fn().mockResolvedValue({
+          status: 'FAILED',
+        }),
+      });
+      (validatePayment as jest.Mock).mockReturnValue(true);
+      (validatePendingTransaction as jest.Mock).mockReturnValue(true);
+      (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+
+      await expect(handleAuthorizePayment('payment123')).rejects.toThrow('Transaction status is not SUCCESS.');
+      expect(log.error).toHaveBeenCalledWith(
+        'Error in authorizing CT Payment',
+        new Errorx({
+          code: 'TransactionNotSuccess',
+          message: 'Transaction status is not SUCCESS.',
+          httpErrorStatus: 400,
+        }),
+      );
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
     });
 
     it('should throw and log error if payment authorization fails', async () => {
@@ -231,7 +289,7 @@ describe('Payment handlers', () => {
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
       await expect(handleAuthorizePayment('payment123')).rejects.toThrow('Authorization failed');
-      expect(log.error).toHaveBeenCalledWith('Error in authorizing EasyCredit Payment', mockError);
+      expect(log.error).toHaveBeenCalledWith('Error in authorizing CT Payment', mockError);
     });
   });
 
