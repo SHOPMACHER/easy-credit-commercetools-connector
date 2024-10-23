@@ -87,10 +87,15 @@
                 customerSince: '',
                 numberOfOrders: 12,
               },
-
+              onLoading: () => {
+                console.log('loading...');
+              },
               onError: (error) => {
                 console.log('failed to checkout', error);
-              }
+              },
+              onSuccess: (response) => {
+                console.log('checkout success', response);
+              },
             });
 
             easyCreditPaymentMethod.mount('#container');
