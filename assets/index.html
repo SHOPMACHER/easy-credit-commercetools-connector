@@ -54,7 +54,7 @@
           <script type="module">
             import { Enabler } from "/src/main.ts";
 
-            const testCartId = '8f2c0166-373d-487e-b402-8ab2ecde3a3a';
+            const testCartId = 'cce7783f-25c8-4295-9325-8f62b7415ce0';
 
             const sessionId = await getSessionId(testCartId);
             console.log('sessionId', sessionId);
@@ -65,18 +65,35 @@
             });
 
             /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
-            const widgetBuilder = await enabler.createWidgetBuilder();
-            const pdpWdiget = await widgetBuilder.build({
-              amount: 500
-            });
+            // const widgetBuilder = await enabler.createWidgetBuilder();
+            // const pdpWdiget = await widgetBuilder.build({
+            //   amount: 500
+            // });
 
-            pdpWdiget.mount("#container");
+            // pdpWdiget.mount("#container");
 
             /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
-            // const componentBuilder = await enabler.createComponentBuilder('easycredit');
-            // const easyCreditPaymentMethod = await componentBuilder.build();
+            const componentBuilder = await enabler.createCheckoutBuilder();
+            const easyCreditPaymentMethod = await componentBuilder.build({
+              cartId: testCartId,
+              redirectLinks: {
+              urlSuccess: 'http://localhost:3000/de/thank-you/',
+              urlCancellation: 'http://localhost:3000/de/checkout/?step=2&status=cancelled',
+              urlDenial: 'http://localhost:3000/de/checkout/?step=2&status=denied',
+              // urlAuthorizationCallback: 'http://localhost:3000/de/thank-you/',
+              },
+              customerRelationship: {
+                customerStatus: 'EXISTING_CUSTOMER',
+                customerSince: '',
+                numberOfOrders: 12,
+              },
 
-            // easyCreditPaymentMethod.mount('#container');
+              onError: (error) => {
+                console.log('failed to checkout', error);
+              }
+            });
+
+            easyCreditPaymentMethod.mount('#container');
           </script>
         </div>
       </div>
