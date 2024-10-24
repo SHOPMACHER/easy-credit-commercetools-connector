@@ -1,6 +1,6 @@
 {
   "name": "shopmacher-easycredit-processor",
-  "version": "0.0.9",
+  "version": "0.0.11",
   "description": "Payment provider integration template",
   "main": "dist/server.js",
   "scripts": {

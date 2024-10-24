@@ -137,7 +137,8 @@ describe('Payment Mapping', () => {
         customerRelationship: mockCustomerRelationship,
         redirectLinks: {
           urlDenial: 'https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel',
-          urlCancellation: 'https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel',
+          urlCancellation:
+            'https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel',
           urlSuccess: mockRedirectLinks.urlSuccess,
           urlAuthorizationCallback: 'https://example.com/webhook/payment123/authorize',
         },
