@@ -19,8 +19,8 @@ export class ECWebComponent implements WebComponent {
   ): Promise<{ baseOptions: WebComponentOptions }> => {
     return Promise.resolve({
       baseOptions: {
-        processorUrl: options.processorUrl.replace(/\/+$/, ''),
-        sessionId: options.sessionId.replace(/\/+$/, ''),
+        processorUrl: options.processorUrl.endsWith('/') ? options.processorUrl.slice(0, -1) : options.processorUrl,
+        sessionId: options.sessionId,
       },
     });
   };
