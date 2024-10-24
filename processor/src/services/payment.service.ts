@@ -94,9 +94,9 @@ export const handleCreatePayment = async (
     );
 
     const transactionState =
-      ecPayment.transactionInformation.decision.decisionOutcome === ECTransactionDecision.POSITIVE
-        ? CTTransactionState.Success
-        : CTTransactionState.Failure;
+      ecPayment.transactionInformation.decision.decisionOutcome === ECTransactionDecision.NEGATIVE
+        ? CTTransactionState.Failure
+        : CTTransactionState.Initial;
 
     await updatePayment(ctPayment, [
       {
@@ -109,6 +109,8 @@ export const handleCreatePayment = async (
         },
       },
     ]);
+
+    cart = await getCartById(cartId);
 
     if (transactionState === CTTransactionState.Failure) {
       await updateCart(cart, [{ action: 'unfreezeCart' }]);
@@ -162,15 +164,15 @@ export const handleAuthorizeECPayment = async (paymentId: string): Promise<void>
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
-    validatePendingTransaction(payment);
+    validateTransaction(payment);
 
-    const transaction = getPendingTransaction(payment) as Transaction;
+    const transaction = getTransaction(payment) as Transaction;
     const interactionId = transaction.interactionId as string;
 
     await initEasyCreditClient().authorizePayment(interactionId);
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: 'Success' },
+      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Pending },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing EasyCredit Payment', error);
@@ -199,7 +201,7 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     }
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: 'Success' },
+      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Success },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing CT Payment', error);

@@ -275,8 +275,8 @@ describe('Payment handlers', () => {
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({ authorizePayment: jest.fn().mockResolvedValue({}) });
       (validatePayment as jest.Mock).mockReturnValue(true);
-      (validatePendingTransaction as jest.Mock).mockReturnValue(true);
-      (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+      (validateTransaction as jest.Mock).mockReturnValue(true);
+      (getTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
       await handleAuthorizeECPayment('payment123');
 
