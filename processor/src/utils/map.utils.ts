@@ -91,7 +91,7 @@ export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
 });
 
 export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, payment: Payment): PaymentResponse => ({
-  technicalTransactionId: ecPayment.transactionId,
+  technicalTransactionId: ecPayment.technicalTransactionId,
   paymentId: payment.id,
   redirectUrl: ecPayment.redirectUrl,
   transactionInformation: {
