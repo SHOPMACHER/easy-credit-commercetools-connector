@@ -105,7 +105,7 @@ export const handleCreatePayment = async (
           state: transactionState,
           type: CTTransactionType.Authorization,
           amount: cart.totalPrice,
-          interactionId: ecPayment.transactionId,
+          interactionId: ecPayment.technicalTransactionId,
         },
       },
     ]);
