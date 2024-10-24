@@ -69,8 +69,8 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlDenial}`,
-      urlCancellation: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlCancellation}`,
+      urlDenial: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
+      urlCancellation: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrl?.value}/webhook/${payment.id}/authorize`,
     },
