@@ -3,9 +3,11 @@ import {
   WebComponent,
   CheckoutComponentBuilder,
   WidgetComponentBuilder,
+  SummaryComponentBuilder,
 } from './types/web-component.types.ts';
 import { ECWidgetComponentBuilder } from './components/widget.component.ts';
 import { ECCheckoutComponentBuilder } from './components/checkout.component.ts';
+import { ECSummaryComponentBuilder } from './components/summary.component.ts';
 
 export class ECWebComponent implements WebComponent {
   setupData: Promise<{ baseOptions: WebComponentOptions }>;
@@ -29,6 +31,12 @@ export class ECWebComponent implements WebComponent {
     const { baseOptions } = await this.setupData;
 
     return new ECCheckoutComponentBuilder(baseOptions);
+  }
+
+  async createSummaryBuilder(): Promise<SummaryComponentBuilder> {
+    const { baseOptions } = await this.setupData;
+
+    return new ECSummaryComponentBuilder(baseOptions);
   }
 
   async createWidgetBuilder(): Promise<WidgetComponentBuilder> {

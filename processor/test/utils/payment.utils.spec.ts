@@ -1,5 +1,5 @@
 import { Cart, Payment } from '@commercetools/connect-payments-sdk';
-import { getPendingTransaction, getPayment } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
+import { getPendingTransaction, getPayment, getTransaction } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 
@@ -23,6 +23,26 @@ describe('Payment Utility Functions', () => {
       } as unknown as Payment;
 
       const result = getPendingTransaction(payment);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getTransaction', () => {
+    it('should return the transaction if it exists', () => {
+      const payment: Payment = {
+        transactions: [{ type: CTTransactionType.Authorization }],
+      } as unknown as Payment;
+
+      const result = getTransaction(payment);
+      expect(result).toEqual({ type: CTTransactionType.Authorization });
+    });
+
+    it('should return undefined if no transaction exists', () => {
+      const payment: Payment = {
+        transactions: [{ type: CTTransactionType.Charge, state: CTTransactionState.Success }],
+      } as unknown as Payment;
+
+      const result = getTransaction(payment);
       expect(result).toBeUndefined();
     });
   });

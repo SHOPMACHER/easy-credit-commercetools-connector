@@ -10,6 +10,7 @@ import {
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
   ECTransactionStatus,
   GetPaymentMethodResponse,
+  GetPaymentResponse,
   PaymentResponse,
 } from '../types/payment.types';
 import { log } from '../libs/logger';
@@ -19,9 +20,10 @@ import {
   validateCurrency,
   validatePayment,
   validatePendingTransaction,
+  validateTransaction,
 } from '../validators/payment.validators';
 import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
-import { getPendingTransaction } from '../utils/payment.utils';
+import { getPendingTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
@@ -46,7 +48,6 @@ const validateCart = (cart: Cart): Errorx[] => {
   return errors;
 };
 
-// Handle fetching and returning the payment method
 export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
@@ -129,6 +130,29 @@ export const handleCreatePayment = async (
       await updateCart(cart, [{ action: 'unfreezeCart' }]);
     }
 
+    throw error;
+  }
+};
+
+export const handleGetPayment = async (paymentId: string): Promise<GetPaymentResponse> => {
+  try {
+    const payment = await getPaymentById(paymentId);
+
+    validatePayment(payment);
+    validateTransaction(payment);
+
+    const transaction = getTransaction(payment) as Transaction;
+    const interactionId = transaction.interactionId as string;
+
+    const ecPayment = await initEasyCreditClient().getPayment(interactionId);
+
+    return {
+      ...ecPayment,
+      amount: convertCentsToEur(transaction.amount.centAmount, transaction.amount.fractionDigits),
+      webShopId: readConfiguration().easyCredit.webShopId,
+    };
+  } catch (error: unknown) {
+    log.error('Error in getting summary Payment', error);
     throw error;
   }
 };

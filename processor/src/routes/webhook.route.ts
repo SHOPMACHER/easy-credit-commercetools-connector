@@ -6,7 +6,7 @@ import {
   AuthorizePaymentResponseSchemaDTO,
   CancelPaymentResponseSchema,
   CancelPaymentResponseSchemaDTO,
-} from '../dtos/payments/updatePaymentMethod.dto';
+} from '../dtos/payments/updatePaymentWebhook.dto';
 
 export const webhookRoute = async (fastify: FastifyInstance) => {
   fastify.get<{

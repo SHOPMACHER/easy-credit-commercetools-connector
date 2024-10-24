@@ -3,6 +3,7 @@ import { ECCheckoutComponentBuilder } from '../src/components/checkout.component
 import { ECWidgetComponentBuilder } from '../src/components/widget.component';
 import { WebComponentOptions } from '../src/types/web-component.types';
 import { describe, it, expect, beforeEach } from '@jest/globals';
+import { ECSummaryComponentBuilder } from '../src/components/summary.component.ts';
 
 describe('ECWebComponent', () => {
   const mockOptions: WebComponentOptions = {
@@ -38,6 +39,19 @@ describe('ECWebComponent', () => {
     const baseOptions = await ecWebComponent.setupData;
 
     expect((checkoutBuilder as ECCheckoutComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
+  });
+
+  it('should create an instance of ECSummaryComponentBuilder', async () => {
+    const summaryBuilder = await ecWebComponent.createSummaryBuilder();
+
+    expect(summaryBuilder).toBeInstanceOf(ECSummaryComponentBuilder);
+  });
+
+  it('should pass the correct options to ECSummaryComponentBuilder', async () => {
+    const summaryBuilder = await ecWebComponent.createSummaryBuilder();
+    const baseOptions = await ecWebComponent.setupData;
+
+    expect((summaryBuilder as ECSummaryComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
   });
 
   it('should create an instance of ECWidgetComponentBuilder', async () => {

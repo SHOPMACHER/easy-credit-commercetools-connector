@@ -1,12 +1,16 @@
-import { Cart, Payment } from '@commercetools/connect-payments-sdk';
+import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType } from '../types/payment.types';
 import { EASYCREDIT_PAYMENT_METHOD } from './constant.utils';
 
-export const getPendingTransaction = (payment: Payment) => {
+export const getPendingTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find(
     (transaction) =>
       transaction.type === CTTransactionType.Authorization && transaction.state === CTTransactionState.Pending,
   );
+};
+
+export const getTransaction = (payment: Payment): Transaction | undefined => {
+  return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
 };
 
 export const getPayment = (cart: Cart) => {

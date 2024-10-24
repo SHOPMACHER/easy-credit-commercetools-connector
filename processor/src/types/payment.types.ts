@@ -169,6 +169,22 @@ export enum ECTransactionStatus {
 
 export type ECGetPaymentResponse = {
   status: ECTransactionStatus;
+  decision: {
+    interest: number;
+    totalValue: number;
+    orderValue: number;
+    decisionOutcome: string;
+    numberOfInstallments: number;
+    installment: number;
+    lastInstallment: number;
+    mtan: {
+      required: boolean;
+      successful: boolean;
+    };
+    bankAccountCheck: {
+      required: boolean;
+    };
+  };
 };
 
 type ECTransactionViolation = {
@@ -193,4 +209,9 @@ export type PaymentResponse = {
       decisionOutcomeText: string;
     };
   };
+};
+
+export type GetPaymentResponse = ECGetPaymentResponse & {
+  webShopId: string;
+  amount: number;
 };
