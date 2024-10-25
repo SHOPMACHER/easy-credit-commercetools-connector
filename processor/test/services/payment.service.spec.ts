@@ -4,6 +4,7 @@ import {
   handleAuthorizeECPayment,
   handleCancelPayment,
   handleAuthorizePayment,
+  handleGetPayment,
 } from '../../src/services/payment.service';
 import { getCartById, updateCart, getCartByPaymentId } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
@@ -15,9 +16,10 @@ import {
   validateAddresses,
   validateCurrency,
   validateCartAmount,
+  validateTransaction,
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
-import { getPendingTransaction } from '../../src/utils/payment.utils';
+import { getPendingTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
 import { ECTransactionStatus } from '../../src/types/payment.types';
 import { mapCreatePaymentResponse } from '../../src/utils/map.utils';
@@ -32,6 +34,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateCartAmount: jest.fn(),
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
+  validateTransaction: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
@@ -92,6 +95,51 @@ describe('Payment handlers', () => {
 
       await expect(handlePaymentMethod('cart123')).rejects.toThrow(error);
       expect(log.error).toHaveBeenCalledWith('Error in getting EasyCredit Payment Method', error);
+    });
+  });
+
+  describe('handleGetPayment', () => {
+    const mockPaymentId = 'payment123';
+    const mockTransaction = { interactionId: 'interaction123', amount: { centAmount: 1000, fractionDigits: 2 } };
+    const mockPayment = { id: 'payment123', transactions: [mockTransaction] };
+    const mockECResponse = { status: 'success', amount: 10, webShopId: 'webShopId123' };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should get the payment and return the EasyCredit payment response', async () => {
+      // Mocking the utility functions
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (validatePayment as jest.Mock).mockReturnValue(true);
+      (validateTransaction as jest.Mock).mockReturnValue(true);
+      (getTransaction as jest.Mock).mockReturnValue(mockTransaction);
+
+      // Mocking the EasyCredit client
+      const mockEasyCreditClient = { getPayment: jest.fn().mockResolvedValue(mockECResponse) };
+      (initEasyCreditClient as jest.Mock).mockReturnValue(mockEasyCreditClient);
+
+      // Call the function
+      const result = await handleGetPayment(mockPaymentId);
+
+      // Assertions
+      expect(getPaymentById).toHaveBeenCalledWith(mockPaymentId);
+      expect(validatePayment).toHaveBeenCalledWith(mockPayment);
+      expect(validateTransaction).toHaveBeenCalledWith(mockPayment);
+      expect(getTransaction).toHaveBeenCalledWith(mockPayment);
+      expect(mockEasyCreditClient.getPayment).toHaveBeenCalledWith(mockTransaction.interactionId);
+
+      // Check the result
+      expect(result).toEqual(mockECResponse);
+    });
+
+    it('should log error and throw if an error occurs', async () => {
+      const errorMessage = 'Test error';
+      (getPaymentById as jest.Mock).mockRejectedValue(new Error(errorMessage));
+
+      await expect(handleGetPayment(mockPaymentId)).rejects.toThrow(errorMessage);
+
+      expect(log.error).toHaveBeenCalledWith('Error in getting summary Payment', expect.any(Error));
     });
   });
 
@@ -227,8 +275,8 @@ describe('Payment handlers', () => {
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({ authorizePayment: jest.fn().mockResolvedValue({}) });
       (validatePayment as jest.Mock).mockReturnValue(true);
-      (validatePendingTransaction as jest.Mock).mockReturnValue(true);
-      (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+      (validateTransaction as jest.Mock).mockReturnValue(true);
+      (getTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
       await handleAuthorizeECPayment('payment123');
 

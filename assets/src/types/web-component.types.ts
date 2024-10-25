@@ -20,12 +20,18 @@
  *                numberOfOrders: 0
  *            },
  *            onLoading: () => {},
- *            onError: (error) => {
- *            },
- *            onSuccess: (response) => {
- *            },
+ *            onError: (error) => {},
+ *            onSuccess: (response) => {},
  *          });
  *          checkoutElement.mount('#checkout-component')
+ *    });
+ *
+ *    webComponent.createSummaryBuilder()
+ *      .then(builder => {
+ *          const summaryElement = builder.build({
+ *            paymentId: "be1366b5-ed5c-41f0-882f-3251413411a1",
+ *          });
+ *          checkoutElement.mount('#summary-component')
  *    });
  *
  *    webComponent.createWidgetBuilder()
@@ -39,6 +45,8 @@
 export interface WebComponent {
   createCheckoutBuilder: () => Promise<CheckoutComponentBuilder>;
 
+  createSummaryBuilder: () => Promise<SummaryComponentBuilder>;
+
   createWidgetBuilder: () => Promise<WidgetComponentBuilder>;
 }
 
@@ -48,8 +56,16 @@ export interface CheckoutComponent {
   submit(): void;
 }
 
+export interface SummaryComponent {
+  mount(selector: string): void;
+}
+
 export interface CheckoutComponentBuilder {
   build(options: CheckoutComponentOptions): CheckoutComponent;
+}
+
+export interface SummaryComponentBuilder {
+  build(options: SummaryComponentOptions): SummaryComponent;
 }
 
 export interface WidgetComponent {
@@ -94,6 +110,10 @@ export type CheckoutComponentOptions = {
   onLoading?: () => void;
   onError: (error: Error) => void;
   onSuccess: (response: CreatePaymentResponse) => void;
+};
+
+export type SummaryComponentOptions = {
+  paymentId: string;
 };
 
 export type WidgetComponentOptions = {

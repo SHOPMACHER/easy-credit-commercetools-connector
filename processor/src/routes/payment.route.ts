@@ -5,7 +5,7 @@ import {
   Oauth2AuthenticationHook,
   SessionHeaderAuthenticationHook,
 } from '@commercetools/connect-payments-sdk';
-import { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import {
   GetPaymentMethodParamsSchema,
   GetPaymentMethodResponseSchema,
@@ -16,12 +16,24 @@ import {
   AuthorizePaymentRequestSchemaDTO,
   AuthorizePaymentResponseSchema,
   AuthorizePaymentResponseSchemaDTO,
+} from '../dtos/payments/authorizePayment.dto';
+import {
+  handleAuthorizeECPayment,
+  handleCreatePayment,
+  handlePaymentMethod,
+  handleGetPayment,
+} from '../services/payment.service';
+import {
+  GetPaymentParamsSchema,
+  GetPaymentResponseSchema,
+  GetPaymentResponseSchemaDTO,
+} from '../dtos/payments/getPayment.dto';
+import {
   CreatePaymentBodySchema,
   CreatePaymentRequestSchemaDTO,
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
-} from '../dtos/payments/authorizePayment.dto';
-import { handleAuthorizeECPayment, handleCreatePayment, handlePaymentMethod } from '../services/payment.service';
+} from '../dtos/payments/createPayment.dto';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -43,8 +55,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      // @ts-expect-error - params should be defined
+    async (request, reply) => {
       const { cartId } = request.params;
 
       const method = await handlePaymentMethod(cartId);
@@ -71,6 +82,27 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship);
 
       reply.code(201).send(response);
+    },
+  );
+
+  fastify.get<{ Params: { paymentId: string }; Reply: GetPaymentResponseSchemaDTO }>(
+    '/:paymentId',
+    {
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      schema: {
+        params: GetPaymentParamsSchema,
+        response: {
+          200: GetPaymentResponseSchema,
+          400: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { paymentId } = request.params;
+
+      const response = await handleGetPayment(paymentId);
+
+      reply.code(200).send(response);
     },
   );
 

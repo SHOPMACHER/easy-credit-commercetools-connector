@@ -10,6 +10,7 @@ import {
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
   ECTransactionStatus,
   GetPaymentMethodResponse,
+  GetPaymentResponse,
   PaymentResponse,
 } from '../types/payment.types';
 import { log } from '../libs/logger';
@@ -19,9 +20,10 @@ import {
   validateCurrency,
   validatePayment,
   validatePendingTransaction,
+  validateTransaction,
 } from '../validators/payment.validators';
 import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
-import { getPendingTransaction } from '../utils/payment.utils';
+import { getPendingTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
@@ -46,7 +48,6 @@ const validateCart = (cart: Cart): Errorx[] => {
   return errors;
 };
 
-// Handle fetching and returning the payment method
 export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
@@ -93,9 +94,9 @@ export const handleCreatePayment = async (
     );
 
     const transactionState =
-      ecPayment.transactionInformation.decision.decisionOutcome === ECTransactionDecision.POSITIVE
-        ? CTTransactionState.Success
-        : CTTransactionState.Failure;
+      ecPayment.transactionInformation.decision.decisionOutcome === ECTransactionDecision.NEGATIVE
+        ? CTTransactionState.Failure
+        : CTTransactionState.Initial;
 
     await updatePayment(ctPayment, [
       {
@@ -104,10 +105,12 @@ export const handleCreatePayment = async (
           state: transactionState,
           type: CTTransactionType.Authorization,
           amount: cart.totalPrice,
-          interactionId: ecPayment.transactionId,
+          interactionId: ecPayment.technicalTransactionId,
         },
       },
     ]);
+
+    cart = await getCartById(cartId);
 
     if (transactionState === CTTransactionState.Failure) {
       await updateCart(cart, [{ action: 'unfreezeCart' }]);
@@ -133,20 +136,43 @@ export const handleCreatePayment = async (
   }
 };
 
+export const handleGetPayment = async (paymentId: string): Promise<GetPaymentResponse> => {
+  try {
+    const payment = await getPaymentById(paymentId);
+
+    validatePayment(payment);
+    validateTransaction(payment);
+
+    const transaction = getTransaction(payment) as Transaction;
+    const interactionId = transaction.interactionId as string;
+
+    const ecPayment = await initEasyCreditClient().getPayment(interactionId);
+
+    return {
+      ...ecPayment,
+      amount: convertCentsToEur(transaction.amount.centAmount, transaction.amount.fractionDigits),
+      webShopId: readConfiguration().easyCredit.webShopId,
+    };
+  } catch (error: unknown) {
+    log.error('Error in getting summary Payment', error);
+    throw error;
+  }
+};
+
 export const handleAuthorizeECPayment = async (paymentId: string): Promise<void> => {
   try {
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
-    validatePendingTransaction(payment);
+    validateTransaction(payment);
 
-    const transaction = getPendingTransaction(payment) as Transaction;
+    const transaction = getTransaction(payment) as Transaction;
     const interactionId = transaction.interactionId as string;
 
     await initEasyCreditClient().authorizePayment(interactionId);
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: 'Success' },
+      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Pending },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing EasyCredit Payment', error);
@@ -175,7 +201,7 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     }
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: 'Success' },
+      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Success },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing CT Payment', error);

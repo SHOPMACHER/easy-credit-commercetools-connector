@@ -1,7 +1,7 @@
 {
   "name": "enabler",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.11",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",

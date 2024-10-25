@@ -20,6 +20,9 @@ deployAs:
           description: commercetools region (example - europe-west1.gcp)
           default: europe-west1.gcp
           required: false
+        - key: CTP_SCOPES
+          description: commercetools scopes (example - view_api_clients manage_orders manage_payments view_types manage_types view_sessions introspect_oauth_tokens manage_checkout_payment_intents)
+          required: true
         - key: CTP_AUTH_URL
           description: commercetools Auth URL
           default: https://auth.europe-west1.gcp.commercetools.com

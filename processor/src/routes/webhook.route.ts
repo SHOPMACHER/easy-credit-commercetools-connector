@@ -6,7 +6,7 @@ import {
   AuthorizePaymentResponseSchemaDTO,
   CancelPaymentResponseSchema,
   CancelPaymentResponseSchemaDTO,
-} from '../dtos/payments/updatePaymentMethod.dto';
+} from '../dtos/payments/updatePaymentWebhook.dto';
 
 export const webhookRoute = async (fastify: FastifyInstance) => {
   fastify.get<{
@@ -37,7 +37,7 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
       if (!redirectUrl) {
         return reply.code(200).send({ paymentId });
       }
-      return reply.redirect(redirectUrl, 302);
+      return reply.redirect(decodeURIComponent(redirectUrl), 302);
     },
   );
 
@@ -68,7 +68,8 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
       if (!redirectUrl) {
         return reply.code(200).send({ paymentId });
       }
-      return reply.redirect(redirectUrl, 302);
+
+      return reply.redirect(decodeURIComponent(redirectUrl), 302);
     },
   );
 };

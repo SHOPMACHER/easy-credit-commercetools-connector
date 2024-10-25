@@ -1,6 +1,11 @@
 import { paymentsRoute } from '../../src/routes/payment.route';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { handleAuthorizeECPayment, handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
+import {
+  handleAuthorizeECPayment,
+  handleCreatePayment,
+  handlePaymentMethod,
+  handleGetPayment,
+} from '../../src/services/payment.service';
 
 jest.mock('../../src/services/payment.service');
 
@@ -62,6 +67,40 @@ describe('paymentsRoute', () => {
     expect(handlePaymentMethod).toHaveBeenCalledWith('123');
     expect(replyMock.code).toHaveBeenCalledWith(200);
     expect(replyMock.send).toHaveBeenCalledWith({ webShopId: '123', amount: 10 });
+  });
+
+  it('should register the payment GET route', async () => {
+    await paymentsRoute(fastify as FastifyInstance, opts);
+
+    expect(fastify.get).toHaveBeenCalledWith(
+      '/:paymentId',
+      expect.objectContaining({
+        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
+        schema: expect.objectContaining({
+          params: expect.any(Object),
+          response: expect.objectContaining({
+            200: expect.any(Object),
+            400: expect.any(Object),
+          }),
+        }),
+      }),
+      expect.any(Function), // Route handler function
+    );
+
+    // Test the route handler
+    const routeHandler = (fastify.get as jest.Mock).mock.calls[1][2];
+    const requestMock = {
+      params: { paymentId: '123' },
+    } as Partial<FastifyRequest>;
+    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
+
+    (handleGetPayment as jest.Mock).mockResolvedValue({ status: 'mockPayment' });
+
+    await routeHandler(requestMock, replyMock);
+
+    expect(handleGetPayment).toHaveBeenCalledWith('123');
+    expect(replyMock.code).toHaveBeenCalledWith(200);
+    expect(replyMock.send).toHaveBeenCalledWith({ status: 'mockPayment' });
   });
 
   it('should register the payment POST route', async () => {

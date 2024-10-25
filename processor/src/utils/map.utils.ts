@@ -73,8 +73,8 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlDenial}`,
-      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlCancellation}`,
+      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
+      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
@@ -95,7 +95,7 @@ export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
 });
 
 export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, payment: Payment): PaymentResponse => ({
-  technicalTransactionId: ecPayment.transactionId,
+  technicalTransactionId: ecPayment.technicalTransactionId,
   paymentId: payment.id,
   redirectUrl: ecPayment.redirectUrl,
   transactionInformation: {
