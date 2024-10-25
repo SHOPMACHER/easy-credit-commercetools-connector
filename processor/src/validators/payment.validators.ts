@@ -3,6 +3,7 @@ import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
 import { getPendingTransaction, getTransaction } from '../utils/payment.utils';
+import { CTTransactionState, CTTransactionType } from '../types/payment.types';
 
 export const validateAddresses = (
   billingAddress: Address | undefined,
@@ -103,6 +104,29 @@ export const validatePendingTransaction = (payment: Payment) => {
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
       message: 'Missing pending transaction',
+    });
+  }
+};
+
+export const validateInitialOrPendingTransaction = (payment: Payment) => {
+  const isValid = payment.transactions.some((transaction) => {
+    if (
+      transaction.type === CTTransactionType.Authorization &&
+      (transaction.state === CTTransactionState.Initial || transaction.state === CTTransactionState.Pending)
+    ) {
+      if (transaction.interactionId) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+
+  if (!isValid) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'No interactionId found in any initial or pending transaction',
     });
   }
 };
