@@ -49,6 +49,10 @@ export const mapCTCartToECPayment = async (
 ): Promise<ECTransaction> => {
   const connectorUrl = await getCustomObjectByKey(EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL);
 
+  const connectorUrlWithoutSplash = connectorUrl?.value.endsWith('/')
+    ? connectorUrl?.value.slice(0, -1)
+    : connectorUrl?.value;
+
   return {
     orderDetails: {
       orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
@@ -69,10 +73,10 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlDenial}`,
-      urlCancellation: `${connectorUrl?.value}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlCancellation}`,
+      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlDenial}`,
+      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${redirectLinks.urlCancellation}`,
       urlSuccess: redirectLinks.urlSuccess,
-      urlAuthorizationCallback: `${connectorUrl?.value}/webhook/${payment.id}/authorize`,
+      urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
     paymentType: ECTransactionPaymentType.ECTransactionInstallmentPayment,
     paymentSwitchPossible: false,
