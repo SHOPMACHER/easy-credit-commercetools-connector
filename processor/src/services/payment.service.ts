@@ -18,6 +18,7 @@ import {
   validateAddresses,
   validateCartAmount,
   validateCurrency,
+  validateInitialOrPendingTransaction,
   validatePayment,
   validatePendingTransaction,
   validateTransaction,
@@ -214,7 +215,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
-    validatePendingTransaction(payment);
+    validateInitialOrPendingTransaction(payment);
 
     const transaction = getPendingTransaction(payment) as Transaction;
     const interactionId = transaction.interactionId as string;

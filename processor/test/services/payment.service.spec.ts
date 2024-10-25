@@ -17,12 +17,14 @@ import {
   validateCurrency,
   validateCartAmount,
   validateTransaction,
+  validateInitialOrPendingTransaction,
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
 import { getPendingTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { ECTransactionStatus } from '../../src/types/payment.types';
+import { CTTransactionState, CTTransactionType, ECTransactionStatus } from '../../src/types/payment.types';
 import { mapCreatePaymentResponse } from '../../src/utils/map.utils';
+import { describe, jest, it, expect, beforeEach } from '@jest/globals';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
@@ -35,6 +37,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
   validateTransaction: jest.fn(),
+  validateInitialOrPendingTransaction: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
@@ -62,6 +65,7 @@ describe('Payment handlers', () => {
         shippingAddress: {},
         totalPrice: { currencyCode: 'EUR', centAmount: 1000, fractionDigits: 2 },
       };
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       (validateAddresses as jest.Mock).mockReturnValue([]);
       (validateCurrency as jest.Mock).mockReturnValue([]);
@@ -80,8 +84,10 @@ describe('Payment handlers', () => {
         totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
       };
       const mockError = new Errorx({ httpErrorStatus: 0, code: 'InvalidCart', message: 'Invalid cart' });
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       (validateAddresses as jest.Mock).mockImplementationOnce((billingAddress, shippingAddress, ecConfig, errors) => {
+        // @ts-expect-error mocked
         errors.push(mockError);
       });
 
@@ -91,6 +97,7 @@ describe('Payment handlers', () => {
 
     it('should log and rethrow any unknown error', async () => {
       const error = new Error('Unexpected error');
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockRejectedValue(error);
 
       await expect(handlePaymentMethod('cart123')).rejects.toThrow(error);
@@ -110,12 +117,14 @@ describe('Payment handlers', () => {
 
     it('should get the payment and return the EasyCredit payment response', async () => {
       // Mocking the utility functions
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateTransaction as jest.Mock).mockReturnValue(true);
       (getTransaction as jest.Mock).mockReturnValue(mockTransaction);
 
       // Mocking the EasyCredit client
+      // @ts-expect-error mocked
       const mockEasyCreditClient = { getPayment: jest.fn().mockResolvedValue(mockECResponse) };
       (initEasyCreditClient as jest.Mock).mockReturnValue(mockEasyCreditClient);
 
@@ -135,6 +144,7 @@ describe('Payment handlers', () => {
 
     it('should log error and throw if an error occurs', async () => {
       const errorMessage = 'Test error';
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(new Error(errorMessage));
 
       await expect(handleGetPayment(mockPaymentId)).rejects.toThrow(errorMessage);
@@ -151,10 +161,14 @@ describe('Payment handlers', () => {
         transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } },
         paymentId: 'ecTransaction123',
       };
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
       (createPayment as jest.Mock).mockResolvedValue(mockPayment);
+      // @ts-expect-error mocked
       (updateCart as jest.Mock).mockResolvedValue(mockCart);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
       (readConfiguration as jest.Mock).mockReturnValue({ easyCredit: { webShopId: 'webShopId123' } });
@@ -186,10 +200,14 @@ describe('Payment handlers', () => {
         transactionInformation: { decision: { decisionOutcome: 'NEGATIVE', decisionOutcomeText: 'NEGATIVE' } },
         transactionId: 'ecTransaction123',
       };
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
       (createPayment as jest.Mock).mockResolvedValue(mockPayment);
+      // @ts-expect-error mocked
       (updateCart as jest.Mock).mockResolvedValue(mockCart);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
 
@@ -221,8 +239,11 @@ describe('Payment handlers', () => {
 
     it('should unfreeze the cart if payment creation fails', async () => {
       const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
       (updateCart as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
       (createPayment as jest.Mock).mockRejectedValue(new Error('Payment creation failed'));
 
       await expect(
@@ -245,6 +266,7 @@ describe('Payment handlers', () => {
 
     it('should log and rethrow errors', async () => {
       const error = new Error('Some unexpected error');
+      // @ts-expect-error mocked
       (getCartById as jest.Mock).mockRejectedValue(error);
 
       await expect(
@@ -272,7 +294,9 @@ describe('Payment handlers', () => {
         id: 'payment123',
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      // @ts-expect-error mocked
       (initEasyCreditClient as jest.Mock).mockReturnValue({ authorizePayment: jest.fn().mockResolvedValue({}) });
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateTransaction as jest.Mock).mockReturnValue(true);
@@ -285,6 +309,7 @@ describe('Payment handlers', () => {
 
     it('should throw and log error if payment authorization fails', async () => {
       const mockError = new Error('Authorization failed');
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
       await expect(handleAuthorizeECPayment('payment123')).rejects.toThrow('Authorization failed');
@@ -298,8 +323,10 @@ describe('Payment handlers', () => {
         id: 'payment123',
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue({
           status: 'SUCCESS',
         }),
@@ -321,8 +348,10 @@ describe('Payment handlers', () => {
         id: 'payment123',
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue({
           status: 'FAILED',
         }),
@@ -345,6 +374,7 @@ describe('Payment handlers', () => {
 
     it('should throw and log error if payment authorization fails', async () => {
       const mockError = new Error('Authorization failed');
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
       await expect(handleAuthorizePayment('payment123')).rejects.toThrow('Authorization failed');
@@ -356,15 +386,25 @@ describe('Payment handlers', () => {
     it('should successfully cancel the payment and unfreeze the cart', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transaction123',
+            interactionId: 'interactionId123',
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Initial,
+          },
+        ],
       };
       const mockCart = { id: 'cart123' };
       const mockEasyTransaction = { status: ECTransactionStatus.FAILURE };
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
-      (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+      (validateInitialOrPendingTransaction as jest.Mock).mockReturnValue(undefined);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockEasyTransaction),
       });
+      // @ts-expect-error mocked
       (getCartByPaymentId as jest.Mock).mockResolvedValue(mockCart);
 
       const result = await handleCancelPayment('payment123');
@@ -382,8 +422,10 @@ describe('Payment handlers', () => {
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
       const mockEasyTransaction = { status: 'Success' };
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockEasyTransaction),
       });
 
@@ -393,6 +435,7 @@ describe('Payment handlers', () => {
 
     it('should log and rethrow errors during cancellation', async () => {
       const mockError = new Error('Cancel error');
+      // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
       await expect(handleCancelPayment('payment123')).rejects.toThrow('Cancel error');

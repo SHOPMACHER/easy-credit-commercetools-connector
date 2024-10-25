@@ -6,11 +6,14 @@ import {
   validatePayment,
   validatePendingTransaction,
   validateTransaction,
+  validateInitialOrPendingTransaction,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
 import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getTransaction } from '../../src/utils/payment.utils';
+import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 
 jest.mock('../../src/utils/commerceTools.utils', () => ({
   compareAddress: jest.fn(),
@@ -167,6 +170,65 @@ describe('Validation Functions', () => {
       const payment: Payment = {} as unknown as Payment;
 
       expect(() => validatePendingTransaction(payment)).not.toThrow();
+    });
+  });
+
+  describe('validateInitialOrPendingTransaction', () => {
+    it('should throw error if there is no initial or pending transaction', () => {
+      const payment: Payment = {
+        transactions: [],
+      } as unknown as Payment;
+
+      expect(() => validateInitialOrPendingTransaction(payment)).toThrow(
+        'No interactionId found in any initial or pending transaction',
+      );
+    });
+
+    it('should throw error if there is no interactionId in any initial or pending transaction', () => {
+      (getPendingTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
+      const payment: Payment = {
+        transactions: [
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Initial,
+          },
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Initial,
+          },
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Pending,
+          },
+        ],
+      } as unknown as Payment;
+
+      expect(() => validateInitialOrPendingTransaction(payment)).toThrow(
+        'No interactionId found in any initial or pending transaction',
+      );
+    });
+
+    it('should not throw error if there is a interactionId in an initial or pending transaction', () => {
+      (getPendingTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
+      const payment: Payment = {
+        transactions: [
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Initial,
+          },
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Initial,
+            interactionId: 'transaction123',
+          },
+          {
+            type: CTTransactionType.Authorization,
+            state: CTTransactionState.Pending,
+          },
+        ],
+      } as unknown as Payment;
+
+      expect(() => validateInitialOrPendingTransaction(payment)).not.toThrow();
     });
   });
 
