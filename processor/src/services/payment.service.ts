@@ -215,12 +215,11 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
-    validateInitialOrPendingTransaction(payment);
+    const transaction = validateInitialOrPendingTransaction(payment);
 
-    const transaction = getPendingTransaction(payment) as Transaction;
     const interactionId = transaction.interactionId as string;
 
-    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId as string);
+    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
 
     if (easyTransaction.status !== ECTransactionStatus.FAILURE) {
       throw new Errorx({

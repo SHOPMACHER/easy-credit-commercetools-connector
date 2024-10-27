@@ -399,7 +399,7 @@ describe('Payment handlers', () => {
       const mockEasyTransaction = { status: ECTransactionStatus.FAILURE };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
-      (validateInitialOrPendingTransaction as jest.Mock).mockReturnValue(undefined);
+      (validateInitialOrPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockEasyTransaction),
