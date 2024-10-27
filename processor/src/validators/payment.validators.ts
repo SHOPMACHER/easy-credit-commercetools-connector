@@ -1,4 +1,4 @@
-import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
+import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
@@ -108,27 +108,29 @@ export const validatePendingTransaction = (payment: Payment) => {
   }
 };
 
-export const validateInitialOrPendingTransaction = (payment: Payment) => {
-  const isValid = payment.transactions.some((transaction) => {
+export const validateInitialOrPendingTransaction = (payment: Payment): Transaction => {
+  let validTransaction;
+
+  for (let i = 0; i < payment.transactions.length; i++) {
     if (
-      transaction.type === CTTransactionType.Authorization &&
-      (transaction.state === CTTransactionState.Initial || transaction.state === CTTransactionState.Pending)
+      payment.transactions[i].type === CTTransactionType.Authorization &&
+      (payment.transactions[i].state === CTTransactionState.Initial ||
+        payment.transactions[i].state === CTTransactionState.Pending) &&
+      payment.transactions[i].interactionId
     ) {
-      if (transaction.interactionId) {
-        return true;
-      }
+      validTransaction = payment.transactions[i];
     }
+  }
 
-    return false;
-  });
-
-  if (!isValid) {
+  if (!validTransaction) {
     throw new Errorx({
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
       message: 'No interactionId found in any initial or pending transaction',
     });
   }
+
+  return validTransaction;
 };
 
 export const validateTransaction = (payment: Payment) => {
