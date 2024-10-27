@@ -111,14 +111,15 @@ export const validatePendingTransaction = (payment: Payment) => {
 export const validateInitialOrPendingTransaction = (payment: Payment): Transaction => {
   let validTransaction;
 
-  for (let i = 0; i < payment.transactions.length; i++) {
+  for (const transaction of payment.transactions) {
     if (
-      payment.transactions[i].type === CTTransactionType.Authorization &&
-      (payment.transactions[i].state === CTTransactionState.Initial ||
-        payment.transactions[i].state === CTTransactionState.Pending) &&
-      payment.transactions[i].interactionId
+      transaction.type === CTTransactionType.Authorization &&
+      (transaction.state === CTTransactionState.Initial || transaction.state === CTTransactionState.Pending) &&
+      transaction.interactionId
     ) {
-      validTransaction = payment.transactions[i];
+      validTransaction = transaction;
+
+      break;
     }
   }
 
