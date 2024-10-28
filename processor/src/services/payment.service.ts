@@ -170,7 +170,15 @@ export const handleAuthorizeECPayment = async (paymentId: string): Promise<void>
     const transaction = getTransaction(payment) as Transaction;
     const interactionId = transaction.interactionId as string;
 
-    await initEasyCreditClient().authorizePayment(interactionId);
+    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
+    if (easyTransaction.status !== ECTransactionStatus.PREAUTHORIZED) {
+      throw new Errorx({
+        code: 'TransactionNotPreauthorized',
+        message: 'You are not allow to authorize Easy Credit transaction without preauthorizing it first.',
+        httpErrorStatus: 400,
+      });
+    }
+    await initEasyCreditClient().authorizePayment(interactionId, paymentId);
 
     await updatePayment(payment, [
       { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Pending },
@@ -193,10 +201,10 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
 
     const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
 
-    if (easyTransaction.status !== ECTransactionStatus.SUCCESS) {
+    if (easyTransaction.status !== ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
-        code: 'TransactionNotSuccess',
-        message: 'Transaction status is not SUCCESS.',
+        code: 'TransactionNotAuthorized',
+        message: 'You are not allow to authorize a payment without EasyCredit Authorized transaction.',
         httpErrorStatus: 400,
       });
     }
@@ -221,10 +229,10 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
 
     const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
 
-    if (easyTransaction.status !== ECTransactionStatus.FAILURE) {
+    if (easyTransaction.status === ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
-        code: 'TransactionNotDeclined',
-        message: 'Transaction status is not DECLINED.',
+        code: 'TransactionIsAuthorized',
+        message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
         httpErrorStatus: 400,
       });
     }

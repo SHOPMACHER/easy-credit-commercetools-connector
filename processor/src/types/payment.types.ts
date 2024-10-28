@@ -162,9 +162,11 @@ export type ECCreatePaymentResponse = {
 };
 
 export enum ECTransactionStatus {
-  PENDING = 'PENDING',
-  SUCCESS = 'SUCCESS',
-  FAILURE = 'FAILURE',
+  OPEN = 'OPEN',
+  PREAUTHORIZED = 'PREAUTHORIZED',
+  DECLINED = 'DECLINED',
+  AUTHORIZED = 'AUTHORIZED',
+  EXPIRED = 'EXPIRED',
 }
 
 export type ECGetPaymentResponse = {
@@ -183,6 +185,13 @@ export type ECGetPaymentResponse = {
     };
     bankAccountCheck: {
       required: boolean;
+    };
+  };
+  transaction: {
+    financingTerm: number;
+    orderDetails: {
+      orderValue: number;
+      orderId: string;
     };
   };
 };

@@ -75,7 +75,7 @@ export const initEasyCreditClient = () => {
     }
   };
 
-  const authorizePayment = async (technicalTransactionId: string, customHeaders?: HeadersInit) => {
+  const authorizePayment = async (technicalTransactionId: string, orderId: string, customHeaders?: HeadersInit) => {
     const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
 
     const response = await fetch(
@@ -83,6 +83,7 @@ export const initEasyCreditClient = () => {
       {
         method: 'POST',
         headers,
+        body: JSON.stringify({ orderId }),
       },
     );
 

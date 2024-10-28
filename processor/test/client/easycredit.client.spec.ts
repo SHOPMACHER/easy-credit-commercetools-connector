@@ -145,6 +145,7 @@ describe('initEasyCreditClient', () => {
     it('should make a POST request and return the authorization response', async () => {
       const mockResponse = { authorizationStatus: 'AUTHORIZED' };
       const technicalTransactionId = '12345';
+      const orderId = '54321';
 
       // Mock successful fetch response
       (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -152,7 +153,7 @@ describe('initEasyCreditClient', () => {
         json: jest.fn().mockResolvedValueOnce(mockResponse),
       });
 
-      const result = await easyCreditClient.authorizePayment(technicalTransactionId);
+      const result = await easyCreditClient.authorizePayment(technicalTransactionId, orderId);
 
       expect(global.fetch).toHaveBeenCalledWith(
         `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}/authorization`,
@@ -162,6 +163,7 @@ describe('initEasyCreditClient', () => {
             'Content-Type': 'application/json',
             Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
           },
+          body: JSON.stringify({ orderId }),
         },
       );
 

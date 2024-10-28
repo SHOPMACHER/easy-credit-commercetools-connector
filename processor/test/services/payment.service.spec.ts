@@ -294,17 +294,30 @@ describe('Payment handlers', () => {
         id: 'payment123',
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
+      const mockECTransaction = {
+        status: ECTransactionStatus.PREAUTHORIZED,
+        transaction: {
+          orderDetails: {
+            orderId: '12345',
+          },
+        },
+      };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
-      // @ts-expect-error mocked
-      (initEasyCreditClient as jest.Mock).mockReturnValue({ authorizePayment: jest.fn().mockResolvedValue({}) });
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        authorizePayment: jest.fn().mockResolvedValue({}),
+        // @ts-expect-error mocked
+        getPayment: jest.fn().mockResolvedValue(mockECTransaction),
+      });
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateTransaction as jest.Mock).mockReturnValue(true);
       (getTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
       await handleAuthorizeECPayment('payment123');
 
-      expect(initEasyCreditClient().authorizePayment).toHaveBeenCalledWith('interactionId123');
+      expect(initEasyCreditClient().authorizePayment).toHaveBeenCalledWith('interactionId123', 'payment123');
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
     });
 
     it('should throw and log error if payment authorization fails', async () => {
@@ -328,7 +341,7 @@ describe('Payment handlers', () => {
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue({
-          status: 'SUCCESS',
+          status: ECTransactionStatus.AUTHORIZED,
         }),
       });
       (validatePayment as jest.Mock).mockReturnValue(true);
@@ -353,19 +366,21 @@ describe('Payment handlers', () => {
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue({
-          status: 'FAILED',
+          status: ECTransactionStatus.DECLINED,
         }),
       });
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validatePendingTransaction as jest.Mock).mockReturnValue(true);
       (getPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
-      await expect(handleAuthorizePayment('payment123')).rejects.toThrow('Transaction status is not SUCCESS.');
+      await expect(handleAuthorizePayment('payment123')).rejects.toThrow(
+        'You are not allow to authorize a payment without EasyCredit Authorized transaction.',
+      );
       expect(log.error).toHaveBeenCalledWith(
         'Error in authorizing CT Payment',
         new Errorx({
           code: 'TransactionNotSuccess',
-          message: 'Transaction status is not SUCCESS.',
+          message: 'You are not allow to authorize a payment without EasyCredit Authorized transaction.',
           httpErrorStatus: 400,
         }),
       );
@@ -396,7 +411,7 @@ describe('Payment handlers', () => {
         ],
       };
       const mockCart = { id: 'cart123' };
-      const mockEasyTransaction = { status: ECTransactionStatus.FAILURE };
+      const mockEasyTransaction = { status: ECTransactionStatus.OPEN };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (validateInitialOrPendingTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
@@ -416,12 +431,12 @@ describe('Payment handlers', () => {
       expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
     });
 
-    it('should throw an error if the transaction is not declined', async () => {
+    it('should throw an error if the transaction is authorized', async () => {
       const mockPayment = {
         id: 'payment123',
         transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
       };
-      const mockEasyTransaction = { status: 'Success' };
+      const mockEasyTransaction = { status: ECTransactionStatus.AUTHORIZED };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -430,7 +445,9 @@ describe('Payment handlers', () => {
       });
 
       await expect(handleCancelPayment('payment123')).rejects.toThrow(Errorx);
-      await expect(handleCancelPayment('payment123')).rejects.toThrow('Transaction status is not DECLINED');
+      await expect(handleCancelPayment('payment123')).rejects.toThrow(
+        'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
+      );
     });
 
     it('should log and rethrow errors during cancellation', async () => {
