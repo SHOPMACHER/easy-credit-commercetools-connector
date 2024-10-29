@@ -72,7 +72,7 @@ describe('test operationRoute', () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toStrictEqual({
-      isEnabled: process.env.WIDGET_ENABLED === '1' ? true : false,
+      isEnabled: process.env.WIDGET_ENABLED === '1',
       webShopId: process.env.WEBSHOP_ID,
     });
   });

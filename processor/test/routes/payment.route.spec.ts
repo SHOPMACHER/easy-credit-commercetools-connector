@@ -1,169 +1,213 @@
+import fastify from 'fastify';
 import { paymentsRoute } from '../../src/routes/payment.route';
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   handleAuthorizeECPayment,
   handleCreatePayment,
   handlePaymentMethod,
   handleGetPayment,
+  handleCapturePayment,
 } from '../../src/services/payment.service';
+import {
+  AuthorityAuthorizationHook,
+  JWTAuthenticationHook,
+  Oauth2AuthenticationHook,
+  SessionHeaderAuthenticationHook,
+} from '@commercetools/connect-payments-sdk';
+import { IncomingHttpHeaders } from 'node:http';
 
-jest.mock('../../src/services/payment.service');
+// Mocks for imported service functions
+jest.mock('../../src/services/payment.service', () => ({
+  handleAuthorizeECPayment: jest.fn(),
+  handleCreatePayment: jest.fn(),
+  handlePaymentMethod: jest.fn(),
+  handleGetPayment: jest.fn(),
+  handleCapturePayment: jest.fn(),
+}));
 
 describe('paymentsRoute', () => {
-  let fastify: Partial<FastifyInstance>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let sessionHeaderAuthHookMock: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let oauth2AuthHookMock: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let opts: any;
+  const app = fastify({ logger: false });
+  const token = 'token';
+  const sessionId = 'session-id';
 
-  beforeEach(() => {
-    fastify = {
-      get: jest.fn(),
-      post: jest.fn(),
-    };
-
-    sessionHeaderAuthHookMock = { authenticate: jest.fn(() => jest.fn()) };
-    oauth2AuthHookMock = { authenticate: jest.fn(() => jest.fn()) };
-
-    opts = {
-      sessionHeaderAuthHook: sessionHeaderAuthHookMock,
-      oauth2AuthHook: oauth2AuthHookMock,
-    };
+  beforeAll(async () => {
+    await app.register(paymentsRoute, {
+      prefix: '/payments',
+      oauth2AuthHook: {
+        authenticate: jest.fn(() => async (request: { headers: IncomingHttpHeaders }) => {
+          expect(request.headers['authorization']).toContain(`Bearer ${token}`);
+        }),
+      } as unknown as Oauth2AuthenticationHook,
+      jwtAuthHook: jest.fn() as unknown as JWTAuthenticationHook,
+      sessionHeaderAuthHook: {
+        authenticate: jest.fn(() => async (request: { headers: IncomingHttpHeaders }) => {
+          expect(request.headers['x-session-id']).toContain(sessionId);
+        }),
+      } as unknown as SessionHeaderAuthenticationHook,
+      authorizationHook: jest.fn() as unknown as AuthorityAuthorizationHook,
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.clearAllMocks();
+    await app.ready();
   });
 
-  it('should register the payment-method GET route', async () => {
-    await paymentsRoute(fastify as FastifyInstance, opts);
-
-    expect(fastify.get).toHaveBeenCalledWith(
-      '/payment-method/:cartId',
-      expect.objectContaining({
-        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
-        schema: expect.objectContaining({
-          params: expect.any(Object), // Allow any object structure
-          response: expect.objectContaining({
-            200: expect.any(Object), // Allow any object structure
-            400: expect.any(Object), // Allow any object structure
-          }),
-        }),
-      }),
-      expect.any(Function), // Route handler function
-    );
-
-    // Test the route handler
-    const routeHandler = (fastify.get as jest.Mock).mock.calls[0][2];
-    const requestMock = { params: { cartId: '123' } } as Partial<FastifyRequest>;
-    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
-
-    (handlePaymentMethod as jest.Mock).mockResolvedValue({ webShopId: '123', amount: 10 });
-
-    await routeHandler(requestMock, replyMock);
-
-    expect(handlePaymentMethod).toHaveBeenCalledWith('123');
-    expect(replyMock.code).toHaveBeenCalledWith(200);
-    expect(replyMock.send).toHaveBeenCalledWith({ webShopId: '123', amount: 10 });
+  afterAll(async () => {
+    await app.close();
   });
 
-  it('should register the payment GET route', async () => {
-    await paymentsRoute(fastify as FastifyInstance, opts);
+  describe('GET /payments/payment-method/:cartId', () => {
+    it('should return payment method config', async () => {
+      const cartId = '12345';
+      const mockResponse = { webShopId: 'mock-webshop-id', amount: 100 };
+      (handlePaymentMethod as jest.Mock).mockResolvedValue(mockResponse);
 
-    expect(fastify.get).toHaveBeenCalledWith(
-      '/:paymentId',
-      expect.objectContaining({
-        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
-        schema: expect.objectContaining({
-          params: expect.any(Object),
-          response: expect.objectContaining({
-            200: expect.any(Object),
-            400: expect.any(Object),
-          }),
-        }),
-      }),
-      expect.any(Function), // Route handler function
-    );
+      const response = await app.inject({
+        method: 'GET',
+        url: `/payments/payment-method/${cartId}`,
+        headers: {
+          'x-session-id': sessionId,
+          'content-type': 'application/json',
+        },
+      });
 
-    // Test the route handler
-    const routeHandler = (fastify.get as jest.Mock).mock.calls[1][2];
-    const requestMock = {
-      params: { paymentId: '123' },
-    } as Partial<FastifyRequest>;
-    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
-
-    (handleGetPayment as jest.Mock).mockResolvedValue({ status: 'mockPayment' });
-
-    await routeHandler(requestMock, replyMock);
-
-    expect(handleGetPayment).toHaveBeenCalledWith('123');
-    expect(replyMock.code).toHaveBeenCalledWith(200);
-    expect(replyMock.send).toHaveBeenCalledWith({ status: 'mockPayment' });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockResponse);
+      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId);
+    });
   });
 
-  it('should register the payment POST route', async () => {
-    await paymentsRoute(fastify as FastifyInstance, opts);
+  describe('POST /payments', () => {
+    it('should create payment', async () => {
+      const mockRequest = {
+        cartId: '12345',
+        redirectLinks: {
+          urlSuccess: 'https://urlSuccess.com',
+          urlCancellation: 'https://urlCancellation.com',
+          urlDenial: 'https://urlDenial.com',
+        },
+        customerRelationship: {
+          customerStatus: 'NEW_CUSTOMER',
+          customerSince: '2024-01-01',
+          numberOfOrders: 0,
+        },
+      };
+      const mockResponse = {
+        technicalTransactionId: 'technicalTransactionId',
+        paymentId: 'paymentId',
+        redirectUrl: 'redirectUrl',
+        transactionInformation: {
+          status: 'status',
+          decision: {
+            decisionOutcome: 'decisionOutcome',
+            decisionOutcomeText: null,
+          },
+        },
+      };
+      (handleCreatePayment as jest.Mock).mockResolvedValue(mockResponse);
 
-    expect(fastify.post).toHaveBeenCalledWith(
-      '/',
-      expect.objectContaining({
-        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
-        schema: expect.objectContaining({
-          body: expect.any(Object),
-          response: expect.objectContaining({
-            201: expect.any(Object),
-            400: expect.any(Object),
-          }),
-        }),
-      }),
-      expect.any(Function), // Route handler function
-    );
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments`,
+        body: mockRequest,
+        headers: {
+          'x-session-id': sessionId,
+          'content-type': 'application/json',
+        },
+      });
 
-    // Test the route handler
-    const routeHandler = (fastify.post as jest.Mock).mock.calls[0][2];
-    const requestMock = {
-      body: { cartId: '123', redirectLinks: 'mockLink', customerRelationship: 'mockRelationship' },
-    } as Partial<FastifyRequest>;
-    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
-
-    (handleCreatePayment as jest.Mock).mockResolvedValue({ payment: 'mockPayment' });
-
-    await routeHandler(requestMock, replyMock);
-
-    expect(handleCreatePayment).toHaveBeenCalledWith('123', 'mockLink', 'mockRelationship');
-    expect(replyMock.code).toHaveBeenCalledWith(201);
-    expect(replyMock.send).toHaveBeenCalledWith({ payment: 'mockPayment' });
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual(mockResponse);
+      expect(handleCreatePayment).toHaveBeenCalledWith(
+        mockRequest.cartId,
+        mockRequest.redirectLinks,
+        mockRequest.customerRelationship,
+      );
+    });
   });
 
-  it('should register the authorize POST route', async () => {
-    await paymentsRoute(fastify as FastifyInstance, opts);
+  describe('GET /payments/paymentId', () => {
+    it('should retrieve payment', async () => {
+      const paymentId = 'payment123';
+      const mockResponse = {
+        webShopId: 'webShopId',
+        amount: 100,
+        status: 'status',
+        decision: {
+          interest: 10,
+          totalValue: 10,
+          orderValue: 10,
+          decisionOutcome: 'decisionOutcome',
+          numberOfInstallments: 10,
+          installment: 10,
+          lastInstallment: 10,
+          mtan: {
+            required: true,
+            successful: true,
+          },
+          bankAccountCheck: {
+            required: true,
+          },
+        },
+      };
+      (handleGetPayment as jest.Mock).mockResolvedValue(mockResponse);
 
-    expect(fastify.post).toHaveBeenCalledWith(
-      '/authorize',
-      expect.objectContaining({
-        preHandler: expect.arrayContaining([expect.any(Function)]), // Expect an array containing a function
-        schema: expect.objectContaining({
-          body: expect.any(Object),
-          response: expect.objectContaining({
-            200: expect.any(Object),
-            400: expect.any(Object),
-          }),
-        }),
-      }),
-      expect.any(Function), // Route handler function
-    );
+      const response = await app.inject({
+        method: 'GET',
+        url: `/payments/${paymentId}`,
+        headers: {
+          'x-session-id': sessionId,
+          'content-type': 'application/json',
+        },
+      });
 
-    // Test the route handler
-    const routeHandler = (fastify.post as jest.Mock).mock.calls[1][2];
-    const requestMock = { body: { paymentId: 'abc123' } } as Partial<FastifyRequest>;
-    const replyMock = { code: jest.fn().mockReturnThis(), send: jest.fn() } as unknown as FastifyReply;
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockResponse);
+      expect(handleGetPayment).toHaveBeenCalledWith(paymentId);
+    });
+  });
 
-    await routeHandler(requestMock, replyMock);
+  describe('POST /payments/:paymentId/authorize', () => {
+    it('should authorize payment', async () => {
+      const paymentId = 'payment123';
+      const mockRequest = { orderId: 'order789' };
+      (handleAuthorizeECPayment as jest.Mock).mockResolvedValue(undefined);
 
-    expect(handleAuthorizeECPayment).toHaveBeenCalledWith('abc123');
-    expect(replyMock.code).toHaveBeenCalledWith(200);
-    expect(replyMock.send).toHaveBeenCalled();
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments/${paymentId}/authorize`,
+        body: mockRequest,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(response.body).toBe('');
+      expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId, mockRequest.orderId);
+    });
+  });
+
+  describe('POST /payments/:paymentId/capture', () => {
+    it('should capture payment', async () => {
+      const paymentId = 'payment123';
+      const mockRequest = { orderId: 'order789', trackingNumber: 'track123' };
+      (handleCapturePayment as jest.Mock).mockResolvedValue(undefined);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments/${paymentId}/capture`,
+        payload: mockRequest,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(response.body).toBe('');
+      expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.orderId, mockRequest.trackingNumber);
+    });
   });
 });

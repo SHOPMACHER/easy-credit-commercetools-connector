@@ -1,12 +1,10 @@
 import { Static, Type } from '@sinclair/typebox';
 
 export const AuthorizePaymentBodySchema = Type.Object({
-  paymentId: Type.String(),
+  orderId: Type.Optional(Type.String()),
 });
 
-export const AuthorizePaymentResponseSchema = Type.Object({
-  webShopId: Type.String(),
-});
+export const AuthorizePaymentResponseSchema = Type.Object({});
 
 export type AuthorizePaymentRequestSchemaDTO = Static<typeof AuthorizePaymentBodySchema>;
 

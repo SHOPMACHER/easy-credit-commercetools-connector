@@ -7,11 +7,12 @@ import {
   validatePendingTransaction,
   validateTransaction,
   validateInitialOrPendingTransaction,
+  validateSuccessTransaction,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
 import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
-import { getPendingTransaction, getTransaction } from '../../src/utils/payment.utils';
+import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { describe, jest, it, expect, beforeEach } from '@jest/globals';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 
@@ -25,6 +26,7 @@ jest.mock('../../src/utils/app.utils', () => ({
 
 jest.mock('../../src/utils/payment.utils', () => ({
   getPendingTransaction: jest.fn(),
+  getSuccessTransaction: jest.fn(),
   getTransaction: jest.fn(),
 }));
 
@@ -170,6 +172,22 @@ describe('Validation Functions', () => {
       const payment: Payment = {} as unknown as Payment;
 
       expect(() => validatePendingTransaction(payment)).not.toThrow();
+    });
+  });
+
+  describe('validateSuccessTransaction', () => {
+    it('should throw error if success transaction is missing interactionId', () => {
+      (getSuccessTransaction as jest.Mock).mockReturnValue({});
+      const payment: Payment = {} as unknown as Payment;
+
+      expect(() => validateSuccessTransaction(payment)).toThrow('Missing success transaction');
+    });
+
+    it('should not throw error if success transaction is valid', () => {
+      (getSuccessTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
+      const payment: Payment = {} as unknown as Payment;
+
+      expect(() => validateSuccessTransaction(payment)).not.toThrow();
     });
   });
 

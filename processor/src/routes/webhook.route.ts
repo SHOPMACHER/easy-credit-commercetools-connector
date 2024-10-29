@@ -11,14 +11,14 @@ import {
 export const webhookRoute = async (fastify: FastifyInstance) => {
   fastify.get<{
     Params: { paymentId: string };
-    Querystring: { redirectUrl: string };
+    Querystring: { redirectUrl?: string };
     Reply: CancelPaymentResponseSchemaDTO;
   }>(
     '/:paymentId/cancel',
     {
       schema: {
         params: { type: 'object', properties: { paymentId: { type: 'string' } }, required: ['paymentId'] },
-        querystring: { type: 'object', properties: { redirectUrl: { type: 'string' } }, required: ['redirectUrl'] },
+        querystring: { type: 'object', properties: { redirectUrl: { type: 'string' } } },
         response: {
           200: CancelPaymentResponseSchema,
           400: ErrorResponse,
@@ -26,7 +26,7 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
       },
     },
     async (
-      request: FastifyRequest<{ Params: { paymentId: string }; Querystring: { redirectUrl: string } }>,
+      request: FastifyRequest<{ Params: { paymentId: string }; Querystring: { redirectUrl?: string } }>,
       reply: FastifyReply,
     ) => {
       const { paymentId } = request.params;
@@ -43,13 +43,14 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
 
   fastify.get<{
     Params: { paymentId: string };
-    Querystring: { redirectUrl: string };
+    Querystring: { redirectUrl?: string };
     Reply: AuthorizePaymentResponseSchemaDTO;
   }>(
     '/:paymentId/authorize',
     {
       schema: {
         params: { type: 'object', properties: { paymentId: { type: 'string' } }, required: ['paymentId'] },
+        querystring: { type: 'object', properties: { redirectUrl: { type: 'string' } } },
         response: {
           200: AuthorizePaymentResponseSchema,
           400: ErrorResponse,
@@ -57,7 +58,7 @@ export const webhookRoute = async (fastify: FastifyInstance) => {
       },
     },
     async (
-      request: FastifyRequest<{ Params: { paymentId: string }; Querystring: { redirectUrl: string } }>,
+      request: FastifyRequest<{ Params: { paymentId: string }; Querystring: { redirectUrl?: string } }>,
       reply: FastifyReply,
     ) => {
       const { paymentId } = request.params;

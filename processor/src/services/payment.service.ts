@@ -21,10 +21,11 @@ import {
   validateInitialOrPendingTransaction,
   validatePayment,
   validatePendingTransaction,
+  validateSuccessTransaction,
   validateTransaction,
 } from '../validators/payment.validators';
 import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
-import { getPendingTransaction, getTransaction } from '../utils/payment.utils';
+import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
@@ -111,11 +112,7 @@ export const handleCreatePayment = async (
       },
     ]);
 
-    cart = await getCartById(cartId);
-
     if (transactionState === CTTransactionState.Failure) {
-      await updateCart(cart, [{ action: 'unfreezeCart' }]);
-
       throw new MultiErrorx([
         new Errorx({
           code: 'TransactionNotSuccess',
@@ -129,9 +126,11 @@ export const handleCreatePayment = async (
   } catch (error: unknown) {
     log.error('Error in handleCreatePayment', error);
 
-    if (cart) {
-      await updateCart(cart, [{ action: 'unfreezeCart' }]);
+    if (!cart) {
+      cart = await getCartById(cartId);
     }
+
+    await updateCart(cart, [{ action: 'unfreezeCart' }]);
 
     throw error;
   }
@@ -160,7 +159,7 @@ export const handleGetPayment = async (paymentId: string): Promise<GetPaymentRes
   }
 };
 
-export const handleAuthorizeECPayment = async (paymentId: string): Promise<void> => {
+export const handleAuthorizeECPayment = async (paymentId: string, orderId?: string): Promise<void> => {
   try {
     const payment = await getPaymentById(paymentId);
 
@@ -178,7 +177,7 @@ export const handleAuthorizeECPayment = async (paymentId: string): Promise<void>
         httpErrorStatus: 400,
       });
     }
-    await initEasyCreditClient().authorizePayment(interactionId, paymentId);
+    await initEasyCreditClient().authorizePayment(interactionId, orderId ?? paymentId);
 
     await updatePayment(payment, [
       { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Pending },
@@ -223,13 +222,14 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
+
     const transaction = validateInitialOrPendingTransaction(payment);
 
     const interactionId = transaction.interactionId as string;
 
-    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
+    const easyCreditTransaction = await initEasyCreditClient().getPayment(interactionId);
 
-    if (easyTransaction.status === ECTransactionStatus.AUTHORIZED) {
+    if (easyCreditTransaction.status === ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
         code: 'TransactionIsAuthorized',
         message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
@@ -238,7 +238,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     }
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: 'Failure' },
+      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Failure },
     ]);
     const cart = await getCartByPaymentId(payment.id);
 
@@ -247,6 +247,41 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     return paymentId;
   } catch (error) {
     log.error('Error in cancelling payment and unfreezing cart', error);
+    throw error;
+  }
+};
+
+export const handleCapturePayment = async (
+  paymentId: string,
+  orderId?: string,
+  trackingNumber?: string,
+): Promise<void> => {
+  try {
+    const payment = await getPaymentById(paymentId);
+
+    validatePayment(payment);
+    validateSuccessTransaction(payment);
+
+    const transaction = getSuccessTransaction(payment) as Transaction;
+    const interactionId = transaction.interactionId as string;
+
+    const easyCreditTransaction = await initEasyCreditClient().getPayment(interactionId);
+
+    if (easyCreditTransaction.status !== ECTransactionStatus.AUTHORIZED) {
+      throw new Errorx({
+        code: 'TransactionIsNotAuthorized',
+        message: 'You are not allow to capture a payment without Easy Credit AUTHORIZED transaction.',
+        httpErrorStatus: 400,
+      });
+    }
+
+    await initEasyCreditClient().capturePayment(
+      easyCreditTransaction.decision.transactionId,
+      orderId ?? paymentId,
+      trackingNumber,
+    );
+  } catch (error) {
+    log.error('Error in capturing payment', error);
     throw error;
   }
 };

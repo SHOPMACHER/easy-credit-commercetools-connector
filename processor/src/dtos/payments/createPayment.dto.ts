@@ -39,7 +39,9 @@ export const CreatePaymentResponseSchema = Type.Object({
     status: Type.String(),
     decision: Type.Object({
       decisionOutcome: Type.String(),
-      decisionOutcomeText: Type.String(),
+      decisionOutcomeText: Type.String({
+        nullable: true,
+      }),
     }),
   }),
 });

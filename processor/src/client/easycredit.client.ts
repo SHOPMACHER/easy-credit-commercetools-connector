@@ -9,120 +9,126 @@ import {
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { log } from '../libs/logger';
 
-/**
- * Initializes the EasyCredit client
- *
- * @example
- * const { integrationCheck } = initEasyCreditClient();
- * const response = await integrationCheck({ ... });
- */
-export const initEasyCreditClient = () => {
-  const config = readConfiguration();
+interface EasyCreditConfig {
+  webShopId: string;
+  apiPassword: string;
+}
 
-  const webShopId = config.easyCredit.webShopId;
-  const apiPassword = config.easyCredit.apiPassword;
+interface EasyCreditClient {
+  integrationCheck(payload: object, customHeaders?: HeadersInit): Promise<boolean>;
+  createPayment(payload: ECTransaction, customHeaders?: HeadersInit): Promise<ECCreatePaymentResponse>;
+  authorizePayment(technicalTransactionId: string, orderId: string, customHeaders?: HeadersInit): Promise<boolean>;
+  capturePayment(
+    transactionId: string,
+    orderId: string,
+    trackingNumber?: string,
+    customHeaders?: HeadersInit,
+  ): Promise<boolean>;
+  getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse>;
+}
 
-  /**
-   * Generates default headers for the EasyCredit API requests, including the Authorization header set to Basic Auth with the webShopId and apiPassword.
-   * @returns Default headers for the EasyCredit API requests.
-   */
-  const getDefaultHeaders = (): HeadersInit => {
+class EasyCreditApiClient implements EasyCreditClient {
+  private readonly baseApiUrl: string;
+  private readonly config: EasyCreditConfig;
+
+  constructor(config: EasyCreditConfig, baseApiUrl = EASYCREDIT_BASE_API_URL) {
+    this.config = config;
+    this.baseApiUrl = baseApiUrl;
+  }
+
+  private getDefaultHeaders(): HeadersInit {
+    const authString = btoa(`${this.config.webShopId}:${this.config.apiPassword}`);
     return {
       'Content-Type': 'application/json',
-      Authorization: `Basic ${btoa(`${webShopId}:${apiPassword}`)}`,
+      Authorization: `Basic ${authString}`,
     };
-  };
+  }
 
-  const integrationCheck = async (payload: object | JSON, customHeaders?: HeadersInit) => {
-    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+  private async handleResponse<T>(response: Response): Promise<T> {
+    if (!response.ok) {
+      const errorData: ECTransactionError = await response.json();
+      log.error('EasyCredit API error', errorData);
+      throw new Errorx({
+        code: errorData.title || 'Unknown Error',
+        message: errorData.title || 'An error occurred',
+        httpErrorStatus: response.status,
+        fields: errorData.violations,
+      });
+    }
+    return response.json();
+  }
 
-    const response = await fetch(`${EASYCREDIT_BASE_API_URL}/payment/v3/webshop/integrationcheck`, {
+  public async integrationCheck(payload: object, customHeaders?: HeadersInit): Promise<boolean> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    const response = await fetch(`${this.baseApiUrl}/payment/v3/webshop/integrationcheck`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
+    await this.handleResponse(response);
 
-    return await response.json();
-  };
+    return true;
+  }
 
-  const createPayment = async (
-    payload: ECTransaction,
-    customHeaders?: HeadersInit,
-  ): Promise<ECCreatePaymentResponse> => {
-    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+  public async createPayment(payload: ECTransaction, customHeaders?: HeadersInit): Promise<ECCreatePaymentResponse> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    return this.handleResponse(response);
+  }
 
-    try {
-      const response = await fetch(`${EASYCREDIT_BASE_API_URL}/payment/v3/transaction`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw await response.json();
-      }
-
-      return await response.json();
-    } catch (error: unknown) {
-      log.error('Error in easycredit createPayment', error);
-
-      throw new Errorx({
-        code: (error as ECTransactionError).title,
-        message: (error as ECTransactionError).title,
-        httpErrorStatus: 400,
-        fields: (error as ECTransactionError).violations,
-      });
-    }
-  };
-
-  const authorizePayment = async (technicalTransactionId: string, orderId: string, customHeaders?: HeadersInit) => {
-    const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
-
-    const response = await fetch(
-      `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}/authorization`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ orderId }),
-      },
-    );
-
-    return await response.json();
-  };
-
-  const getPayment = async (
+  public async authorizePayment(
     technicalTransactionId: string,
+    orderId: string,
     customHeaders?: HeadersInit,
-  ): Promise<ECGetPaymentResponse> => {
-    try {
-      const headers: HeadersInit = { ...getDefaultHeaders(), ...customHeaders };
+  ): Promise<boolean> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ orderId }),
+    });
+    await this.handleResponse(response);
 
-      const response = await fetch(`${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/${technicalTransactionId}`, {
-        method: 'GET',
-        headers,
-      });
+    return true;
+  }
 
-      if (!response.ok) {
-        throw await response.json();
-      }
+  public async capturePayment(
+    transactionId: string,
+    orderId: string,
+    trackingNumber?: string,
+    customHeaders?: HeadersInit,
+  ): Promise<boolean> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    const body = { orderId, trackingNumber };
+    const response = await fetch(`${this.baseApiUrl}/api/merchant/v3/transaction/${transactionId}/capture`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    await this.handleResponse(response);
 
-      return await response.json();
-    } catch (error: unknown) {
-      log.error('Error in easycredit getPayment', error);
+    return true;
+  }
 
-      throw new Errorx({
-        code: (error as ECTransactionError).title,
-        message: (error as ECTransactionError).title,
-        httpErrorStatus: 400,
-        fields: (error as ECTransactionError).violations,
-      });
-    }
-  };
+  public async getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}`, {
+      method: 'GET',
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+}
 
-  return {
-    integrationCheck,
-    createPayment,
-    authorizePayment,
-    getPayment,
-  };
+/**
+ * Initializes the EasyCredit client with configuration from utils.
+ * @returns {EasyCreditClient} Initialized client instance.
+ */
+export const initEasyCreditClient = (): EasyCreditClient => {
+  const config = readConfiguration().easyCredit;
+  return new EasyCreditApiClient(config);
 };

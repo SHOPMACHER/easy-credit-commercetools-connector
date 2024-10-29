@@ -2,7 +2,7 @@ import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-pa
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
-import { getPendingTransaction, getTransaction } from '../utils/payment.utils';
+import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
 import { CTTransactionState, CTTransactionType } from '../types/payment.types';
 
 export const validateAddresses = (
@@ -104,6 +104,18 @@ export const validatePendingTransaction = (payment: Payment) => {
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
       message: 'Missing pending transaction',
+    });
+  }
+};
+
+export const validateSuccessTransaction = (payment: Payment) => {
+  const pendingTransaction = getSuccessTransaction(payment);
+
+  if (!pendingTransaction?.interactionId) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'Missing success transaction',
     });
   }
 };

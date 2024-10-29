@@ -172,6 +172,7 @@ export enum ECTransactionStatus {
 export type ECGetPaymentResponse = {
   status: ECTransactionStatus;
   decision: {
+    transactionId: string;
     interest: number;
     totalValue: number;
     orderValue: number;

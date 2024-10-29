@@ -26,7 +26,7 @@ describe('initEasyCreditClient', () => {
 
   describe('integrationCheck', () => {
     it('should make a POST request and return the response', async () => {
-      const mockResponse = { status: 'OK' };
+      const mockResponse = true;
       const payload = { test: 'data' };
 
       // Mock successful fetch response
@@ -143,7 +143,7 @@ describe('initEasyCreditClient', () => {
 
   describe('authorizePayment', () => {
     it('should make a POST request and return the authorization response', async () => {
-      const mockResponse = { authorizationStatus: 'AUTHORIZED' };
+      const mockResponse = true;
       const technicalTransactionId = '12345';
       const orderId = '54321';
 

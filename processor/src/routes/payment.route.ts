@@ -22,6 +22,7 @@ import {
   handleCreatePayment,
   handlePaymentMethod,
   handleGetPayment,
+  handleCapturePayment,
 } from '../services/payment.service';
 import {
   GetPaymentParamsSchema,
@@ -34,6 +35,7 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/createPayment.dto';
+import { CapturePaymentRequestSchemaDTO, CapturePaymentResponseSchemaDTO } from '../dtos/payments/capturePayment.dto';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -106,24 +108,55 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
   );
 
-  fastify.post<{ Body: AuthorizePaymentRequestSchemaDTO; Reply: AuthorizePaymentResponseSchemaDTO }>(
-    '/authorize',
+  fastify.post<{
+    Params: { paymentId: string };
+    Body: AuthorizePaymentRequestSchemaDTO;
+    Reply: AuthorizePaymentResponseSchemaDTO;
+  }>(
+    '/:paymentId/authorize',
     {
-      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      preHandler: [opts.oauth2AuthHook.authenticate()],
       schema: {
         body: AuthorizePaymentBodySchema,
         response: {
-          200: AuthorizePaymentResponseSchema,
+          204: AuthorizePaymentResponseSchema,
           400: ErrorResponse,
         },
       },
     },
     async (request, reply) => {
-      const { paymentId } = request.body;
+      const { paymentId } = request.params;
+      const { orderId } = request.body;
 
-      await handleAuthorizeECPayment(paymentId);
+      await handleAuthorizeECPayment(paymentId, orderId);
 
-      reply.code(200).send();
+      reply.code(204).send();
+    },
+  );
+
+  fastify.post<{
+    Params: { paymentId: string };
+    Body: CapturePaymentRequestSchemaDTO;
+    Reply: CapturePaymentResponseSchemaDTO;
+  }>(
+    '/:paymentId/capture',
+    {
+      preHandler: [opts.oauth2AuthHook.authenticate()],
+      schema: {
+        body: AuthorizePaymentBodySchema,
+        response: {
+          204: AuthorizePaymentResponseSchema,
+          400: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { paymentId } = request.params;
+      const { orderId, trackingNumber } = request.body;
+
+      await handleCapturePayment(paymentId, orderId, trackingNumber);
+
+      reply.code(204).send();
     },
   );
 };

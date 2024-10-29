@@ -9,6 +9,13 @@ export const getPendingTransaction = (payment: Payment): Transaction | undefined
   );
 };
 
+export const getSuccessTransaction = (payment: Payment): Transaction | undefined => {
+  return payment.transactions.find(
+    (transaction) =>
+      transaction.type === CTTransactionType.Authorization && transaction.state === CTTransactionState.Success,
+  );
+};
+
 export const getTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
 };
