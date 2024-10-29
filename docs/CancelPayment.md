@@ -1,10 +1,53 @@
-# Cancel Order
+# Cancel Payment
 
 * [Representation: CT Payment](#representation-ct-payment)
 * [Creating CommerceTools Actions from Easy Credit's Response](#creating-commercetools-actions-from-easy-credits-response)
 
 ## Overview
 This functionality is designed to cancel pending payments created with Easy Credit that have not yet been completed.
+
+<br />
+
+## Example URL Call
+
+To cancel a payment, you can make a call to the following URL.
+
+### Request
+
+**HTTP Method:** `POST`  
+**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}`  
+**Headers:**
+```http
+Content-Type: application/json
+```
+<br />
+
+### Response
+
+**Status:** `200`
+**Body:**
+
+```json
+{
+  "paymentId": "<payment_id>"
+}
+```
+
+**Status:** `400`
+**Body:**
+
+```json
+{
+  "statusCode": 400,
+  "message": "You are not allowed to cancel a payment with Easy Credit AUTHORIZED transaction.",
+  "errors": [
+    {
+      "code": "TransactionIsAuthorized",
+      "message": "The transaction is in an AUTHORIZED state and cannot be canceled."
+    }
+  ]
+}
+```
 
 <br />
 
@@ -15,6 +58,7 @@ To use this functionality, the customer must have a payment that is created but 
 1. The payment must be an Easy Credit payment.
 2. A transaction of type `Authorization` should exist with a state of either `Pending` or `Initial`.
 3. The transaction should include an `interactionId`, which is the Easy Credit Payment ID.
+4. The status of the Easy Credit transaction should be verified through the Easy Credit API. If the transaction status is AUTHORIZED, the cancellation will be blocked, and an error will be returned to indicate that cancellations are not allowed for authorized Easy Credit payments.
 
 <br />
 
