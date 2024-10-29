@@ -284,7 +284,12 @@ describe('Validation Functions', () => {
 
     it('should not throw error if payment amount is greater than or equal the refund one', () => {
       (getTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
-      const payment: Payment = {} as unknown as Payment;
+      const payment: Payment = {
+        amountPlanned: {
+          centAmount: 1000,
+          fractionDigits: 2,
+        },
+      } as unknown as Payment;
 
       expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
     });

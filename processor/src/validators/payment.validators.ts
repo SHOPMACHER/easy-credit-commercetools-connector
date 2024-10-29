@@ -158,7 +158,7 @@ export const validateTransaction = (payment: Payment) => {
     throw new Errorx({
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
-      message: 'Missing success authorization transaction',
+      message: 'Missing transaction',
     });
   }
 };

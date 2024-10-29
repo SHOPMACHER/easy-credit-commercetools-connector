@@ -16,7 +16,7 @@ describe('Test constant.utils.ts', () => {
 
   test('should return the correct {EASYCREDIT_PARTNER_BASE_API_URL} constant', () => {
     expect(EASYCREDIT_PARTNER_BASE_API_URL).toBeDefined();
-    expect(EASYCREDIT_PARTNER_BASE_API_URL).toBe('https://partner.easycredit-ratenkauf.de');
+    expect(EASYCREDIT_PARTNER_BASE_API_URL).toBe('https://partner.easycredit-ratenkauf.de/api');
   });
 
   test('should return the correct {LIBRARY_NAME} constant', () => {

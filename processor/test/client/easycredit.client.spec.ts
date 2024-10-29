@@ -259,7 +259,7 @@ describe('initEasyCreditClient', () => {
       const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        `${EASYCREDIT_PARTNER_BASE_API_URL}/api/merchant/v3/transaction/${ecTransactionId}/refund`,
+        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
         {
           method: 'POST',
           headers: {
@@ -290,7 +290,7 @@ describe('initEasyCreditClient', () => {
       const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        `${EASYCREDIT_PARTNER_BASE_API_URL}/api/merchant/v3/transaction/${ecTransactionId}/refund`,
+        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
         {
           method: 'POST',
           headers: {
