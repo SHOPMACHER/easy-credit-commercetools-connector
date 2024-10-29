@@ -29,6 +29,21 @@ To use this functionality, the following conditions must be met:
 
 <br />
 
+## Example URL Call
+
+To get a payment, you can make a call to the following URL. Ensure to include the session header for authentication.
+
+### Request
+
+**HTTP Method:** `GET`  
+**URL:** `https://your-api-endpoint.com/payments/{{payment_id}}`
+**Headers:**
+```http
+Authorization: Bearer <your_access_token>
+Content-Type: application/json
+```
+<br />
+
 ### Response Format
 
 #### Success Response (200):
