@@ -8,49 +8,6 @@ This functionality is designed to cancel pending payments created with Easy Cred
 
 <br />
 
-## Example URL Call
-
-To cancel a payment, you can make a call to the following URL.
-
-### Request
-
-**HTTP Method:** `POST`  
-**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}`  
-**Headers:**
-```http
-Content-Type: application/json
-```
-<br />
-
-### Response
-
-**Status:** `200`
-**Body:**
-
-```json
-{
-  "paymentId": "<payment_id>"
-}
-```
-
-**Status:** `400`
-**Body:**
-
-```json
-{
-  "statusCode": 400,
-  "message": "You are not allowed to cancel a payment with Easy Credit AUTHORIZED transaction.",
-  "errors": [
-    {
-      "code": "TransactionIsAuthorized",
-      "message": "The transaction is in an AUTHORIZED state and cannot be canceled."
-    }
-  ]
-}
-```
-
-<br />
-
 ## Conditions
 
 To use this functionality, the customer must have a payment that is created but remains unpaid. For a successful cancellation, the CommerceTools Payment object should meet these criteria:
@@ -99,6 +56,53 @@ To use this functionality, the customer must have a payment that is created but 
     "interfaceInteractions": []
 }
 ```
+
+<br />
+
+## Example URL Call
+
+To cancel a payment, you can make a call to the following URL.
+
+### Request
+
+**HTTP Method:** `POST`  
+**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}`  
+**Headers:**
+```http
+Content-Type: application/json
+```
+<br />
+
+### Success Response
+
+**Status:** `200`
+**Body:**
+
+```json
+{
+  "paymentId": "<payment_id>"
+}
+```
+
+### Error Response
+
+**Status:** `400`
+**Body:**
+
+```json
+{
+  "statusCode": 400,
+  "message": "You are not allowed to cancel a payment with Easy Credit AUTHORIZED transaction.",
+  "errors": [
+    {
+      "code": "TransactionIsAuthorized",
+      "message": "The transaction is in an AUTHORIZED state and cannot be canceled."
+    }
+  ]
+}
+```
+
+<br />
 
 ## Creating CommerceTools Actions from Easy Credit's Response
 
