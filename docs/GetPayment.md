@@ -39,9 +39,13 @@ To get a payment, you can make a call to the following URL. Ensure to include th
 **URL:** `https://your-api-endpoint.com/payments/{{payment_id}}`
 **Headers:**
 ```http
-Authorization: Bearer <your_access_token>
+X-Session-Id: <session_id>
 Content-Type: application/json
 ```
+
+To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documentation](https://docs.commercetools.com/checkout/installing-checkout#create-checkout-sessions).
+
+
 <br />
 
 ### Response Format
