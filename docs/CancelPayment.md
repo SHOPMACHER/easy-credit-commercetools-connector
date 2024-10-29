@@ -76,6 +76,7 @@ Content-Type: application/json
 ### Success Response
 
 **Status:** `200`
+
 **Body:**
 
 ```json
@@ -84,9 +85,19 @@ Content-Type: application/json
 }
 ```
 
+If the cancellation is processed successfully and requires a redirect, the API responds with a redirect status.
+
+**Status:** `302`
+
+**Headers:**
+```http
+Location: {{redirect_url}}
+```
+
 ### Error Response
 
 **Status:** `400`
+
 **Body:**
 
 ```json
