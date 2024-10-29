@@ -20,6 +20,12 @@ export const getTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
 };
 
+export const getInitialRefundTransaction = (payment: Payment): Transaction | undefined => {
+  return payment.transactions.find(
+    (transaction) => transaction.type === CTTransactionType.Refund && transaction.state === CTTransactionState.Initial,
+  );
+};
+
 export const getPayment = (cart: Cart) => {
   return cart.paymentInfo?.payments?.find((payment) => {
     return payment.obj?.paymentMethodInfo?.paymentInterface?.toLowerCase() === EASYCREDIT_PAYMENT_METHOD;

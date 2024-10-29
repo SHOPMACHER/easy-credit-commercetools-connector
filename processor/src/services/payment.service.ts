@@ -1,10 +1,11 @@
-import { Address, Cart, Errorx, MultiErrorx, Transaction } from '@commercetools/connect-payments-sdk';
+import { Address, Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
 import {
   CTCartState,
   CTTransactionState,
   CTTransactionType,
+  ECRefundPayload,
   ECTransactionCustomerRelationship,
   ECTransactionDecision,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
@@ -19,7 +20,9 @@ import {
   validateCartAmount,
   validateCurrency,
   validateInitialOrPendingTransaction,
+  validateInitialRefundTransaction,
   validatePayment,
+  validatePaymentAmount,
   validatePendingTransaction,
   validateSuccessTransaction,
   validateTransaction,
@@ -27,7 +30,12 @@ import {
 import { createPayment, getPaymentById, updatePayment } from '../commercetools/payment.commercetools';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
-import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../utils/map.utils';
+import {
+  mapAmountToCTTransactionAmount,
+  mapCreatePaymentResponse,
+  mapCTCartToCTPayment,
+  mapCTCartToECPayment,
+} from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 
 // Helper to handle validation and return errors
@@ -282,6 +290,54 @@ export const handleCapturePayment = async (
     );
   } catch (error) {
     log.error('Error in capturing payment', error);
+    throw error;
+  }
+};
+
+export const handleRefundPayment = async (paymentId: string, refundAmount: number): Promise<Payment> => {
+  try {
+    const payment = await getPaymentById(paymentId);
+
+    validatePaymentAmount(payment, refundAmount);
+    validatePayment(payment);
+    validateSuccessTransaction(payment);
+
+    const ecTechnicalTransactionId = getSuccessTransaction(payment)?.interactionId;
+
+    const ecTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId as string);
+
+    const updatedCTPayment = await updatePayment(payment, [
+      {
+        action: 'addTransaction',
+        transaction: {
+          type: CTTransactionType.Refund,
+          state: CTTransactionState.Initial,
+          amount: mapAmountToCTTransactionAmount(refundAmount),
+        },
+      },
+    ]);
+
+    const initialRefundTransaction = validateInitialRefundTransaction(updatedCTPayment) as Transaction;
+
+    const refundPayload: ECRefundPayload = {
+      value: refundAmount,
+      bookingId: initialRefundTransaction.id,
+    };
+
+    const isSuccess = await initEasyCreditClient().refundPayment(ecTransaction.decision.transactionId, refundPayload);
+
+    let newState;
+    if (isSuccess) {
+      newState = CTTransactionState.Pending;
+    } else {
+      newState = CTTransactionState.Failure;
+    }
+
+    return await updatePayment(updatedCTPayment, [
+      { action: 'changeTransactionState', transactionId: initialRefundTransaction.id, state: newState },
+    ]);
+  } catch (error) {
+    log.error('Error in refunding payment', error);
     throw error;
   }
 };

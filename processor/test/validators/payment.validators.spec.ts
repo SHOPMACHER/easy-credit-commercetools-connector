@@ -8,6 +8,7 @@ import {
   validateTransaction,
   validateInitialOrPendingTransaction,
   validateSuccessTransaction,
+  validatePaymentAmount,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
 import { convertCentsToEur } from '../../src/utils/app.utils';
@@ -263,6 +264,29 @@ describe('Validation Functions', () => {
       const payment: Payment = {} as unknown as Payment;
 
       expect(() => validateTransaction(payment)).not.toThrow();
+    });
+  });
+
+  describe('validatePaymentAmount', () => {
+    it('should throw error if payment amount is smaller than the refund one', () => {
+      (getTransaction as jest.Mock).mockReturnValue({});
+      const payment: Payment = {
+        amountPlanned: {
+          centAmount: 1000,
+          fractionDigits: 2,
+        },
+      } as unknown as Payment;
+
+      expect(() => validatePaymentAmount(payment, 300)).toThrow(
+        'The refund amount cannot be greater than the payment amount',
+      );
+    });
+
+    it('should not throw error if payment amount is greater than or equal the refund one', () => {
+      (getTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
+      const payment: Payment = {} as unknown as Payment;
+
+      expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
     });
   });
 });

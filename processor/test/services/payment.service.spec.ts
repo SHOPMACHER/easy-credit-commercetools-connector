@@ -6,12 +6,14 @@ import {
   handleAuthorizePayment,
   handleGetPayment,
   handleCapturePayment,
+  handleRefundPayment,
 } from '../../src/services/payment.service';
 import { getCartById, updateCart, getCartByPaymentId } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
 import {
+  validateInitialRefundTransaction,
   validatePayment,
   validatePendingTransaction,
   validateAddresses,
@@ -20,6 +22,7 @@ import {
   validateTransaction,
   validateInitialOrPendingTransaction,
   validateSuccessTransaction,
+  validatePaymentAmount,
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
@@ -41,6 +44,8 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateSuccessTransaction: jest.fn(),
   validateTransaction: jest.fn(),
   validateInitialOrPendingTransaction: jest.fn(),
+  validatePaymentAmount: jest.fn(),
+  validateInitialRefundTransaction: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
@@ -509,6 +514,55 @@ describe('Payment handlers', () => {
 
       await expect(handleCapturePayment('payment123')).rejects.toThrow('Capture failed');
       expect(log.error).toHaveBeenCalledWith('Error in capturing payment', mockError);
+    });
+  });
+
+  describe('handleRefundPayment', () => {
+    it('should successfully refund a payment', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+      };
+      const mockECTransaction = {
+        status: ECTransactionStatus.AUTHORIZED,
+        transaction: {
+          orderDetails: {
+            orderId: '12345',
+          },
+        },
+        decision: {
+          transactionId: 'transactionId123',
+        },
+      };
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        refundPayment: jest.fn().mockResolvedValue(true),
+        // @ts-expect-error mocked
+        getPayment: jest.fn().mockResolvedValue(mockECTransaction),
+      });
+      (validatePaymentAmount as jest.Mock).mockReturnValue(true);
+      (validatePayment as jest.Mock).mockReturnValue(true);
+      (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
+      (validateInitialRefundTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+
+      await handleRefundPayment('payment123', 10);
+
+      expect(initEasyCreditClient().refundPayment).toHaveBeenCalledWith('transactionId123', {
+        value: 10,
+        bookingId: 'transaction123',
+      });
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
+    });
+
+    it('should throw and log error if payment refund fails', async () => {
+      const mockError = new Error('Refund failed');
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockRejectedValue(mockError);
+
+      await expect(handleRefundPayment('payment123', 10)).rejects.toThrow('Refund failed');
+      expect(log.error).toHaveBeenCalledWith('Error in refunding payment', mockError);
     });
   });
 });

@@ -1,11 +1,22 @@
 import { describe, test, expect } from '@jest/globals';
-import { EASYCREDIT_BASE_API_URL, LIBRARY_NAME, LIBRARY_VERSION, VERSION_STRING } from '../../src/utils/constant.utils';
+import {
+  EASYCREDIT_BASE_API_URL,
+  EASYCREDIT_PARTNER_BASE_API_URL,
+  LIBRARY_NAME,
+  LIBRARY_VERSION,
+  VERSION_STRING,
+} from '../../src/utils/constant.utils';
 import { version } from '../../package.json';
 
 describe('Test constant.utils.ts', () => {
   test('should return the correct {EASYCREDIT_BASE_API_URL} constant', () => {
     expect(EASYCREDIT_BASE_API_URL).toBeDefined();
     expect(EASYCREDIT_BASE_API_URL).toBe('https://ratenkauf.easycredit.de/api');
+  });
+
+  test('should return the correct {EASYCREDIT_PARTNER_BASE_API_URL} constant', () => {
+    expect(EASYCREDIT_PARTNER_BASE_API_URL).toBeDefined();
+    expect(EASYCREDIT_PARTNER_BASE_API_URL).toBe('https://partner.easycredit-ratenkauf.de');
   });
 
   test('should return the correct {LIBRARY_NAME} constant', () => {

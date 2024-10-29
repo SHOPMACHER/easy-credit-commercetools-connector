@@ -2,7 +2,12 @@ import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-pa
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
-import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
+import {
+  getInitialRefundTransaction,
+  getPendingTransaction,
+  getSuccessTransaction,
+  getTransaction,
+} from '../utils/payment.utils';
 import { CTTransactionState, CTTransactionType } from '../types/payment.types';
 
 export const validateAddresses = (
@@ -109,9 +114,9 @@ export const validatePendingTransaction = (payment: Payment) => {
 };
 
 export const validateSuccessTransaction = (payment: Payment) => {
-  const pendingTransaction = getSuccessTransaction(payment);
+  const successTransaction = getSuccessTransaction(payment);
 
-  if (!pendingTransaction?.interactionId) {
+  if (!successTransaction?.interactionId) {
     throw new Errorx({
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
@@ -153,7 +158,35 @@ export const validateTransaction = (payment: Payment) => {
     throw new Errorx({
       code: 'InvalidPaymentTransaction',
       httpErrorStatus: 400,
-      message: 'Missing transaction',
+      message: 'Missing success authorization transaction',
+    });
+  }
+};
+
+export const validateInitialRefundTransaction = (payment: Payment): Transaction => {
+  const transaction = getInitialRefundTransaction(payment);
+
+  if (!transaction) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'Missing initial refund transaction',
+    });
+  }
+
+  return transaction;
+};
+
+export const validatePaymentAmount = (payment: Payment, refundAmount: number): void => {
+  const { centAmount, fractionDigits } = payment.amountPlanned;
+
+  const amountInEur = convertCentsToEur(centAmount, fractionDigits);
+
+  if (refundAmount > amountInEur) {
+    throw new Errorx({
+      code: 'InvalidRefundAmount',
+      httpErrorStatus: 400,
+      message: 'The refund amount cannot be greater than the payment amount',
     });
   }
 };
