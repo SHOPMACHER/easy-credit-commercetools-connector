@@ -3,7 +3,7 @@ export type ConnectorEnvVars = {
     clientId: string;
     clientSecret: string;
     projectKey: string;
-    scope: string;
+    scopes: string;
     region: string;
     sessionUrl: string;
   };

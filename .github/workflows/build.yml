@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         directory:
-          - enabler
+          - assets
           - processor
 
     steps:

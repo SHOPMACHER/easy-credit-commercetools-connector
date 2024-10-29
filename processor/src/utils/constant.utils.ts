@@ -13,3 +13,7 @@ export const MIN_CART_AMOUNT = 200;
 export const MAX_CART_AMOUNT = 10000;
 
 export const EASYCREDIT_PAYMENT_METHOD = 'easycredit';
+
+export const EASYCREDIT_CONNECTOR_KEY = 'easycredit-connector';
+
+export const EASYCREDIT_CONNECTOR_URL = 'easycredit-connector-url';

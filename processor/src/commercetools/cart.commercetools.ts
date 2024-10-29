@@ -1,6 +1,7 @@
-import { Errorx } from '@commercetools/connect-payments-sdk';
+import { Cart, Errorx } from '@commercetools/connect-payments-sdk';
 import { createApiRoot } from '../client/create.client';
 import { log } from '../libs/logger';
+import { CartUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/cart';
 
 export const getCartById = async (cartId: string) => {
   try {
@@ -22,51 +23,48 @@ export const getCartById = async (cartId: string) => {
   }
 };
 
-export const unfreezeCartById = async (paymentId: string) => {
-  try {
-    const carts = await createApiRoot().carts().get({
+export const getCartByPaymentId = async (paymentId: string) => {
+  const carts = await createApiRoot()
+    .carts()
+    .get({
       queryArgs: {
-        where: 'paymentInfo(payments(id="' + paymentId + '"))',
-        limit: 1
-      }
-    }).execute();
+        where: `paymentInfo(payments(id="${paymentId}"))`,
+        limit: 1,
+      },
+    })
+    .execute();
 
-    // throw error if cart is not found
-    if (carts.body.count === 0) {
-      throw new Errorx({
-        code: 'CartNotFound',
-        message: 'Cart not found.',
-        httpErrorStatus: 404,
-      });
-    }
+  if (carts.body.count === 0) {
+    log.error(`Cart not found for payment ID: ${paymentId}`);
 
-    const cartId = carts.body.results[0].id;
+    throw new Errorx({
+      code: 'CartNotFound',
+      message: 'Cart not found.',
+      httpErrorStatus: 404,
+    });
+  }
 
-    // Get the cart to retrieve the current version
-    const cart = await getCartById(cartId);
-    const cartVersion = cart.version;
+  return carts.body.results[0];
+};
 
-    // Send the request to unfreeze the cart by setting the cartState back to "Active"
+export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]): Promise<Cart> {
+  try {
     const response = await createApiRoot()
       .carts()
-      .withId({ ID: cartId })
+      .withId({ ID: cart.id })
       .post({
         body: {
-          version: cartVersion,
-          actions: [
-            {
-              action: 'unfreezeCart',
-            },
-          ],
+          version: cart.version,
+          actions: updateActions,
         },
       })
       .execute();
+    const { body: cartObject } = response;
 
-    log.info(`${cartId} cart unfrozen.`);
-
-    return response.body;
+    return cartObject;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
-    log.error('Error in unfreezing CommerceTools Cart', error);
+    log.error('Error in updatePayment', error);
 
     throw new Errorx({
       code: error?.code as string,
@@ -75,5 +73,4 @@ export const unfreezeCartById = async (paymentId: string) => {
       fields: error.body?.errors,
     });
   }
-};
-
+}

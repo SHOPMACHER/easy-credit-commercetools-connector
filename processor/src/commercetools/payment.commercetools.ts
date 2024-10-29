@@ -1,7 +1,7 @@
-import { Errorx } from '@commercetools/connect-payments-sdk';
+import { Errorx, Payment, PaymentDraft } from '@commercetools/connect-payments-sdk';
 import { createApiRoot } from '../client/create.client';
 import { log } from '../libs/logger';
-import { initEasyCreditClient } from "../client/easycredit.client";
+import { PaymentUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/payment';
 
 export const getPaymentById = async (paymentId: string) => {
   try {
@@ -23,58 +23,24 @@ export const getPaymentById = async (paymentId: string) => {
   }
 };
 
-export const updatePaymentStatus = async (paymentId: string, newStatus: string) => {
+export async function updatePayment(payment: Payment, updateActions: PaymentUpdateAction[]): Promise<Payment> {
   try {
-    // Get the payment to retrieve the current version and transactions
-    const payment = await getPaymentById(paymentId);
-    const paymentVersion = payment.version;
-
-    // Find the transaction with type 'Authorization' and state 'Initial'
-    const transaction = payment.transactions?.find(
-        (tx) => tx.type === 'Authorization' && tx.state === 'Initial'
-    );
-
-    if (!transaction) {
-      throw new Errorx({
-        code: 'TransactionNotFound',
-        message: 'No Authorization transaction with Initial state found.',
-        httpErrorStatus: 404,
-      });
-    }
-
-    const easyTransaction = await initEasyCreditClient().getPayment(transaction?.interactionId as string);
-
-    if (easyTransaction.status !== 'DECLINED') {
-      throw new Errorx({
-        code: 'TransactionNotDeclined',
-        message: 'Transaction status is not DECLINED.',
-        httpErrorStatus: 400,
-      });
-    }
-
-    // Prepare the update request to change the payment status
     const response = await createApiRoot()
-        .payments()
-        .withId({ ID: paymentId })
-        .post({
-          body: {
-            version: paymentVersion, // The current payment version
-            actions: [
-              {
-                action: 'changeTransactionState',
-                transactionId: transaction.id, // Use the found transaction ID
-                state: newStatus, // Set the new status here
-              },
-            ],
-          },
-        })
-        .execute();
+      .payments()
+      .withId({ ID: payment.id })
+      .post({
+        body: {
+          version: payment.version,
+          actions: updateActions,
+        },
+      })
+      .execute();
+    const { body: paymentObject } = response;
 
-    log.info(`Payment ${paymentId} cancelled successfully.`);
-
-    return response.body; // Return the updated payment object
+    return paymentObject;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
-    log.error('Error in updating CommerceTools Payment status', error);
+    log.error('Error in updatePayment', error);
 
     throw new Errorx({
       code: error?.code as string,
@@ -83,6 +49,28 @@ export const updatePaymentStatus = async (paymentId: string, newStatus: string) 
       fields: error.body?.errors,
     });
   }
-};
+}
 
+export async function createPayment(payment: PaymentDraft): Promise<Payment> {
+  try {
+    const response = await createApiRoot()
+      .payments()
+      .post({
+        body: payment,
+      })
+      .execute();
+    const { body: paymentObject } = response;
 
+    return paymentObject;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    log.error('Error in createPayment', error);
+
+    throw new Errorx({
+      code: error?.code as string,
+      message: error?.body?.message as string,
+      httpErrorStatus: error?.statusCode,
+      fields: error.body?.errors,
+    });
+  }
+}

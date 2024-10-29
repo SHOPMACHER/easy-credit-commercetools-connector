@@ -1,6 +1,6 @@
 {
   "name": "shopmacher-easycredit-processor",
-  "version": "0.0.1",
+  "version": "0.0.16",
   "description": "Payment provider integration template",
   "main": "dist/server.js",
   "scripts": {
@@ -15,6 +15,9 @@
     "test": "jest --detectOpenHandles --clearMocks --colors --config jest.config.ts --ci --reporters=default --coverage",
     "connector:post-deploy": "node dist/connectors/post-deploy.js",
     "connector:pre-undeploy": "node dist/connectors/pre-undeploy.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [],
   "author": "",
@@ -60,6 +63,7 @@
     "typescript": "5.6.2"
   },
   "overrides": {
-    "path-to-regexp": "3.3.0"
+    "path-to-regexp": "3.3.0",
+    "esbuild": "^0.24.0"
   }
 }

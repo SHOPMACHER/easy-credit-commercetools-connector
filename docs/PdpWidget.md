@@ -23,25 +23,8 @@ This guide provides instructions on how to integrate and display the EasyCredit 
       import { Enabler } from "/src/main.ts";
 
       const enabler = new Enabler({
-        processorUrl: __VITE_PROCESSOR_URL__,
+        processorUrl: proccessorUrl,
         sessionId: sessionId,
-        amount: 500,
-        cartId: testCartId,
-
-        showPayButton: false,
-        dropinHasSubmit: true,
-        onComplete: ({ isSuccess, paymentReference }) => {
-          console.log("onComplete", { isSuccess, paymentReference });
-        },
-        onError: (err) => {
-          console.error("onError", err);
-        },
-        onDropinReady: () => {
-          console.log('dropin is ready');
-        },
-        onPayButtonClick: () => {
-          console.log('pay button handler');
-        }
       });
     </script>
   ```
@@ -53,7 +36,9 @@ This guide provides instructions on how to integrate and display the EasyCredit 
   
   - After initializing successfully, you will need to do these following steps to render it to your page:
     ```
-      const dropinBuilder = await enabler.createDropinBuilder('embedded');
+      const dropinBuilder = await enabler.createWidgetComponent({
+        amount: 100
+      });
       const pdpWdiget = await dropinBuilder.build();
 
       pdpWdiget.mount("#container");

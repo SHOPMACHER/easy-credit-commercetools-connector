@@ -1,8 +1,9 @@
-import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
+import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
-import { getPendingTransaction } from '../utils/payment.utils';
+import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
+import { CTTransactionState, CTTransactionType } from '../types/payment.types';
 
 export const validateAddresses = (
   billingAddress: Address | undefined,
@@ -87,7 +88,11 @@ export const validatePayment = (payment: Payment) => {
     !payment.paymentMethodInfo?.paymentInterface ||
     payment.paymentMethodInfo?.paymentInterface.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD
   ) {
-    throw new Error('Invalid payment method');
+    throw new Errorx({
+      code: 'InvalidPaymentMethod',
+      httpErrorStatus: 400,
+      message: 'Invalid payment method',
+    });
   }
 };
 
@@ -95,6 +100,60 @@ export const validatePendingTransaction = (payment: Payment) => {
   const pendingTransaction = getPendingTransaction(payment);
 
   if (!pendingTransaction?.interactionId) {
-    throw new Error('Missing pending transaction');
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'Missing pending transaction',
+    });
+  }
+};
+
+export const validateSuccessTransaction = (payment: Payment) => {
+  const pendingTransaction = getSuccessTransaction(payment);
+
+  if (!pendingTransaction?.interactionId) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'Missing success transaction',
+    });
+  }
+};
+
+export const validateInitialOrPendingTransaction = (payment: Payment): Transaction => {
+  let validTransaction;
+
+  for (const transaction of payment.transactions) {
+    if (
+      transaction.type === CTTransactionType.Authorization &&
+      (transaction.state === CTTransactionState.Initial || transaction.state === CTTransactionState.Pending) &&
+      transaction.interactionId
+    ) {
+      validTransaction = transaction;
+
+      break;
+    }
+  }
+
+  if (!validTransaction) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'No interactionId found in any initial or pending transaction',
+    });
+  }
+
+  return validTransaction;
+};
+
+export const validateTransaction = (payment: Payment) => {
+  const transaction = getTransaction(payment);
+
+  if (!transaction?.interactionId) {
+    throw new Errorx({
+      code: 'InvalidPaymentTransaction',
+      httpErrorStatus: 400,
+      message: 'Missing transaction',
+    });
   }
 };
