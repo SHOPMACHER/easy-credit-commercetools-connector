@@ -1,7 +1,9 @@
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
-import { EASYCREDIT_BASE_API_URL } from '../../src/utils/constant.utils';
+import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../../src/utils/constant.utils';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { ECTransaction } from '../../src/types/payment.types';
+import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { log } from '../../src/libs/logger';
 
 // @ts-expect-error: Mock fetch globally
 fetch = jest.fn() as jest.Mock;
@@ -30,8 +32,10 @@ describe('initEasyCreditClient', () => {
       const payload = { test: 'data' };
 
       // Mock successful fetch response
+      // @ts-expect-error mocked
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
+        // @ts-expect-error mocked
         json: jest.fn().mockResolvedValueOnce(mockResponse),
       });
 
@@ -93,8 +97,10 @@ describe('initEasyCreditClient', () => {
       const mockResponse = { paymentStatus: 'SUCCESS' };
 
       // Mock successful fetch response
+      // @ts-expect-error mocked
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
+        // @ts-expect-error mocked
         json: jest.fn().mockResolvedValueOnce(mockResponse),
       });
 
@@ -122,6 +128,7 @@ describe('initEasyCreditClient', () => {
       (fetch as jest.Mock).mockImplementation(async () =>
         Promise.resolve({
           ok: false,
+          // @ts-expect-error mocked
           json: jest.fn().mockResolvedValueOnce(mockErrorResponse),
         }),
       );
@@ -148,8 +155,10 @@ describe('initEasyCreditClient', () => {
       const orderId = '54321';
 
       // Mock successful fetch response
+      // @ts-expect-error mocked
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
+        // @ts-expect-error mocked
         json: jest.fn().mockResolvedValueOnce(mockResponse),
       });
 
@@ -180,6 +189,7 @@ describe('initEasyCreditClient', () => {
       (fetch as jest.Mock).mockImplementation(async () =>
         Promise.resolve({
           ok: true,
+          // @ts-expect-error mocked
           json: jest.fn().mockResolvedValueOnce(mockResponse),
         }),
       );
@@ -211,6 +221,7 @@ describe('initEasyCreditClient', () => {
       (fetch as jest.Mock).mockImplementation(async () =>
         Promise.resolve({
           ok: false,
+          // @ts-expect-error mocked
           json: jest.fn().mockResolvedValueOnce(mockErrorResponse),
         }),
       );
@@ -227,6 +238,70 @@ describe('initEasyCreditClient', () => {
         expect(error.message).toBe(mockErrorResponse.title);
         expect(error.fields).toEqual(mockErrorResponse.violations);
       }
+    });
+  });
+
+  describe('refundPayment', () => {
+    it('should make a POST request and return true when status code is 202', async () => {
+      const ecTransactionId = '12345';
+      const payload = {
+        value: 100,
+        bookingId: '123-abc',
+      };
+
+      // Mock successful fetch response
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          status: 202,
+        }),
+      );
+
+      const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      expect(result).toEqual(true);
+    });
+
+    it('should return false when the status code is not 202', async () => {
+      const ecTransactionId = '12345';
+      const payload = {
+        value: 100,
+        bookingId: '123-abc',
+      };
+
+      const mockedFetchResult = new Error('Refund request returned invalid status code');
+
+      // Mock successful fetch response
+      (fetch as jest.Mock).mockImplementation(async () => Promise.resolve(mockedFetchResult));
+
+      const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      expect(log.error).toBeCalledTimes(1);
+      expect(log.error).toBeCalledWith('Failed to create refund', mockedFetchResult);
+      expect(result).toBe(false);
     });
   });
 });

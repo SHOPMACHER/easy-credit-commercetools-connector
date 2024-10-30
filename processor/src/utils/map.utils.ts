@@ -16,7 +16,7 @@ import {
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft } from '@commercetools/connect-payments-sdk';
 import { convertCentsToEur } from './app.utils';
-import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
+import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 
 const mapAddress = (address: Address) => ({
@@ -105,4 +105,9 @@ export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, pay
       decisionOutcomeText: ecPayment.transactionInformation.decision.decisionOutcomeText,
     },
   },
+});
+
+export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
+  centAmount: Math.floor(amount * 100),
+  currencyCode: 'EUR',
 });

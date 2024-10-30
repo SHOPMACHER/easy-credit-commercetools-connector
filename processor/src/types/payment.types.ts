@@ -225,3 +225,8 @@ export type GetPaymentResponse = ECGetPaymentResponse & {
   webShopId: string;
   amount: number;
 };
+
+export type ECRefundPayload = {
+  value: number;
+  bookingId: string;
+};
