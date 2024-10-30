@@ -236,7 +236,7 @@ describe('paymentsRoute', () => {
         url: `/payments/${paymentId}/refund`,
         payload: mockRequest,
         headers: {
-          'x-session-id': sessionId,
+          authorization: `Bearer ${token}`,
           'content-type': 'application/json',
         },
       });

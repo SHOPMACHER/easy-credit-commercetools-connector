@@ -182,11 +182,11 @@ export const validatePaymentAmount = (payment: Payment, refundAmount: number): v
 
   const amountInEur = convertCentsToEur(centAmount, fractionDigits);
 
-  if (refundAmount > amountInEur) {
+  if (refundAmount > amountInEur || refundAmount <= 0) {
     throw new Errorx({
       code: 'InvalidRefundAmount',
       httpErrorStatus: 400,
-      message: 'The refund amount cannot be greater than the payment amount',
+      message: 'The refund amount cannot be greater than the payment amount and must be greater than 0',
     });
   }
 };

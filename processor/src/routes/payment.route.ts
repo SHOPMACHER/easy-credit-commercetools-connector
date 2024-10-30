@@ -174,7 +174,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/refund',
     {
-      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      preHandler: [opts.oauth2AuthHook.authenticate()],
       schema: {
         body: RefundPaymentBodySchema,
         response: {

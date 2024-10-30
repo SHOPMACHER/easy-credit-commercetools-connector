@@ -280,9 +280,7 @@ describe('initEasyCreditClient', () => {
         bookingId: '123-abc',
       };
 
-      const mockedFetchResult = {
-        status: 400,
-      };
+      const mockedFetchResult = new Error('Refund request returned invalid status code');
 
       // Mock successful fetch response
       (fetch as jest.Mock).mockImplementation(async () => Promise.resolve(mockedFetchResult));
@@ -302,7 +300,7 @@ describe('initEasyCreditClient', () => {
       );
 
       expect(log.error).toBeCalledTimes(1);
-      expect(log.error).toBeCalledWith('Refund request returned invalid status code', mockedFetchResult);
+      expect(log.error).toBeCalledWith('Failed to create refund', mockedFetchResult);
       expect(result).toBe(false);
     });
   });

@@ -146,9 +146,7 @@ class EasyCreditApiClient implements EasyCreditClient {
       });
 
       if (response.status !== 202) {
-        log.error('Refund request returned invalid status code', response);
-
-        return false;
+        throw new Error('Refund request returned invalid status code');
       }
 
       return true;

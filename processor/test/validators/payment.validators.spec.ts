@@ -278,7 +278,7 @@ describe('Validation Functions', () => {
       } as unknown as Payment;
 
       expect(() => validatePaymentAmount(payment, 300)).toThrow(
-        'The refund amount cannot be greater than the payment amount',
+        'The refund amount cannot be greater than the payment amount and must be greater than 0',
       );
     });
 
