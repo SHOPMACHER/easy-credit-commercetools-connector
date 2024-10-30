@@ -434,7 +434,7 @@ describe('Payment handlers', () => {
 
       expect(result).toEqual('payment123');
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, [
-        { action: 'changeTransactionState', transactionId: 'interactionId123', state: 'Failure' },
+        { action: 'changeTransactionState', transactionId: 'transaction123', state: 'Failure' },
       ]);
       expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
     });

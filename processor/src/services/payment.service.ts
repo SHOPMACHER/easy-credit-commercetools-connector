@@ -246,7 +246,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     }
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Failure },
+      { action: 'changeTransactionState', transactionId: transaction.id, state: CTTransactionState.Failure },
     ]);
     const cart = await getCartByPaymentId(payment.id);
 
