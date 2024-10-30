@@ -317,7 +317,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
       },
     ]);
 
-    const initialRefundTransaction = validateInitialRefundTransaction(updatedCTPayment) as Transaction;
+    const initialRefundTransaction = validateInitialRefundTransaction(updatedCTPayment);
 
     const refundPayload: ECRefundPayload = {
       value: refundAmount,
