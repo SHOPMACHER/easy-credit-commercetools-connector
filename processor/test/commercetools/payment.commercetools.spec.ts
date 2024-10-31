@@ -1,9 +1,15 @@
-import { getPaymentById, updatePayment, createPayment } from '../../src/commercetools/payment.commercetools';
+import {
+  getPaymentById,
+  updatePayment,
+  createPayment,
+  getPaymentByEasyCreditRefundBookingId,
+} from '../../src/commercetools/payment.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import { log } from '../../src/libs/logger';
 import { Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/payment';
+import { describe, jest, it, expect, beforeEach } from '@jest/globals';
 
 jest.mock('../../src/client/create.client');
 jest.mock('../../src/libs/logger');
@@ -21,6 +27,7 @@ describe('Payment Functions', () => {
         payments: () => ({
           withId: () => ({
             get: () => ({
+              // @ts-expect-error mocked
               execute: jest.fn().mockResolvedValue(mockApiResponse),
             }),
           }),
@@ -46,6 +53,7 @@ describe('Payment Functions', () => {
         payments: () => ({
           withId: () => ({
             get: () => ({
+              // @ts-expect-error mocked
               execute: jest.fn().mockRejectedValue(mockError),
             }),
           }),
@@ -97,6 +105,7 @@ describe('Payment Functions', () => {
         payments: () => ({
           withId: () => ({
             post: () => ({
+              // @ts-expect-error mocked
               execute: jest.fn().mockResolvedValue(mockApiResponse),
             }),
           }),
@@ -154,6 +163,7 @@ describe('Payment Functions', () => {
         payments: () => ({
           withId: () => ({
             post: () => ({
+              // @ts-expect-error mocked
               execute: jest.fn().mockRejectedValue(mockError),
             }),
           }),
@@ -174,6 +184,7 @@ describe('Payment Functions', () => {
       (createApiRoot as jest.Mock).mockReturnValue({
         payments: () => ({
           post: () => ({
+            // @ts-expect-error mocked
             execute: jest.fn().mockResolvedValue(mockApiResponse),
           }),
         }),
@@ -198,6 +209,7 @@ describe('Payment Functions', () => {
       (createApiRoot as jest.Mock).mockReturnValue({
         payments: () => ({
           post: () => ({
+            // @ts-expect-error mocked
             execute: jest.fn().mockRejectedValue(mockError),
           }),
         }),
@@ -206,6 +218,81 @@ describe('Payment Functions', () => {
       await expect(createPayment(mockPaymentDraft)).rejects.toThrow(Errorx);
 
       expect(log.error).toHaveBeenCalledWith('Error in createPayment', mockError);
+    });
+  });
+
+  describe('getPaymentByEasyCreditRefundBookingId', () => {
+    it('should return payment object when API call succeeds', async () => {
+      const getPayments = jest.fn();
+
+      const payment = {
+        id: 'payment',
+      } as Payment;
+
+      (createApiRoot as jest.Mock).mockReturnValue({
+        payments: jest.fn().mockReturnValue({
+          get: getPayments,
+        }),
+      });
+
+      getPayments.mockReturnValue({
+        execute: jest.fn().mockReturnValue({
+          body: {
+            results: [payment],
+          },
+        }),
+      });
+
+      const ecRefundBookingId = 'transaction1';
+
+      const result = await getPaymentByEasyCreditRefundBookingId(ecRefundBookingId);
+
+      expect(getPayments).toHaveBeenCalledTimes(1);
+      expect(getPayments).toHaveBeenCalledWith({
+        queryArgs: {
+          where: `transactions(id="${ecRefundBookingId}")`,
+        },
+      });
+      expect(result).toStrictEqual(payment);
+      expect(log.info).toHaveBeenCalledTimes(1);
+      expect(log.info).toHaveBeenCalledWith(`Found payment with id ${payment.id}`);
+    });
+
+    it('getPaymentByEasyCreditRefundBookingId should throw exception', async () => {
+      const getPayments = jest.fn();
+
+      (createApiRoot as jest.Mock).mockReturnValue({
+        payments: jest.fn().mockReturnValue({
+          get: getPayments,
+        }),
+      });
+
+      getPayments.mockReturnValue({
+        execute: jest.fn().mockReturnValue({
+          body: {
+            results: [],
+          },
+        }),
+      });
+
+      const ecRefundBookingId = 'transaction1';
+
+      try {
+        await getPaymentByEasyCreditRefundBookingId(ecRefundBookingId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (error: any) {
+        expect(getPayments).toHaveBeenCalledTimes(1);
+        expect(getPayments).toHaveBeenCalledWith({
+          queryArgs: {
+            where: `transactions(id="${ecRefundBookingId}")`,
+          },
+        });
+        expect(error).toBeInstanceOf(Errorx);
+        expect(error.httpErrorStatus).toBe(404);
+        expect(error.message).toBe('There is not any assigned payment');
+        expect(log.error).toHaveBeenCalledTimes(1);
+        expect(log.error).toHaveBeenCalledWith('There is not any assigned payment');
+      }
     });
   });
 });

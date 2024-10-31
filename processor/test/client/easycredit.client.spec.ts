@@ -304,4 +304,65 @@ describe('initEasyCreditClient', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('getMerchantTransaction', () => {
+    it('should make a GET request and return the transaction details response', async () => {
+      const transactionId = '12345';
+      const mockResponse = { transactionId };
+
+      // Mock successful fetch response
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error mocked
+          json: jest.fn().mockResolvedValueOnce(mockResponse),
+        }),
+      );
+
+      const result = await easyCreditClient.getMerchantTransaction(transactionId);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${transactionId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+          },
+        },
+      );
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should throw Errorx when fetch response is not ok', async () => {
+      const mockErrorResponse = {
+        title: 'Transaction Error',
+        violations: [{ field: 'transaction', message: 'Invalid transaction' }],
+      };
+      const transactionId = '12345';
+
+      // Mock failed fetch response
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: false,
+          // @ts-expect-error mocked
+          json: jest.fn().mockResolvedValueOnce(mockErrorResponse),
+        }),
+      );
+
+      // Expect Errorx to be thrown
+      await expect(easyCreditClient.getMerchantTransaction(transactionId)).rejects.toThrowError(Errorx);
+
+      try {
+        await easyCreditClient.getMerchantTransaction(transactionId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(Errorx);
+        expect(error.code).toBe(mockErrorResponse.title);
+        expect(error.message).toBe(mockErrorResponse.title);
+        expect(error.fields).toEqual(mockErrorResponse.violations);
+      }
+    });
+  });
 });
