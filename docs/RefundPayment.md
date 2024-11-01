@@ -50,3 +50,9 @@ So if the connector received 202 as status code, it will update the above Initia
 - Like what we just explained above, we provide an endpoint for EasyCredit to notify us whenever a refund has been processed completely. It is `GET /easycredit-notification`
 
 - For example, a refund just happened successfully in an EasyCredit's transaction, if you registered the above endpoint to your EasyCredit portal already, EasyCredit will notify you via that endpoint with a param in the URL, for example: `/easycredit-notification/V8RW8H`. The `V8RW8H` is EasyCredit's transaction ID. We will use it to query and get the correct CommerceTools Payment object, then update its pending refund accordingly.
+
+- Steps to register Notification URL:
+  - Access the [portal site](https://partner.easycredit-ratenkauf.de/portal/shopverwaltung)
+  - Go to Administration -> Shopverwaltung
+  - Click on the specific Web Shop ID, you will see the place to fill in the value for Benachrichtigungs-URL
+  - ![register notification url](./assets/notification-url.png)
