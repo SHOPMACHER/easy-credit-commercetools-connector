@@ -1,4 +1,4 @@
-import { convertCentsToEur } from './../../src/utils/app.utils';
+import { convertCentsToEur } from '../../src/utils/app.utils';
 import { describe, expect, it } from '@jest/globals';
 
 describe('test convertCentsToEur', () => {
