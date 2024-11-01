@@ -1,8 +1,9 @@
 import { readConfiguration } from '../utils/config.utils';
-import { EASYCREDIT_BASE_API_URL } from '../utils/constant.utils';
+import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../utils/constant.utils';
 import {
   ECCreatePaymentResponse,
   ECGetPaymentResponse,
+  ECRefundPayload,
   ECTransaction,
   ECTransactionError,
 } from '../types/payment.types';
@@ -25,15 +26,22 @@ interface EasyCreditClient {
     customHeaders?: HeadersInit,
   ): Promise<boolean>;
   getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse>;
+  refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<boolean>;
 }
 
 class EasyCreditApiClient implements EasyCreditClient {
   private readonly baseApiUrl: string;
+  private readonly partnerBaseApiUrl: string;
   private readonly config: EasyCreditConfig;
 
-  constructor(config: EasyCreditConfig, baseApiUrl = EASYCREDIT_BASE_API_URL) {
+  constructor(
+    config: EasyCreditConfig,
+    baseApiUrl = EASYCREDIT_BASE_API_URL,
+    partnerBaseApiUrl = EASYCREDIT_PARTNER_BASE_API_URL,
+  ) {
     this.config = config;
     this.baseApiUrl = baseApiUrl;
+    this.partnerBaseApiUrl = partnerBaseApiUrl;
   }
 
   private getDefaultHeaders(): HeadersInit {
@@ -121,6 +129,32 @@ class EasyCreditApiClient implements EasyCreditClient {
       headers,
     });
     return this.handleResponse(response);
+  }
+
+  public async refundPayment(
+    transactionId: string,
+    payload: ECRefundPayload,
+    customHeaders?: HeadersInit,
+  ): Promise<boolean> {
+    try {
+      const headers: HeadersInit = { ...this.getDefaultHeaders(), ...customHeaders };
+
+      const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/refund`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status !== 202) {
+        throw new Error('Refund request returned invalid status code');
+      }
+
+      return true;
+    } catch (error: unknown) {
+      log.error('Failed to create refund', error);
+
+      return false;
+    }
   }
 }
 

@@ -23,6 +23,7 @@ import {
   handlePaymentMethod,
   handleGetPayment,
   handleCapturePayment,
+  handleRefundPayment,
 } from '../services/payment.service';
 import {
   GetPaymentParamsSchema,
@@ -36,6 +37,12 @@ import {
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/createPayment.dto';
 import { CapturePaymentRequestSchemaDTO, CapturePaymentResponseSchemaDTO } from '../dtos/payments/capturePayment.dto';
+import {
+  RefundPaymentBodySchema,
+  RefundPaymentRequestSchemaDTO,
+  RefundPaymentResponseSchema,
+  RefundPaymentResponseSchemaDTO,
+} from '../dtos/payments/refundPayment.dto';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -157,6 +164,32 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       await handleCapturePayment(paymentId, orderId, trackingNumber);
 
       reply.code(204).send();
+    },
+  );
+
+  fastify.post<{
+    Params: { paymentId: string };
+    Body: RefundPaymentRequestSchemaDTO;
+    Reply: RefundPaymentResponseSchemaDTO;
+  }>(
+    '/:paymentId/refund',
+    {
+      preHandler: [opts.oauth2AuthHook.authenticate()],
+      schema: {
+        body: RefundPaymentBodySchema,
+        response: {
+          202: RefundPaymentResponseSchema,
+          400: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { paymentId } = request.params;
+      const { amount } = request.body;
+
+      const response = await handleRefundPayment(paymentId, amount);
+
+      reply.code(202).send(response);
     },
   );
 };

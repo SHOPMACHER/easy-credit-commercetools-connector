@@ -2,6 +2,8 @@ import { version as PACKAGE_VERSION } from '../../package.json';
 
 export const EASYCREDIT_BASE_API_URL = 'https://ratenkauf.easycredit.de/api';
 
+export const EASYCREDIT_PARTNER_BASE_API_URL = 'https://partner.easycredit-ratenkauf.de/api';
+
 export const LIBRARY_NAME = 'ShopmacherCommercetoolsEasyCreditConnector';
 
 export const LIBRARY_VERSION = PACKAGE_VERSION;
