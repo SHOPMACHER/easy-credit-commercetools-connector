@@ -9,6 +9,7 @@ import {
   validateInitialOrPendingTransaction,
   validateSuccessTransaction,
   validatePaymentAmount,
+  validateECTransactionId,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
 import { convertCentsToEur } from '../../src/utils/app.utils';
@@ -292,6 +293,22 @@ describe('Validation Functions', () => {
       } as unknown as Payment;
 
       expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
+    });
+  });
+
+  describe('validateECTransactionId', () => {
+    it('should throw error if easy credit transaction id not valid', () => {
+      expect(() => validateECTransactionId('abc')).toThrow('Invalid transaction ID format.');
+
+      expect(() => validateECTransactionId('123')).toThrow('Invalid transaction ID format.');
+
+      expect(() => validateECTransactionId('ABC_123')).toThrow('Invalid transaction ID format.');
+
+      expect(() => validateECTransactionId('ABCDEF123')).toThrow('Invalid transaction ID format.');
+    });
+
+    it('should not throw error if easy credit transaction id valid', () => {
+      expect(() => validateECTransactionId('EWZEN7')).not.toThrow();
     });
   });
 });

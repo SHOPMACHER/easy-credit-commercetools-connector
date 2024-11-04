@@ -2,10 +2,14 @@ import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_PAYMENT_METHOD,
+  EASYCREDIT_REFUND_STATUS_DONE,
+  EASYCREDIT_REFUND_STATUS_FAILED,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
 import {
+  CTTransactionState,
+  ECBooking,
   ECCreatePaymentResponse,
   ECTransaction,
   ECTransactionCustomerRelationship,
@@ -14,10 +18,11 @@ import {
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
   PaymentResponse,
 } from '../types/payment.types';
-import { Cart, LineItem, Payment, PaymentDraft } from '@commercetools/connect-payments-sdk';
+import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetools/connect-payments-sdk';
 import { convertCentsToEur } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
+import { PaymentUpdateAction } from '@commercetools/platform-sdk';
 
 const mapAddress = (address: Address) => ({
   address: address?.streetName ?? '',
@@ -111,3 +116,30 @@ export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
   centAmount: Math.floor(amount * 100),
   currencyCode: 'EUR',
 });
+
+export const mapUpdateActionForRefunds = (
+  ctPendingRefunds: Transaction[],
+  ecCompletedRefunds: ECBooking[],
+): PaymentUpdateAction[] => {
+  const ecRefundMap = new Map(ecCompletedRefunds.map((item) => [item?.bookingId, item]));
+
+  const updateActions = [];
+
+  for (const ctRefundTransaction of ctPendingRefunds) {
+    const ecRefund = ecRefundMap.get(ctRefundTransaction.id);
+
+    if (
+      ecRefund &&
+      (ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE || ecRefund.status === EASYCREDIT_REFUND_STATUS_FAILED)
+    ) {
+      updateActions.push({
+        action: 'changeTransactionState',
+        transactionId: ctRefundTransaction.id,
+        state:
+          ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
+      });
+    }
+  }
+
+  return updateActions as PaymentUpdateAction[];
+};

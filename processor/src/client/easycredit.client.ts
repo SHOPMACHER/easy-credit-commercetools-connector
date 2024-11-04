@@ -2,6 +2,7 @@ import { readConfiguration } from '../utils/config.utils';
 import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../utils/constant.utils';
 import {
   ECCreatePaymentResponse,
+  ECGetMerchantTransactionResponse,
   ECGetPaymentResponse,
   ECRefundPayload,
   ECTransaction,
@@ -27,6 +28,7 @@ interface EasyCreditClient {
   ): Promise<boolean>;
   getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse>;
   refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<boolean>;
+  getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse>;
 }
 
 class EasyCreditApiClient implements EasyCreditClient {
@@ -176,6 +178,17 @@ class EasyCreditApiClient implements EasyCreditClient {
 
       return false;
     }
+  }
+
+  public async getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse> {
+    const headers: HeadersInit = { ...this.getDefaultHeaders() };
+
+    const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}`, {
+      method: 'GET',
+      headers,
+    });
+
+    return await this.handleResponse(response);
   }
 }
 
