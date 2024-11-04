@@ -4,9 +4,12 @@ import { mapUpdateActionForRefunds } from '../utils/map.utils';
 import { getCompletedRefunds, getPendingRefundTransactions } from '../utils/payment.utils';
 import { log } from '../libs/logger';
 import { Errorx } from '@commercetools/connect-payments-sdk';
+import { validateECTransactionId } from '../validators/payment.validators';
 
 export const handleEasyCreditNotification = async (resourceId: string) => {
   try {
+    validateECTransactionId(resourceId);
+
     const ecTransaction = await initEasyCreditClient().getMerchantTransaction(resourceId);
 
     const ecCompletedRefunds = getCompletedRefunds(ecTransaction.bookings);

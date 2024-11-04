@@ -1,5 +1,5 @@
-import { handleEasyCreditNotification } from './../../src/services/easycreditNotification.service';
-import { ECGetMerchantTransactionResponse } from './../../src/types/payment.types';
+import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
+import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
 import { updatePayment, getPaymentByEasyCreditRefundBookingId } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
@@ -23,6 +23,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateInitialOrPendingTransaction: jest.fn(),
   validatePaymentAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
+  validateECTransactionId: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
