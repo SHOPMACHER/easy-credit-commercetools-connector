@@ -74,3 +74,30 @@ export async function createPayment(payment: PaymentDraft): Promise<Payment> {
     });
   }
 }
+
+export const getPaymentByEasyCreditRefundBookingId = async (ecRefundBookingId: string): Promise<Payment> => {
+  const payments = await createApiRoot()
+    .payments()
+    .get({
+      queryArgs: {
+        where: `transactions(id="${ecRefundBookingId}")`,
+      },
+    })
+    .execute();
+
+  const results = payments.body.results;
+
+  if (results.length !== 1) {
+    log.error('There is not any assigned payment');
+
+    throw new Errorx({
+      code: 'CommerceToolsPaymentNotFound',
+      message: 'There is not any assigned payment',
+      httpErrorStatus: 404,
+    });
+  }
+
+  log.info(`Found payment with id ${results[0].id}`);
+
+  return results[0];
+};

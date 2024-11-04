@@ -1,4 +1,4 @@
-import { mapCTCartToECPayment, mapCTCartToCTPayment } from '../../src/utils/map.utils'; // Adjust the import path as necessary
+import { mapCTCartToECPayment, mapCTCartToCTPayment, mapUpdateActionForRefunds } from '../../src/utils/map.utils'; // Adjust the import path as necessary
 import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
@@ -8,8 +8,15 @@ import {
 } from '../../src/utils/constant.utils';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { convertCentsToEur } from '../../src/utils/app.utils';
-import { Cart, Payment } from '@commercetools/connect-payments-sdk';
-import { ECTransaction, ECTransactionCustomerRelationship } from '../../src/types/payment.types';
+import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECBooking,
+  ECTransaction,
+  ECTransactionCustomerRelationship,
+} from '../../src/types/payment.types';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),
@@ -81,7 +88,9 @@ describe('Payment Mapping', () => {
 
       const mockConnectorUrl = { value: 'https://example.com' };
 
+      // @ts-expect-error mocked
       (getCustomObjectByKey as jest.Mock).mockResolvedValue(mockConnectorUrl);
+      // @ts-expect-error mocked
       (convertCentsToEur as jest.Mock).mockImplementation((amount: number) => amount / 100);
 
       const result: ECTransaction = await mapCTCartToECPayment(
@@ -174,6 +183,66 @@ describe('Payment Mapping', () => {
           method: EASYCREDIT_PAYMENT_METHOD,
         },
       });
+    });
+  });
+
+  describe('mapUpdateActionForRefunds', () => {
+    it('should map the update action based on valid records correctly', () => {
+      const ecCompletedRefunds = [
+        {
+          bookingType: 'RefundBooking',
+          uuid: 'b6731d8c-27d0-4a82-ac35-5d19c0a1f5c8',
+          created: '2024-10-29T10:08:35+01:00',
+          type: 'REFUND',
+          status: 'DONE',
+          message: null,
+          amount: 12.0,
+          bookingId: 'transaction1',
+        },
+        {
+          bookingType: 'RefundBooking',
+          uuid: 'd0ed5b26-8fe8-4b9a-a4a4-476b0c530c36',
+          created: '2024-10-29T11:43:12+01:00',
+          type: 'REFUND',
+          status: 'FAILED',
+          message: null,
+          amount: 3.0,
+          bookingId: 'transaction2',
+        },
+      ] as unknown as ECBooking[];
+
+      const ctPendingRefunds = [
+        {
+          id: 'transaction1',
+          type: CTTransactionType.Refund,
+          state: CTTransactionState.Pending,
+        },
+        {
+          id: 'transaction2',
+          type: CTTransactionType.Refund,
+          state: CTTransactionState.Pending,
+        },
+        {
+          id: 'transaction3',
+          type: CTTransactionType.Refund,
+          state: CTTransactionState.Pending,
+        },
+      ] as Transaction[];
+
+      const expectedResult = [
+        {
+          action: 'changeTransactionState',
+          transactionId: ctPendingRefunds[0].id,
+          state: CTTransactionState.Success,
+        },
+        {
+          action: 'changeTransactionState',
+          transactionId: ctPendingRefunds[1].id,
+          state: CTTransactionState.Failure,
+        },
+      ];
+
+      expect(mapUpdateActionForRefunds(ctPendingRefunds, ecCompletedRefunds)).toStrictEqual(expectedResult);
     });
   });
 });

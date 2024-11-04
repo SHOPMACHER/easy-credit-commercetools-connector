@@ -230,3 +230,21 @@ export type ECRefundPayload = {
   value: number;
   bookingId: string;
 };
+
+export type ECGetMerchantTransactionResponse = {
+  transactionId: string;
+  status: string;
+  bookings: ECBooking[];
+  refundsTotalValue: number;
+};
+
+export type ECBooking = {
+  bookingType: string;
+  uuid: string;
+  created: Date;
+  type: string;
+  status: string;
+  message?: string;
+  amount?: number;
+  bookingId?: string;
+};

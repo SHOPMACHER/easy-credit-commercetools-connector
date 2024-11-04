@@ -190,3 +190,13 @@ export const validatePaymentAmount = (payment: Payment, refundAmount: number): v
     });
   }
 };
+
+export const validateECTransactionId = (transactionId: string) => {
+  if (!/^[A-Z0-9]{6}$/.test(transactionId)) {
+    throw new Errorx({
+      code: 'InvalidResourceId',
+      message: 'Invalid transaction ID format.',
+      httpErrorStatus: 400,
+    });
+  }
+};

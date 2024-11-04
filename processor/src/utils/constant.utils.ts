@@ -19,3 +19,9 @@ export const EASYCREDIT_PAYMENT_METHOD = 'easycredit';
 export const EASYCREDIT_CONNECTOR_KEY = 'easycredit-connector';
 
 export const EASYCREDIT_CONNECTOR_URL = 'easycredit-connector-url';
+
+export const EASYCREDIT_REFUND_BOOKING_TYPE = 'RefundBooking';
+
+export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
+
+export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
