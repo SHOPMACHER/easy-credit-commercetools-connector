@@ -73,32 +73,43 @@
             // pdpWdiget.mount("#container");
 
             /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
-            const componentBuilder = await enabler.createCheckoutBuilder();
-            const easyCreditPaymentMethod = await componentBuilder.build({
-              cartId: testCartId,
-              redirectLinks: {
-              urlSuccess: 'http://localhost:3000/de/thank-you/',
-              urlCancellation: 'http://localhost:3000/de/checkout/?step=2&status=cancelled',
-              urlDenial: 'http://localhost:3000/de/checkout/?step=2&status=denied',
-              // urlAuthorizationCallback: 'http://localhost:3000/de/thank-you/',
-              },
-              customerRelationship: {
-                customerStatus: 'EXISTING_CUSTOMER',
-                customerSince: '',
-                numberOfOrders: 12,
-              },
-              onLoading: () => {
-                console.log('loading...');
-              },
-              onError: (error) => {
-                console.log('failed to checkout', error);
-              },
-              onSuccess: (response) => {
-                console.log('checkout success', response);
-              },
+            // const componentBuilder = await enabler.createCheckoutBuilder();
+            // const easyCreditPaymentMethod = await componentBuilder.build({
+            //   cartId: testCartId,
+            //   redirectLinks: {
+            //   urlSuccess: 'http://localhost:3000/de/thank-you/',
+            //   urlCancellation: 'http://localhost:3000/de/checkout/?step=2&status=cancelled',
+            //   urlDenial: 'http://localhost:3000/de/checkout/?step=2&status=denied',
+            //   // urlAuthorizationCallback: 'http://localhost:3000/de/thank-you/',
+            //   },
+            //   customerRelationship: {
+            //     customerStatus: 'EXISTING_CUSTOMER',
+            //     customerSince: '',
+            //     numberOfOrders: 12,
+            //   },
+            //   onLoading: () => {
+            //     console.log('loading...');
+            //   },
+            //   onError: (error) => {
+            //     console.log('failed to checkout', error);
+            //   },
+            //   onSuccess: (response) => {
+            //     console.log('checkout success', response);
+            //   },
+            // });
+
+            // easyCreditPaymentMethod.mount('#container');
+
+            /* INITIALIZE AND RENDER EASYCREDIT SUMMARY */
+            const componentBuilder = await enabler.createSummaryBuilder({
+              processorUrl: 'https://service-bk5phtyi8svk2ne51fw3ulsn.europe-west1.gcp.commercetools.app/', // Need to change after deploying connector privately
+              sessionId: sessionId,
+            });
+            const summaryComponent = await componentBuilder.build({
+              paymentId: '2ec768a5-d2f4-4cdf-acf5-78e4abf47b2a'
             });
 
-            easyCreditPaymentMethod.mount('#container');
+            summaryComponent.mount("#container");
           </script>
         </div>
       </div>

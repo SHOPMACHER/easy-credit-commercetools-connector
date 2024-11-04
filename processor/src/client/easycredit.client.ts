@@ -93,15 +93,27 @@ class EasyCreditApiClient implements EasyCreditClient {
     orderId: string,
     customHeaders?: HeadersInit,
   ): Promise<boolean> {
-    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-    const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ orderId }),
-    });
-    await this.handleResponse(response);
+    try {
+      const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+      const response = await fetch(
+        `${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(orderId ? { orderId } : {}),
+        },
+      );
 
-    return true;
+      if (response.status !== 202) {
+        throw new Error('Authorize request returned invalid status code');
+      }
+
+      return true;
+    } catch (error: unknown) {
+      log.error('Failed to authorize the payment', error);
+
+      return false;
+    }
   }
 
   public async capturePayment(
