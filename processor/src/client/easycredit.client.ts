@@ -95,15 +95,27 @@ class EasyCreditApiClient implements EasyCreditClient {
     orderId: string,
     customHeaders?: HeadersInit,
   ): Promise<boolean> {
-    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-    const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ orderId }),
-    });
-    await this.handleResponse(response);
+    try {
+      const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+      const response = await fetch(
+        `${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(orderId ? { orderId } : {}),
+        },
+      );
 
-    return true;
+      if (response.status !== 202) {
+        throw new Error('Authorize request returned invalid status code');
+      }
+
+      return true;
+    } catch (error: unknown) {
+      log.error('Failed to authorize the payment', error);
+
+      return false;
+    }
   }
 
   public async capturePayment(
@@ -112,16 +124,25 @@ class EasyCreditApiClient implements EasyCreditClient {
     trackingNumber?: string,
     customHeaders?: HeadersInit,
   ): Promise<boolean> {
-    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-    const body = { orderId, trackingNumber };
-    const response = await fetch(`${this.baseApiUrl}/api/merchant/v3/transaction/${transactionId}/capture`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-    await this.handleResponse(response);
+    try {
+      const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+      const body = { orderId, trackingNumber };
+      const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/capture`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    return true;
+      if (response.status !== 202) {
+        throw new Error('Capture request returned invalid status code');
+      }
+
+      return true;
+    } catch (error: unknown) {
+      log.error('Failed to capture the payment', error);
+
+      return false;
+    }
   }
 
   public async getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse> {

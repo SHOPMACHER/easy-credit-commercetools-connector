@@ -360,7 +360,7 @@ describe('Payment handlers', () => {
 
       expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, [
-        { action: 'changeTransactionState', transactionId: 'interactionId123', state: 'Success' },
+        { action: 'changeTransactionState', transactionId: 'transaction123', state: 'Success' },
       ]);
     });
 

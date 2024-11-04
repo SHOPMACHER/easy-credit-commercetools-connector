@@ -152,9 +152,9 @@ export const handleGetPayment = async (paymentId: string): Promise<GetPaymentRes
     validateTransaction(payment);
 
     const transaction = getTransaction(payment) as Transaction;
-    const interactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.interactionId as string;
 
-    const ecPayment = await initEasyCreditClient().getPayment(interactionId);
+    const ecPayment = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
     return {
       ...ecPayment,
@@ -175,9 +175,9 @@ export const handleAuthorizeECPayment = async (paymentId: string, orderId?: stri
     validateTransaction(payment);
 
     const transaction = getTransaction(payment) as Transaction;
-    const interactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.interactionId as string;
 
-    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
+    const easyTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
     if (easyTransaction.status !== ECTransactionStatus.PREAUTHORIZED) {
       throw new Errorx({
         code: 'TransactionNotPreauthorized',
@@ -185,10 +185,10 @@ export const handleAuthorizeECPayment = async (paymentId: string, orderId?: stri
         httpErrorStatus: 400,
       });
     }
-    await initEasyCreditClient().authorizePayment(interactionId, orderId ?? paymentId);
+    await initEasyCreditClient().authorizePayment(ecTechnicalTransactionId, orderId ?? paymentId);
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Pending },
+      { action: 'changeTransactionState', transactionId: transaction.id, state: CTTransactionState.Pending },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing EasyCredit Payment', error);
@@ -204,9 +204,9 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     validatePendingTransaction(payment);
 
     const transaction = getPendingTransaction(payment) as Transaction;
-    const interactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.interactionId as string;
 
-    const easyTransaction = await initEasyCreditClient().getPayment(interactionId);
+    const easyTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
     if (easyTransaction.status !== ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
@@ -217,7 +217,7 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     }
 
     await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: interactionId, state: CTTransactionState.Success },
+      { action: 'changeTransactionState', transactionId: transaction.id, state: CTTransactionState.Success },
     ]);
   } catch (error: unknown) {
     log.error('Error in authorizing CT Payment', error);
@@ -232,10 +232,9 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     validatePayment(payment);
 
     const transaction = validateInitialOrPendingTransaction(payment);
+    const ecTechnicalTransactionId = transaction.interactionId as string;
 
-    const interactionId = transaction.interactionId as string;
-
-    const easyCreditTransaction = await initEasyCreditClient().getPayment(interactionId);
+    const easyCreditTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
     if (easyCreditTransaction.status === ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
@@ -271,9 +270,9 @@ export const handleCapturePayment = async (
     validateSuccessTransaction(payment);
 
     const transaction = getSuccessTransaction(payment) as Transaction;
-    const interactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.interactionId as string;
 
-    const easyCreditTransaction = await initEasyCreditClient().getPayment(interactionId);
+    const easyCreditTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
     if (easyCreditTransaction.status !== ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
@@ -302,9 +301,9 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
     validatePayment(payment);
     validateSuccessTransaction(payment);
 
-    const ecTechnicalTransactionId = getSuccessTransaction(payment)?.interactionId;
+    const ecTechnicalTransactionId = getSuccessTransaction(payment)?.interactionId as string;
 
-    const ecTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId as string);
+    const ecTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
     const updatedCTPayment = await updatePayment(payment, [
       {

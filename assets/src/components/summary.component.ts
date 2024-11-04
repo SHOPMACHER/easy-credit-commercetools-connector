@@ -100,7 +100,7 @@ export class ECSummaryComponent implements SummaryComponent {
     } else {
       amount = response.amount;
       webShopId = response.webShopId;
-      paymentPlan = JSON.stringify(response.decision);
+      paymentPlan = JSON.stringify(response.decision).replace(/"/g, '&quot;');
     }
 
     const errorMessage = errorMessages.join(' ').trim();
@@ -109,7 +109,7 @@ export class ECSummaryComponent implements SummaryComponent {
       <easycredit-checkout 
         webshop-id="${webShopId}" 
         amount="${amount}"
-        paymentPlan="${paymentPlan}"
+        payment-plan="${paymentPlan}"
         is-active="true" 
         payment-type="INSTALLMENT" 
         alert="${errorMessage}" 

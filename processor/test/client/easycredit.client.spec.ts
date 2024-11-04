@@ -160,6 +160,7 @@ describe('initEasyCreditClient', () => {
         ok: true,
         // @ts-expect-error mocked
         json: jest.fn().mockResolvedValueOnce(mockResponse),
+        status: 202,
       });
 
       const result = await easyCreditClient.authorizePayment(technicalTransactionId, orderId);
