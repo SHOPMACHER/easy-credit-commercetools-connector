@@ -1,6 +1,8 @@
 import { healthCheck, isWidgetEnabled } from '../../src/services/connector.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
+import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { readConfiguration } from '../../src/utils/config.utils';
 
 // Mock dependencies
 jest.mock('../../src/libs/logger', () => ({
@@ -13,7 +15,7 @@ jest.mock('../../src/libs/logger', () => ({
 jest.mock('../../src/utils/config.utils', () => ({
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: {
-      widgetEnabled: true,
+      widgetEnabled: '1',
       webShopId: 'mock-webshop-id',
     },
   }),
@@ -43,6 +45,8 @@ describe('Health Check and Widget Functions', () => {
     it('should log an error and throw when integrationCheck fails', async () => {
       const integrationCheckMock = initEasyCreditClient().integrationCheck as jest.Mock;
       const errorMessage = new Error('Integration check failed');
+
+      // @ts-expect-error mocked
       integrationCheckMock.mockRejectedValueOnce(errorMessage);
 
       await expect(healthCheck()).rejects.toThrow(errorMessage);
@@ -60,6 +64,23 @@ describe('Health Check and Widget Functions', () => {
       expect(log.debug).toHaveBeenCalledWith('get Widget config');
       expect(result).toEqual({
         isEnabled: true,
+        webShopId: 'mock-webshop-id',
+      });
+    });
+
+    it('should return widget enabled status (false) and webShopId', async () => {
+      (readConfiguration as jest.Mock).mockReturnValue({
+        easyCredit: {
+          widgetEnabled: '0',
+          webShopId: 'mock-webshop-id',
+        },
+      });
+
+      const result = await isWidgetEnabled();
+
+      expect(log.debug).toHaveBeenCalledWith('get Widget config');
+      expect(result).toEqual({
+        isEnabled: false,
         webShopId: 'mock-webshop-id',
       });
     });
