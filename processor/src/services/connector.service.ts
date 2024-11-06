@@ -22,7 +22,7 @@ export const isWidgetEnabled = async () => {
   log.debug('get Widget config');
 
   return {
-    isEnabled: !!config.easyCredit.widgetEnabled,
+    isEnabled: config.easyCredit.widgetEnabled === '1',
     webShopId: config.easyCredit.webShopId,
   };
 };
