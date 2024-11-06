@@ -1,0 +1,450 @@
+{
+	"info": {
+		"_postman_id": "4735a962-821c-42f2-8484-dfaaaa6270c3",
+		"name": "Easy connector API document",
+		"description": "# 📄 Get started here\n\nThis template contains a boilerplate for documentation that you can quickly customize and reuse.\n\n## 🔖 How to use this template\n\n- Replace the content given brackets (()) with your API's details.\n- Tips are formatted in `codespan` - feel free to read and remove them.\n    \n\n---\n\n`Start with a brief overview of what your API offers.`\n\nThe ((product name)) provides many API products, tools, and resources that enable you to ((add product value here)).\n\n`You can also list the APIs you offer, link to the relevant pages, or do both in this section.`\n\n## **Getting started guide**\n\n`List the steps or points required to start using your APIs. Make sure to cover everything required to reach success with your API as quickly as possible.`\n\nTo start using the ((add APIs here)), you need to -\n\n`The points given below are from The Postman API's documentation. You can reference it to write your own getting started guide.`\n\n- You must use a valid API Key to send requests to the API endpoints. You can get your API key from Postman's [integrations dashboard](https://go.postman.co/settings/me/api-keys).\n- The API has [rate and usage limits](https://learning.postman.com/docs/developer/postman-api/postman-api-rate-limits/).\n- The API only responds to HTTPS-secured communications. Any requests sent via HTTP return an HTTP 301 redirect to the corresponding HTTPS resources.\n- The API returns request responses in JSON format. When an API request returns an error, it is sent in the JSON response as an error key.\n    \n\n## Authentication\n\n`Add details on the authorization keys/tokens required, steps that cover how to get them, and the relevant error codes.`\n\nThe ((product name)) API uses ((add your API's authorization type)) for authentication.\n\n`The details given below are from the Postman API's documentation. You can reference it to write your own authentication section.`\n\nPostman uses API keys for authentication. You can generate a Postman API key in the [API keys](https://postman.postman.co/settings/me/api-keys) section of your Postman account settings.\n\nYou must include an API key in each request to the Postman API with the X-Api-Key request header.\n\n### Authentication error response\n\nIf an API key is missing, malformed, or invalid, you will receive an HTTP 401 Unauthorized response code.\n\n## Rate and usage limits\n\n`Use this section to cover your APIs' terms of use. Include API limits, constraints, and relevant error codes, so consumers understand the permitted API usage and practices.`\n\n`The example given below is from The Postman API's documentation. Use it as a reference to write your APIs' terms of use.`\n\nAPI access rate limits apply at a per-API key basis in unit time. The limit is 300 requests per minute. Also, depending on your plan, you may have usage limits. If you exceed either limit, your request will return an HTTP 429 Too Many Requests status code.\n\nEach API response returns the following set of headers to help you identify your use status:\n\n| Header | Description |\n| --- | --- |\n| `X-RateLimit-Limit` | The maximum number of requests that the consumer is permitted to make per minute. |\n| `X-RateLimit-Remaining` | The number of requests remaining in the current rate limit window. |\n| `X-RateLimit-Reset` | The time at which the current rate limit window resets in UTC epoch seconds. |\n\n### 503 response\n\nAn HTTP `503` response from our servers indicates there is an unexpected spike in API access traffic. The server is usually operational within the next five minutes. If the outage persists or you receive any other form of an HTTP `5XX` error, [contact support](https://support.postman.com/hc/en-us/requests/new/).\n\n### **Need some help?**\n\n`Add links that customers can refer to whenever they need help.`\n\nIn case you have questions, go through our tutorials ((link to your video or help documentation here)). Or visit our FAQ page ((link to the relevant page)).\n\nOr you can check out our community forum, there’s a good chance our community has an answer for you. Visit our developer forum ((link to developer forum)) to review topics, ask questions, and learn from others.\n\n`You can also document or add links to libraries, code examples, and other resources needed to make a request.`",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "39108604",
+		"_collection_link": "https://teba-237545.postman.co/workspace/TEBA~a9284113-2099-4ce6-8b46-51603b42eafa/collection/39108604-4735a962-821c-42f2-8484-dfaaaa6270c3?action=share&source=collection_link&creator=39108604"
+	},
+	"item": [
+		{
+			"name": "Webhook",
+			"item": [
+				{
+					"name": "Cancel Payment",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"webhook",
+								"{{payment_id}}",
+								"cancel"
+							],
+							"query": [
+								{
+									"key": "redirectUrl",
+									"value": "string",
+									"description": "The URL where the customer is redirected after successfully completing the payment cancellation."
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "The `/collections` endpoints let you manage your [collections](https://learning.postman.com/docs/sending-requests/intro-to-collections/)."
+		},
+		{
+			"name": "Payment",
+			"item": [
+				{
+					"name": "Get EasyCredit Transaction (Payment)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Validate CommerceTools Cart",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"payment-method",
+								"{{cart_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Config",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/operations/widget-enabled",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"operations",
+								"widget-enabled"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get EasyCredit Transaction",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Refund Payment",
+					"request": {
+						"auth": {
+							"type": "oauth2",
+							"oauth2": [
+								{
+									"key": "addTokenTo",
+									"value": "header",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 5\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}",
+								"refund"
+							]
+						},
+						"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
+					},
+					"response": []
+				},
+				{
+					"name": "Create EasyCredit transaction (payment)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Authorize EasyCredit Transaction",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}",
+								"authorize"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Authorize EasyCredit Transaction Copy",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}/capture",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}",
+								"capture"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "CommerceTools",
+			"item": [
+				{
+					"name": "Obtain access token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"tests[\"Status code is 200\"] = responseCode.code === 200;",
+									"var data = JSON.parse(responseBody);",
+									"if(data.access_token){",
+									"    pm.environment.set(\"ctp_access_token\", data.access_token);",
+									"}",
+									"if (data.scope) {",
+									"    parts = data.scope.split(\" \");",
+									"    parts = parts.filter(scope => scope.includes(\":\")).map(scope => scope.split(\":\"))",
+									"    if (parts.length > 0) {",
+									"        scopeParts = parts[0];",
+									"        pm.environment.set(\"project-key\", scopeParts[1]);",
+									"        parts = parts.filter(scope => scope.length >= 3)",
+									"        if (parts.length > 0) {",
+									"            scopeParts = parts[0];",
+									"            pm.environment.set(\"store-key\", scopeParts[2]);",
+									"        }",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "{{client_secret}}",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "{{client_id}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "••••••"
+							}
+						],
+						"url": {
+							"raw": "{{auth_url}}/oauth/token?grant_type=client_credentials",
+							"host": [
+								"{{auth_url}}"
+							],
+							"path": [
+								"oauth",
+								"token"
+							],
+							"query": [
+								{
+									"key": "grant_type",
+									"value": "client_credentials"
+								}
+							]
+						},
+						"description": "Generated from cURL: curl --location --globoff --request POST '{{auth_url}}/oauth/token?grant_type=client_credentials' \\\n--header 'Authorization: ••••••' \\\n--data ''"
+					},
+					"response": []
+				},
+				{
+					"name": "Obtain Session ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var data = JSON.parse(responseBody);",
+									"if(data.id){",
+									"    pm.environment.set(\"ctp_session_id\", data.id);",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cart\": {\n        \"cartRef\": {\n          \"id\": \"bdc983db-ee19-4815-b576-a9ade27140de\"\n        }\n    },\n    \"metadata\": {}\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{session_url}}/{{project-key}}/sessions",
+							"host": [
+								"{{session_url}}"
+							],
+							"path": [
+								"{{project-key}}",
+								"sessions"
+							]
+						},
+						"description": "Generated from cURL: curl --location --globoff --request POST '{{auth_url}}/oauth/token?grant_type=client_credentials' \\\n--header 'Authorization: ••••••' \\\n--data ''"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "key",
+				"value": "X-API-Key",
+				"type": "string"
+			},
+			{
+				"key": "value",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://farming-simulator.pstmn.io"
+		}
+	]
+}

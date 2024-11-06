@@ -1,0 +1,69 @@
+{
+	"id": "23acb29a-d2aa-4e54-bd02-5ff5a044f142",
+	"name": "EasyCredit Dev env",
+	"values": [
+		{
+			"key": "auth_url",
+			"value": "https://auth.europe-west1.gcp.commercetools.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "client_id",
+			"value": "FcUOz6AYJb0LvUFXSF1mTkFx",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "client_secret",
+			"value": "ktOrRVcZtkgz1tg6jJwoAH65zuYlGImW",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "ctp_access_token",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "project-key",
+			"value": "shopmacher-teambank",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "ctp_session_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "session_url",
+			"value": "https://session.europe-west1.gcp.commercetools.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "cart_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "payment_id",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "connector_url",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2024-11-06T09:40:54.713Z",
+	"_postman_exported_using": "Postman/11.18.0-241015-0634"
+}
