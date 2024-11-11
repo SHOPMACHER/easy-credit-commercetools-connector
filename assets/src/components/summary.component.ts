@@ -106,6 +106,7 @@ export class ECSummaryComponent implements SummaryComponent {
     const errorMessage = errorMessages.join(' ').trim();
 
     return `
+      <easycredit-checkout-label payment-type="INSTALLMENT" />
       <easycredit-checkout 
         webshop-id="${webShopId}" 
         amount="${amount}"
