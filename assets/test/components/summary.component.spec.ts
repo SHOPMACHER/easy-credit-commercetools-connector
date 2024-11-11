@@ -143,5 +143,52 @@ describe('ECSummaryComponent', () => {
     `;
       expect(findElement('#selector').insertAdjacentHTML).toHaveBeenCalledWith('afterbegin', expectedTemplate);
     });
+
+    it('should handle negative decision outcome payment and render error message', async () => {
+      const mockPaymentResponse = {
+        webShopId: 'shop123',
+        amount: 100,
+        status: 'success',
+        decision: {
+          interest: 5,
+          totalValue: 105,
+          orderValue: 100,
+          decisionOutcome: 'NEGATIVE',
+          numberOfInstallments: 3,
+          installment: 35,
+          lastInstallment: 35,
+          mtan: { required: false, successful: true },
+          bankAccountCheck: { required: false },
+        },
+      };
+
+      // Mocking the fetch and utility functions
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error test
+          json: jest.fn().mockResolvedValueOnce(mockPaymentResponse),
+        }),
+      );
+
+      (findElement as jest.Mock).mockReturnValue({
+        insertAdjacentHTML: jest.fn(),
+      });
+
+      await component.mount('#selector');
+
+      const expectedTemplate = `
+      <easycredit-checkout-label payment-type="INSTALLMENT" />
+      <easycredit-checkout 
+        webshop-id="shop123" 
+        amount="100"
+        payment-plan=""
+        is-active="true" 
+        payment-type="INSTALLMENT" 
+        alert="Es ist ein Fehler aufgetreten. Es konnte keine Ratenauswahl gefunden werden." 
+      />
+    `;
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenCalledWith('afterbegin', expectedTemplate);
+    });
   });
 });

@@ -100,7 +100,11 @@ export class ECSummaryComponent implements SummaryComponent {
     } else {
       amount = response.amount;
       webShopId = response.webShopId;
-      paymentPlan = JSON.stringify(response.decision).replace(/"/g, '&quot;');
+      if (response.decision.decisionOutcome === 'NEGATIVE') {
+        errorMessages.push('Es ist ein Fehler aufgetreten. Es konnte keine Ratenauswahl gefunden werden.');
+      } else {
+        paymentPlan = JSON.stringify(response.decision).replace(/"/g, '&quot;');
+      }
     }
 
     const errorMessage = errorMessages.join(' ').trim();
