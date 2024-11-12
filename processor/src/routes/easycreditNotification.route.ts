@@ -2,9 +2,7 @@ import { handleEasyCreditNotification } from './../services/easycreditNotificati
 import { GetEasyCreditNotificationResponseSchemaDTO } from './../dtos/easycreditNotification/getEasyCreditNotification.dto';
 import { ErrorResponse } from '../libs/fastify/dtos/error.dto';
 import { FastifyInstance } from 'fastify';
-import {
-  GetEasyCreditNotificationResponseSchema,
-} from '../dtos/easycreditNotification/getEasyCreditNotification.dto';
+import { GetEasyCreditNotificationResponseSchema } from '../dtos/easycreditNotification/getEasyCreditNotification.dto';
 
 export const easyCreditRoutes = async (fastify: FastifyInstance) => {
   fastify.get<{ Reply: GetEasyCreditNotificationResponseSchemaDTO; Querystring: { vorgangskennung?: string } }>(
