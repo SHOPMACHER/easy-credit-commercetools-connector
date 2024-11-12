@@ -58,8 +58,8 @@ export class ECCheckoutComponent implements CheckoutComponent {
       throw new Error('Failed to retrieve payment method.');
     }
 
-    const template = this.generateTemplate(response);
-    findElement(selector).insertAdjacentHTML('afterbegin', template);
+    findElement(selector).insertAdjacentHTML('beforeend', this.generateLabel());
+    findElement(selector).insertAdjacentHTML('beforeend', this.generateWidget(response));
     document.querySelector('easycredit-checkout')?.addEventListener('submit', this.submit.bind(this));
   }
 
@@ -104,7 +104,11 @@ export class ECCheckoutComponent implements CheckoutComponent {
     return res.json();
   }
 
-  private generateTemplate(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): string {
+  private generateLabel(): string {
+    return `<easycredit-checkout-label payment-type="INSTALLMENT" />`;
+  }
+
+  private generateWidget(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): string {
     const errorMessages: string[] = [];
     let webShopId: string = '';
     let amount: number = 0;
