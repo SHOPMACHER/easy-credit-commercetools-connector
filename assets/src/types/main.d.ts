@@ -1,7 +1,7 @@
 /**
  * Usage:
  *    const webComponent = new WebComponent({
- *      processorUrl: __VITE_PROCESSOR_URL__,
+ *      processorUrl: __PROCESSOR_URL__,
  *      sessionId: sessionId,
  *    });
  *
@@ -119,3 +119,7 @@ export type SummaryComponentOptions = {
 export type WidgetComponentOptions = {
   amount: number;
 };
+
+import { ECWebComponent } from './ec-web-component';
+
+export const Enabler: typeof ECWebComponent;

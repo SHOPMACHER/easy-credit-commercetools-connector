@@ -1,8 +1,14 @@
 {
-  "name": "enabler",
-  "private": true,
-  "version": "0.0.26",
+  "name": "easy-credit-commercetools-component",
+  "private": false,
+  "version": "0.0.30",
   "type": "module",
+  "main": "public/connector-enabler.umd.js",
+  "module": "public/connector-enabler.es.js",
+  "types": "src/types/main.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "vite --port 3000",
     "start": "serve public -l 8080 --cors",

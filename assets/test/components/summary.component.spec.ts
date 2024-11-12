@@ -1,6 +1,6 @@
 import { ECSummaryComponent, ECSummaryComponentBuilder } from '../../src/components/summary.component';
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
-import { WebComponentOptions, SummaryComponentOptions } from '../../src/types/web-component.types';
+import { WebComponentOptions, SummaryComponentOptions } from '../../src/types/main';
 import { describe, jest, it, expect, beforeEach } from '@jest/globals';
 
 // Mock the imported utility functions

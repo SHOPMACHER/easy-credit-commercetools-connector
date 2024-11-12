@@ -4,7 +4,7 @@ import {
   CheckoutComponentOptions,
   CreatePaymentResponse,
   WebComponentOptions,
-} from '../types/web-component.types.ts';
+} from '../types/main';
 import { findElement, importEasyCreditScript } from '../utils/app.utils.ts';
 
 export class ECCheckoutComponentBuilder implements CheckoutComponentBuilder {

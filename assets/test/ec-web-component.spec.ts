@@ -1,7 +1,7 @@
 import { ECWebComponent } from '../src/ec-web-component';
 import { ECCheckoutComponentBuilder } from '../src/components/checkout.component';
 import { ECWidgetComponentBuilder } from '../src/components/widget.component';
-import { WebComponentOptions } from '../src/types/web-component.types';
+import { WebComponentOptions } from '../src/types/main';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { ECSummaryComponentBuilder } from '../src/components/summary.component.ts';
 

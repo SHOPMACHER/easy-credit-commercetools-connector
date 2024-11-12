@@ -4,7 +4,7 @@ import {
   CheckoutComponentBuilder,
   WidgetComponentBuilder,
   SummaryComponentBuilder,
-} from './types/web-component.types.ts';
+} from './types/main';
 import { ECWidgetComponentBuilder } from './components/widget.component.ts';
 import { ECCheckoutComponentBuilder } from './components/checkout.component.ts';
 import { ECSummaryComponentBuilder } from './components/summary.component.ts';

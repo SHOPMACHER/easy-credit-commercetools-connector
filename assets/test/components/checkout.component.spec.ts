@@ -1,5 +1,5 @@
 import { ECCheckoutComponentBuilder, ECCheckoutComponent } from '../../src/components/checkout.component';
-import { WebComponentOptions, CheckoutComponentOptions } from '../../src/types/web-component.types';
+import { WebComponentOptions, CheckoutComponentOptions } from '../../src/types/main';
 import { describe, jest, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
 

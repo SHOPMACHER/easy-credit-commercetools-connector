@@ -1,9 +1,4 @@
-import {
-  SummaryComponent,
-  SummaryComponentBuilder,
-  SummaryComponentOptions,
-  WebComponentOptions,
-} from '../types/web-component.types.ts';
+import { SummaryComponent, SummaryComponentBuilder, SummaryComponentOptions, WebComponentOptions } from '../types/main';
 import { findElement, importEasyCreditScript } from '../utils/app.utils.ts';
 
 export class ECSummaryComponentBuilder implements SummaryComponentBuilder {

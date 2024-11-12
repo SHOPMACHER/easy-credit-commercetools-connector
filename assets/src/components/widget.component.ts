@@ -1,10 +1,5 @@
 import { findElement, importEasyCreditScript } from '../utils/app.utils';
-import {
-  WebComponentOptions,
-  WidgetComponent,
-  WidgetComponentBuilder,
-  WidgetComponentOptions,
-} from '../types/web-component.types.ts';
+import { WebComponentOptions, WidgetComponent, WidgetComponentBuilder, WidgetComponentOptions } from '../types/main';
 
 export class ECWidgetComponentBuilder implements WidgetComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
