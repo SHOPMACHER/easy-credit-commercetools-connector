@@ -48,7 +48,7 @@ deployAs:
           required: false
           default: "0"
         - key: WIDGET_ENABLED
-          description: Toggle display the EasyCredit Widget on PDP (0 or 1)
+          description: Toggle display the EasyCredit Widget (0 or 1)
           required: true
           default: "1"
       securedConfiguration:
