@@ -3,7 +3,6 @@ import { GetEasyCreditNotificationResponseSchemaDTO } from './../dtos/easycredit
 import { ErrorResponse } from '../libs/fastify/dtos/error.dto';
 import { FastifyInstance } from 'fastify';
 import {
-  GetEasyCreditNotificationParamsSchema,
   GetEasyCreditNotificationResponseSchema,
 } from '../dtos/easycreditNotification/getEasyCreditNotification.dto';
 
