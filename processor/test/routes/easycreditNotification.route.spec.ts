@@ -26,7 +26,7 @@ describe('easycreditNotificationRoutes', () => {
     await app.close();
   });
 
-  describe('GET /easycredit-notification/:resourceId', () => {
+  describe('GET /easycredit-notification', () => {
     it('should return payment method config', async () => {
       const resourceId = '12345';
 
@@ -35,7 +35,7 @@ describe('easycreditNotificationRoutes', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: `/easycredit-notification/${resourceId}`,
+        url: `/easycredit-notification?vorgangskennung=${resourceId}`,
         headers: {
           'content-type': 'application/json',
         },

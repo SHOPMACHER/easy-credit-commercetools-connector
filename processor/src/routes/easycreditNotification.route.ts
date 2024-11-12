@@ -8,11 +8,11 @@ import {
 } from '../dtos/easycreditNotification/getEasyCreditNotification.dto';
 
 export const easyCreditRoutes = async (fastify: FastifyInstance) => {
-  fastify.get<{ Reply: GetEasyCreditNotificationResponseSchemaDTO; Params: { resourceId: string } }>(
-    '/:resourceId',
+  fastify.get<{ Reply: GetEasyCreditNotificationResponseSchemaDTO; Querystring: { vorgangskennung?: string } }>(
+    '/',
     {
       schema: {
-        params: GetEasyCreditNotificationParamsSchema,
+        querystring: { type: 'object', properties: { vorgangskennung: { type: 'string' } } },
         response: {
           204: GetEasyCreditNotificationResponseSchema,
           400: ErrorResponse,
@@ -20,9 +20,9 @@ export const easyCreditRoutes = async (fastify: FastifyInstance) => {
       },
     },
     async (request, reply) => {
-      const { resourceId } = request.params;
+      const resourceId = request.query.vorgangskennung;
 
-      await handleEasyCreditNotification(resourceId);
+      await handleEasyCreditNotification(resourceId ?? '');
 
       reply.code(204).send();
     },
