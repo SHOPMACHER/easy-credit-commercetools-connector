@@ -20,7 +20,7 @@ export const easyCreditRoutes = async (fastify: FastifyInstance) => {
       },
     },
     async (request, reply) => {
-      const resourceId = request.query.vorgangskennung;
+      const resourceId = request.query?.vorgangskennung;
 
       await handleEasyCreditNotification(resourceId ?? '');
 
