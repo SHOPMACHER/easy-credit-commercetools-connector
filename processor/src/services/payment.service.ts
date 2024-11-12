@@ -120,7 +120,7 @@ export const handleCreatePayment = async (
           custom: {
             type: {
               typeId: 'type',
-              id: EASYCREDIT_TECHNICAL_TRANSACTION_ID,
+              key: EASYCREDIT_TECHNICAL_TRANSACTION_ID,
             },
             fields: {
               easyCreditTechnicalTransactionId: ecPayment.technicalTransactionId,
