@@ -71,8 +71,8 @@ export class ECSummaryComponent implements SummaryComponent {
 
     const response = await this.getPayment();
 
-    const template = this.generateTemplate(response);
-    findElement(selector).insertAdjacentHTML('afterbegin', template);
+    findElement(selector).insertAdjacentHTML('beforeend', this.generateLabel());
+    findElement(selector).insertAdjacentHTML('beforeend', this.generateWidget(response));
   }
 
   private async getPayment(): Promise<PaymentSuccessResponse | PaymentErrorResponse> {
@@ -87,7 +87,11 @@ export class ECSummaryComponent implements SummaryComponent {
     return res.json();
   }
 
-  private generateTemplate(response: PaymentSuccessResponse | PaymentErrorResponse): string {
+  private generateLabel(): string {
+    return `<easycredit-checkout-label payment-type="INSTALLMENT" />`;
+  }
+
+  private generateWidget(response: PaymentSuccessResponse | PaymentErrorResponse): string {
     const errorMessages: string[] = [];
     let amount: number = 0;
     let webShopId: string = '';
@@ -110,7 +114,6 @@ export class ECSummaryComponent implements SummaryComponent {
     const errorMessage = errorMessages.join(' ').trim();
 
     return `
-      <easycredit-checkout-label payment-type="INSTALLMENT" />
       <easycredit-checkout 
         webshop-id="${webShopId}" 
         amount="${amount}"

@@ -97,7 +97,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   fastify.get<{ Params: { paymentId: string }; Reply: GetPaymentResponseSchemaDTO }>(
     '/:paymentId',
     {
-      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      // preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         params: GetPaymentParamsSchema,
         response: {

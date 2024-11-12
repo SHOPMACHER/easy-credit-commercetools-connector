@@ -95,8 +95,8 @@ describe('ECSummaryComponent', () => {
       });
 
       // Check if template was generated and inserted
-      const expectedTemplate = `
-      <easycredit-checkout-label payment-type="INSTALLMENT" />
+      const expectedLabel = `<easycredit-checkout-label payment-type="INSTALLMENT" />`;
+      const expectedWidget = `
       <easycredit-checkout 
         webshop-id="shop123" 
         amount="100"
@@ -106,8 +106,10 @@ describe('ECSummaryComponent', () => {
         alert="" 
       />
     `;
+
       expect(findElement).toHaveBeenCalledWith('#selector');
-      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenCalledWith('afterbegin', expectedTemplate);
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(1, 'beforeend', expectedLabel);
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(2, 'beforeend', expectedWidget);
     });
 
     it('should handle payment error response and render error message', async () => {
@@ -130,8 +132,8 @@ describe('ECSummaryComponent', () => {
 
       await component.mount('#selector');
 
-      const expectedTemplate = `
-      <easycredit-checkout-label payment-type="INSTALLMENT" />
+      const expectedLabel = `<easycredit-checkout-label payment-type="INSTALLMENT" />`;
+      const expectedWidget = `
       <easycredit-checkout 
         webshop-id="" 
         amount="0"
@@ -141,7 +143,8 @@ describe('ECSummaryComponent', () => {
         alert="Invalid payment" 
       />
     `;
-      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenCalledWith('afterbegin', expectedTemplate);
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(1, 'beforeend', expectedLabel);
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(2, 'beforeend', expectedWidget);
     });
 
     it('should handle negative decision outcome payment and render error message', async () => {
@@ -177,8 +180,8 @@ describe('ECSummaryComponent', () => {
 
       await component.mount('#selector');
 
-      const expectedTemplate = `
-      <easycredit-checkout-label payment-type="INSTALLMENT" />
+      const expectedLabel = `<easycredit-checkout-label payment-type="INSTALLMENT" />`;
+      const expectedWidget = `
       <easycredit-checkout 
         webshop-id="shop123" 
         amount="100"
@@ -188,7 +191,9 @@ describe('ECSummaryComponent', () => {
         alert="Es ist ein Fehler aufgetreten. Es konnte keine Ratenauswahl gefunden werden." 
       />
     `;
-      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenCalledWith('afterbegin', expectedTemplate);
+
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(1, 'beforeend', expectedLabel);
+      expect(findElement('#selector').insertAdjacentHTML).toHaveBeenNthCalledWith(2, 'beforeend', expectedWidget);
     });
   });
 });
