@@ -117,6 +117,7 @@ describe('ECCheckoutComponent', () => {
         },
       },
     );
+    expect(mockElement.innerHTML).toContain('easycredit-checkout-label'); // Check if the template is inserted
     expect(mockElement.innerHTML).toContain('easycredit-checkout'); // Check if the template is inserted
   });
 
