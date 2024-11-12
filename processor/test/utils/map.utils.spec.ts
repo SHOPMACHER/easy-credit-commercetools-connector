@@ -32,6 +32,7 @@ describe('Payment Mapping', () => {
   });
 
   describe('mapCTCartToECPayment', () => {
+    // @ts-ignore
     it('should map the cart and payment to ECTransaction correctly', async () => {
       const mockCart: Cart = {
         id: 'cart123',
@@ -90,6 +91,7 @@ describe('Payment Mapping', () => {
 
       // @ts-expect-error mocked
       (getCustomObjectByKey as jest.Mock).mockResolvedValue(mockConnectorUrl);
+
       // @ts-expect-error mocked
       (convertCentsToEur as jest.Mock).mockImplementation((amount: number) => amount / 100);
 
@@ -105,7 +107,7 @@ describe('Payment Mapping', () => {
       expect(result).toEqual({
         orderDetails: {
           orderValue: 100,
-          orderId: 'cart123',
+          orderId: 'payment123',
           numberOfProductsInShoppingCart: 1,
           withoutFlexprice: false,
           invoiceAddress: {

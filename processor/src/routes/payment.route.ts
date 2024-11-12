@@ -133,9 +133,8 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { paymentId } = request.params;
-      const { orderId } = request.body;
 
-      await handleAuthorizeECPayment(paymentId, orderId);
+      await handleAuthorizeECPayment(paymentId);
 
       reply.code(204).send();
     },
@@ -159,9 +158,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { paymentId } = request.params;
-      const { orderId, trackingNumber } = request.body;
+      const { trackingNumber } = request.body;
 
-      await handleCapturePayment(paymentId, orderId, trackingNumber);
+      await handleCapturePayment(paymentId, trackingNumber);
 
       reply.code(204).send();
     },

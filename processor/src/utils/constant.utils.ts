@@ -25,3 +25,5 @@ export const EASYCREDIT_REFUND_BOOKING_TYPE = 'RefundBooking';
 export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
 
 export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
+
+export const EASYCREDIT_TECHNICAL_TRANSACTION_ID = 'easy-credit-technical-transaction-id';

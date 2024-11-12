@@ -61,7 +61,7 @@ export const mapCTCartToECPayment = async (
   return {
     orderDetails: {
       orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
-      orderId: cart.id,
+      orderId: payment.id,
       numberOfProductsInShoppingCart: cart.lineItems.length,
       withoutFlexprice: false,
       invoiceAddress: mapAddress(cart.billingAddress as Address),

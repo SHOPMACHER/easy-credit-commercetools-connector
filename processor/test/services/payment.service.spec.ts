@@ -115,7 +115,11 @@ describe('Payment handlers', () => {
 
   describe('handleGetPayment', () => {
     const mockPaymentId = 'payment123';
-    const mockTransaction = { interactionId: 'interaction123', amount: { centAmount: 1000, fractionDigits: 2 } };
+    const mockTransaction = {
+      interactionId: 'interactionId',
+      amount: { centAmount: 1000, fractionDigits: 2 },
+      custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+    };
     const mockPayment = { id: 'payment123', transactions: [mockTransaction] };
     const mockECResponse = { status: 'success', amount: 10, webShopId: 'webShopId123' };
 
@@ -144,7 +148,9 @@ describe('Payment handlers', () => {
       expect(validatePayment).toHaveBeenCalledWith(mockPayment);
       expect(validateTransaction).toHaveBeenCalledWith(mockPayment);
       expect(getTransaction).toHaveBeenCalledWith(mockPayment);
-      expect(mockEasyCreditClient.getPayment).toHaveBeenCalledWith(mockTransaction.interactionId);
+      expect(mockEasyCreditClient.getPayment).toHaveBeenCalledWith(
+        mockTransaction.custom.fields.easyCreditTechnicalTransactionId,
+      );
 
       // Check the result
       expect(result).toEqual(mockECResponse);
@@ -300,7 +306,13 @@ describe('Payment handlers', () => {
     it('should successfully authorize a payment', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transactionId',
+            interactionId: 'interactionId123',
+            custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+          },
+        ],
       };
       const mockECTransaction = {
         status: ECTransactionStatus.PREAUTHORIZED,
@@ -324,8 +336,11 @@ describe('Payment handlers', () => {
 
       await handleAuthorizeECPayment('payment123');
 
-      expect(initEasyCreditClient().authorizePayment).toHaveBeenCalledWith('interactionId123', 'payment123');
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
+      expect(initEasyCreditClient().authorizePayment).toHaveBeenCalledWith(
+        'easyCreditTechnicalTransactionId',
+        'payment123',
+      );
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
     });
 
     it('should throw and log error if payment authorization fails', async () => {
@@ -342,7 +357,13 @@ describe('Payment handlers', () => {
     it('should successfully authorize a payment', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transactionId',
+            interactionId: 'interactionId123',
+            custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+          },
+        ],
       };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
@@ -358,16 +379,22 @@ describe('Payment handlers', () => {
 
       await handleAuthorizePayment('payment123');
 
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, [
-        { action: 'changeTransactionState', transactionId: 'transaction123', state: 'Success' },
+        { action: 'changeTransactionState', transactionId: 'transactionId', state: 'Success' },
       ]);
     });
 
     it('should throw error on not success payment', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transactionId',
+            interactionId: 'interactionId123',
+            custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+          },
+        ],
       };
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
@@ -392,7 +419,7 @@ describe('Payment handlers', () => {
           httpErrorStatus: 400,
         }),
       );
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
     });
 
     it('should throw and log error if payment authorization fails', async () => {
@@ -472,7 +499,13 @@ describe('Payment handlers', () => {
     it('should successfully capture a payment', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transactionId',
+            interactionId: 'transactionId123',
+            custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+          },
+        ],
       };
       const mockECTransaction = {
         status: ECTransactionStatus.AUTHORIZED,
@@ -497,14 +530,14 @@ describe('Payment handlers', () => {
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (getSuccessTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
 
-      await handleCapturePayment('payment123', 'orderId', 'trackingNumber');
+      await handleCapturePayment('payment123', 'trackingNumber');
 
       expect(initEasyCreditClient().capturePayment).toHaveBeenCalledWith(
         'transactionId123',
-        'orderId',
+        'payment123',
         'trackingNumber',
       );
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
     });
 
     it('should throw and log error if payment capture fails', async () => {
@@ -521,7 +554,13 @@ describe('Payment handlers', () => {
     it('should successfully refund a payment', async () => {
       const mockPayment = {
         id: 'payment123',
-        transactions: [{ id: 'transaction123', interactionId: 'interactionId123' }],
+        transactions: [
+          {
+            id: 'transactionId',
+            interactionId: 'transactionId123',
+            custom: { fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' } },
+          },
+        ],
       };
       const mockECTransaction = {
         status: ECTransactionStatus.AUTHORIZED,
@@ -551,9 +590,8 @@ describe('Payment handlers', () => {
 
       expect(initEasyCreditClient().refundPayment).toHaveBeenCalledWith('transactionId123', {
         value: 10,
-        bookingId: 'transaction123',
+        bookingId: 'transactionId',
       });
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('interactionId123');
     });
 
     it('should throw and log error if payment refund fails', async () => {

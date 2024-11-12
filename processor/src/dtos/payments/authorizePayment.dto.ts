@@ -1,7 +1,7 @@
 import { Static, Type } from '@sinclair/typebox';
 
 export const AuthorizePaymentBodySchema = Type.Object({
-  orderId: Type.Optional(Type.String()),
+  trackingNumber: Type.Optional(Type.String()),
 });
 
 export const AuthorizePaymentResponseSchema = Type.Object({});

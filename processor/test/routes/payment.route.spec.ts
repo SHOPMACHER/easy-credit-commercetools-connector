@@ -177,14 +177,13 @@ describe('paymentsRoute', () => {
   describe('POST /payments/:paymentId/authorize', () => {
     it('should authorize payment', async () => {
       const paymentId = 'payment123';
-      const mockRequest = { orderId: 'order789' };
       // @ts-expect-error mocked
       (handleAuthorizeECPayment as jest.Mock).mockResolvedValue(undefined);
 
       const response = await app.inject({
         method: 'POST',
         url: `/payments/${paymentId}/authorize`,
-        body: mockRequest,
+        body: {},
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
@@ -193,14 +192,14 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(204);
       expect(response.body).toBe('');
-      expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId, mockRequest.orderId);
+      expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId);
     });
   });
 
   describe('POST /payments/:paymentId/capture', () => {
     it('should capture payment', async () => {
       const paymentId = 'payment123';
-      const mockRequest = { orderId: 'order789', trackingNumber: 'track123' };
+      const mockRequest = { trackingNumber: 'track123' };
       // @ts-expect-error mocked
       (handleCapturePayment as jest.Mock).mockResolvedValue(undefined);
 
@@ -216,7 +215,7 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(204);
       expect(response.body).toBe('');
-      expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.orderId, mockRequest.trackingNumber);
+      expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.trackingNumber);
     });
   });
 

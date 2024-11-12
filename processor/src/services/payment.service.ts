@@ -37,6 +37,7 @@ import {
   mapCTCartToECPayment,
 } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
+import { EASYCREDIT_TECHNICAL_TRANSACTION_ID } from '../utils/constant.utils';
 
 // Helper to handle validation and return errors
 const validateCart = (cart: Cart): Errorx[] => {
@@ -115,7 +116,16 @@ export const handleCreatePayment = async (
           state: transactionState,
           type: CTTransactionType.Authorization,
           amount: cart.totalPrice,
-          interactionId: ecPayment.technicalTransactionId,
+          interactionId: ecPayment.transactionId,
+          custom: {
+            type: {
+              typeId: 'type',
+              id: EASYCREDIT_TECHNICAL_TRANSACTION_ID,
+            },
+            fields: {
+              easyCreditTechnicalTransactionId: ecPayment.technicalTransactionId,
+            },
+          },
         },
       },
     ]);
@@ -152,7 +162,7 @@ export const handleGetPayment = async (paymentId: string): Promise<GetPaymentRes
     validateTransaction(payment);
 
     const transaction = getTransaction(payment) as Transaction;
-    const ecTechnicalTransactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
     const ecPayment = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
@@ -167,7 +177,7 @@ export const handleGetPayment = async (paymentId: string): Promise<GetPaymentRes
   }
 };
 
-export const handleAuthorizeECPayment = async (paymentId: string, orderId?: string): Promise<void> => {
+export const handleAuthorizeECPayment = async (paymentId: string): Promise<void> => {
   try {
     const payment = await getPaymentById(paymentId);
 
@@ -175,7 +185,7 @@ export const handleAuthorizeECPayment = async (paymentId: string, orderId?: stri
     validateTransaction(payment);
 
     const transaction = getTransaction(payment) as Transaction;
-    const ecTechnicalTransactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
     const easyTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
     if (easyTransaction.status !== ECTransactionStatus.PREAUTHORIZED) {
@@ -185,7 +195,7 @@ export const handleAuthorizeECPayment = async (paymentId: string, orderId?: stri
         httpErrorStatus: 400,
       });
     }
-    await initEasyCreditClient().authorizePayment(ecTechnicalTransactionId, orderId ?? paymentId);
+    await initEasyCreditClient().authorizePayment(ecTechnicalTransactionId, paymentId);
 
     await updatePayment(payment, [
       { action: 'changeTransactionState', transactionId: transaction.id, state: CTTransactionState.Pending },
@@ -204,7 +214,7 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
     validatePendingTransaction(payment);
 
     const transaction = getPendingTransaction(payment) as Transaction;
-    const ecTechnicalTransactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
     const easyTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
@@ -232,7 +242,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     validatePayment(payment);
 
     const transaction = validateInitialOrPendingTransaction(payment);
-    const ecTechnicalTransactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
     const easyCreditTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
@@ -258,11 +268,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
   }
 };
 
-export const handleCapturePayment = async (
-  paymentId: string,
-  orderId?: string,
-  trackingNumber?: string,
-): Promise<void> => {
+export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
   try {
     const payment = await getPaymentById(paymentId);
 
@@ -270,7 +276,7 @@ export const handleCapturePayment = async (
     validateSuccessTransaction(payment);
 
     const transaction = getSuccessTransaction(payment) as Transaction;
-    const ecTechnicalTransactionId = transaction.interactionId as string;
+    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
     const easyCreditTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
 
@@ -284,7 +290,7 @@ export const handleCapturePayment = async (
 
     await initEasyCreditClient().capturePayment(
       easyCreditTransaction.decision.transactionId,
-      orderId ?? paymentId,
+      paymentId,
       trackingNumber,
     );
   } catch (error) {
@@ -301,9 +307,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
     validatePayment(payment);
     validateSuccessTransaction(payment);
 
-    const ecTechnicalTransactionId = getSuccessTransaction(payment)?.interactionId as string;
-
-    const ecTransaction = await initEasyCreditClient().getPayment(ecTechnicalTransactionId);
+    const ecTransactionId = getSuccessTransaction(payment)?.interactionId as string;
 
     const updatedCTPayment = await updatePayment(payment, [
       {
@@ -323,7 +327,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
       bookingId: initialRefundTransaction.id,
     };
 
-    const isSuccess = await initEasyCreditClient().refundPayment(ecTransaction.decision.transactionId, refundPayload);
+    const isSuccess = await initEasyCreditClient().refundPayment(ecTransactionId, refundPayload);
 
     let newState;
     if (isSuccess) {

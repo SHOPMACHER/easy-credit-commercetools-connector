@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import { assertString } from '../utils/assert.utils';
 import { updateCustomObject } from '../commercetools/customObject.commercetools';
 import { EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL } from '../utils/constant.utils';
+import { createCustomPaymentTransactionECTechnicalTransactionId } from '../commercetools/customFields.commercetools';
 dotenv.config();
 
 const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
@@ -16,6 +17,8 @@ async function postDeploy(_properties: Map<string, unknown>) {
     key: EASYCREDIT_CONNECTOR_URL,
     value: applicationUrl,
   });
+
+  await createCustomPaymentTransactionECTechnicalTransactionId();
 }
 
 async function runPostDeployScripts() {
