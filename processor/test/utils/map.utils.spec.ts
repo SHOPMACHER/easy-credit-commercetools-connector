@@ -32,7 +32,6 @@ describe('Payment Mapping', () => {
   });
 
   describe('mapCTCartToECPayment', () => {
-    // @ts-ignore
     it('should map the cart and payment to ECTransaction correctly', async () => {
       const mockCart: Cart = {
         id: 'cart123',
