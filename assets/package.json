@@ -1,7 +1,7 @@
 {
   "name": "easy-credit-commercetools-component",
   "private": false,
-  "version": "0.0.31",
+  "version": "0.0.32",
   "type": "module",
   "main": "public/connector-enabler.umd.js",
   "module": "public/connector-enabler.es.js",
@@ -14,6 +14,7 @@
     "start": "serve public -l 8080 --cors",
     "test": "jest --detectOpenHandles --clearMocks --colors --config jest.config.cjs --ci --ci --reporters=default --coverage",
     "build": "tsc && vite build",
+    "prepublishOnly": "npm run build",
     "preview": "vite preview",
     "serve": "npm run build && serve public -l 3000 --cors",
     "lint": "prettier --check \"**/**/*.{ts,js,json}\" && eslint src test",
