@@ -8,6 +8,7 @@ import {
 import { ECWidgetComponentBuilder } from './components/widget.component.ts';
 import { ECCheckoutComponentBuilder } from './components/checkout.component.ts';
 import { ECSummaryComponentBuilder } from './components/summary.component.ts';
+import { ECLabelComponentBuilder } from './components/label.component.ts';
 
 export class ECWebComponent implements WebComponent {
   setupData: Promise<{ baseOptions: WebComponentOptions }>;
@@ -26,6 +27,12 @@ export class ECWebComponent implements WebComponent {
       },
     });
   };
+
+  async createLabelBuilder(): Promise<ECLabelComponentBuilder> {
+    const { baseOptions } = await this.setupData;
+
+    return new ECLabelComponentBuilder(baseOptions);
+  }
 
   async createCheckoutBuilder(): Promise<CheckoutComponentBuilder> {
     const { baseOptions } = await this.setupData;

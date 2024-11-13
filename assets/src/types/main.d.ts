@@ -48,6 +48,8 @@ export interface WebComponent {
   createSummaryBuilder: () => Promise<SummaryComponentBuilder>;
 
   createWidgetBuilder: () => Promise<WidgetComponentBuilder>;
+
+  createLabelBuilder: () => Promise<LabelComponentBuilder>;
 }
 
 export interface CheckoutComponent {
@@ -74,6 +76,14 @@ export interface WidgetComponent {
 
 export interface WidgetComponentBuilder {
   build(options: WidgetComponentOptions): WidgetComponent;
+}
+
+export interface LabelComponent {
+  mount(selector: string): void;
+}
+
+export interface LabelComponentBuilder {
+  build(): LabelComponent;
 }
 
 export type WebComponentOptions = {
