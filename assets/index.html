@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -9,23 +9,19 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css"
       integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
-      crossorigin="anonymous"
-    />
+      crossorigin="anonymous" />
     <script
       src="https://code.jquery.com/jquery-3.2.1.slim.min.js"
       integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN"
-      crossorigin="anonymous"
-    ></script>
+      crossorigin="anonymous"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js"
       integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
-      crossorigin="anonymous"
-    ></script>
+      crossorigin="anonymous"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js"
       integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
-      crossorigin="anonymous"
-    ></script>
+      crossorigin="anonymous"></script>
     <script>
       var __VITE_CTP_AUTH_URL__ = !'%VITE_CTP_AUTH_URL%'.startsWith('%') && '%VITE_CTP_AUTH_URL%';
       var __VITE_CTP_API_URL__ = !'%VITE_CTP_API_URL%'.startsWith('%') && '%VITE_CTP_API_URL%';
@@ -33,7 +29,8 @@
       var __VITE_CTP_CLIENT_ID__ = !'%VITE_CTP_CLIENT_ID%'.startsWith('%') && '%VITE_CTP_CLIENT_ID%';
       var __VITE_CTP_CLIENT_SECRET__ = !'%VITE_CTP_CLIENT_SECRET%'.startsWith('%') && '%VITE_CTP_CLIENT_SECRET%';
       var __VITE_CTP_PROJECT_KEY__ = !'%VITE_CTP_PROJECT_KEY%'.startsWith('%') && '%VITE_CTP_PROJECT_KEY%';
-      var __VITE_PROCESSOR_URL__ = !'%VITE_PROCESSOR_URL%'.startsWith('%') && '%VITE_PROCESSOR_URL%';    </script>
+      var __VITE_PROCESSOR_URL__ = !'%VITE_PROCESSOR_URL%'.startsWith('%') && '%VITE_PROCESSOR_URL%';
+    </script>
     <script src="../dev-utils/session.js"></script>
   </head>
   <body>
@@ -52,7 +49,7 @@
       <div class="album py-5 bg-light">
         <div class="container" id="container">
           <script type="module">
-            import { Enabler } from "/src/main.ts";
+            import { Enabler } from '/src/main.ts';
 
             const testCartId = 'cce7783f-25c8-4295-9325-8f62b7415ce0';
 
@@ -106,10 +103,10 @@
               sessionId: sessionId,
             });
             const summaryComponent = await componentBuilder.build({
-              paymentId: '2ec768a5-d2f4-4cdf-acf5-78e4abf47b2a'
+              paymentId: '2ec768a5-d2f4-4cdf-acf5-78e4abf47b2a',
             });
 
-            summaryComponent.mount("#container");
+            summaryComponent.mount('#container');
           </script>
         </div>
       </div>

@@ -85,8 +85,6 @@ describe('ECCheckoutComponent', () => {
   });
 
   it('should mount the component and add HTML template to the DOM', async () => {
-    const mockLabel = document.createElement('div');
-    document.body.appendChild(mockLabel);
     const mockWidget = document.createElement('div');
     document.body.appendChild(mockWidget);
 
@@ -101,7 +99,6 @@ describe('ECCheckoutComponent', () => {
     (importEasyCreditScript as jest.Mock).mockImplementation(() => {});
     (findElement as jest.Mock).mockReturnValue({
       insertAdjacentHTML: jest.fn().mockImplementation(() => {
-        mockLabel.innerHTML = 'easycredit-checkout-label';
         mockWidget.innerHTML = 'easycredit-checkout';
       }),
     });
@@ -120,7 +117,7 @@ describe('ECCheckoutComponent', () => {
         },
       },
     );
-    expect(mockLabel.innerHTML).toContain('easycredit-checkout-label'); // Check if the template is inserted
+
     expect(mockWidget.innerHTML).toContain('easycredit-checkout'); // Check if the template is inserted
   });
 
