@@ -14,11 +14,10 @@ This guide provides instructions on how to integrate and display the connector's
 
 - Then, in your shop, you need to install our package to use provided components:
   - Install via npm package \
-    Simply run `npm i easy-credit-commercetools-component`.\
-    For more details about the package, please have a look at [this site](https://www.npmjs.com/package/easy-credit-commercetools-component)
+    Simply run `npm i @shopmacher\easy-credit-commercetools-component`.
   - Install via CT connector asset service url \
     After installing the connector, an URL will be generated hosting the required package. \
-    Simply include this URL as follow \
+    Simply include this URL as follow 
     ```
     <script type="module" src="YOUR_ASSET_URL_HERE" />
     ```

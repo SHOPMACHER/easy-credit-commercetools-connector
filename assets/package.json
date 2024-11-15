@@ -1,7 +1,7 @@
 {
-  "name": "easy-credit-commercetools-component",
+  "name": "@shopmacher/easy-credit-commercetools-component",
   "private": false,
-  "version": "0.0.33",
+  "version": "0.0.34",
   "type": "module",
   "main": "public/connector-enabler.umd.js",
   "module": "public/connector-enabler.es.js",
@@ -9,6 +9,11 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/SHOPMACHER/easy-credit-commercetools-connector.git"
+  },
+  "license": "MIT",
   "scripts": {
     "dev": "vite --port 3000",
     "start": "serve public -l 8080 --cors",

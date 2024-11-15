@@ -14,11 +14,10 @@ This guide provides instructions on how to integrate and display the connector's
 
 - Then, in your shop, you need to install our package to use provided components:
   - Install via npm package \
-    Simply run `npm i easy-credit-commercetools-component`.\
-    For more details about the package, please have a look at [this site](https://www.npmjs.com/package/easy-credit-commercetools-component)
+    Simply run `npm i @shopmacher/easy-credit-commercetools-component`.
   - Install via CT connector asset service url \
     After installing the connector, an URL will be generated hosting the required package. \
-    Simply include this URL as follow \
+    Simply include this URL as follow 
     ```
     <script type="module" src="YOUR_ASSET_URL_HERE" />
     ```
@@ -47,7 +46,7 @@ This guide provides instructions on how to integrate and display the connector's
         });
   ```
 
-- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Label component](../docs/assets/easycredit-label.png)
+- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Label component](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/raw/main/docs/assets/easycredit-label.png)
 
 ### Widget component
 
@@ -79,7 +78,7 @@ This guide provides instructions on how to integrate and display the connector's
       });
   ```
 
-- By doing this, the component will make API calls to the connector to check whether the widget can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Widget](../docs/assets/easycredit-widget.png)
+- By doing this, the component will make API calls to the connector to check whether the widget can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Widget](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/raw/main/docs/assets/easycredit-widget.png)
 
 ### Checkout component
 
@@ -129,7 +128,7 @@ This guide provides instructions on how to integrate and display the connector's
     });
   ```
 
-- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Checkout component](../docs/assets/easycredit-checkout.png)
+- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Checkout component](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/raw/main/docs/assets/easycredit-checkout.png)
 
 ### Summary component
 
@@ -159,7 +158,7 @@ This guide provides instructions on how to integrate and display the connector's
     });
   ```
 
-- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Checkout component](../docs/assets/easycredit-summary.png)
+- By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Checkout component](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/raw/main/docs/assets/easycredit-summary.png)
 
 ## Step 3: Troubleshooting
 
