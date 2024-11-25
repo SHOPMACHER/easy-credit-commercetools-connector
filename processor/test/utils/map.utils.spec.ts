@@ -57,6 +57,8 @@ describe('Payment Mapping', () => {
           country: 'DE',
           firstName: 'John',
           lastName: 'Doe',
+          email: 'john@doe.com',
+          phone: '',
         },
         shippingAddress: {
           streetName: 'Main St',
@@ -66,6 +68,8 @@ describe('Payment Mapping', () => {
           country: 'DE',
           firstName: 'John',
           lastName: 'Doe',
+          email: 'john@doe.com',
+          phone: '',
         },
       } as unknown as Cart;
 
@@ -139,6 +143,12 @@ describe('Payment Mapping', () => {
         customer: {
           firstName: 'John',
           lastName: 'Doe',
+          contact: {
+            email: 'john@doe.com',
+            mobilePhoneNumber: '',
+            phoneNumber: '',
+            phoneNumbersConfirmed: false,
+          },
         },
         shopsystem: {
           shopSystemManufacturer: LIBRARY_NAME, // Replace with actual value

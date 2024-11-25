@@ -71,6 +71,12 @@ export const mapCTCartToECPayment = async (
     customer: {
       firstName: cart.shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
       lastName: cart.shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
+      contact: {
+        email: cart.shippingAddress?.email ?? cart.billingAddress?.email ?? '',
+        mobilePhoneNumber: '',
+        phoneNumber: '',
+        phoneNumbersConfirmed: false,
+      },
     },
     shopsystem: {
       shopSystemManufacturer: LIBRARY_NAME,
