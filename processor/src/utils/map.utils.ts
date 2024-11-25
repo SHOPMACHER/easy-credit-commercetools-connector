@@ -57,7 +57,7 @@ export const mapCTCartToECPayment = async (
   const connectorUrlWithoutSplash = connectorUrl?.value.endsWith('/')
     ? connectorUrl?.value.slice(0, -1)
     : connectorUrl?.value;
-
+  console.log(cart.billingAddress);
   return {
     orderDetails: {
       orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
@@ -73,9 +73,9 @@ export const mapCTCartToECPayment = async (
       lastName: cart.shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
       contact: {
         email: cart?.customerEmail ?? '',
-        mobilePhoneNumber: '',
-        phoneNumber: '',
-        phoneNumbersConfirmed: false,
+        mobilePhoneNumber: cart?.shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+        phoneNumber: cart?.shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+        phoneNumbersConfirmed: true,
       },
     },
     shopsystem: {

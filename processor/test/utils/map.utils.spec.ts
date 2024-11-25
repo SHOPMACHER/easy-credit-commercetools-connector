@@ -146,7 +146,7 @@ describe('Payment Mapping', () => {
             email: 'john@doe.com',
             mobilePhoneNumber: '',
             phoneNumber: '',
-            phoneNumbersConfirmed: false,
+            phoneNumbersConfirmed: true,
           },
         },
         shopsystem: {
