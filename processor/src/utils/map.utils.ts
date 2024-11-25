@@ -72,7 +72,7 @@ export const mapCTCartToECPayment = async (
       firstName: cart.shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
       lastName: cart.shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
       contact: {
-        email: cart.shippingAddress?.email ?? cart.billingAddress?.email ?? '',
+        email: cart?.customerEmail ?? '',
         mobilePhoneNumber: '',
         phoneNumber: '',
         phoneNumbersConfirmed: false,

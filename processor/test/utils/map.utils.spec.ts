@@ -49,6 +49,7 @@ describe('Payment Mapping', () => {
             variant: { sku: 'SKU123' },
           },
         ],
+        customerEmail: 'john@doe.com',
         billingAddress: {
           streetName: 'Main St',
           additionalStreetInfo: 'Apt 4B',
@@ -57,7 +58,6 @@ describe('Payment Mapping', () => {
           country: 'DE',
           firstName: 'John',
           lastName: 'Doe',
-          email: 'john@doe.com',
           phone: '',
         },
         shippingAddress: {
@@ -68,7 +68,6 @@ describe('Payment Mapping', () => {
           country: 'DE',
           firstName: 'John',
           lastName: 'Doe',
-          email: 'john@doe.com',
           phone: '',
         },
       } as unknown as Cart;
