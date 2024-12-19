@@ -1,4 +1,4 @@
-# 🚀 COMMERCETOOLS EASYCREDIT CONNECTOR 🚀
+# COMMERCETOOLS EASYCREDIT CONNECTOR
 
 [![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 [![GitHub Actions](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/actions/workflows/build.yml/badge.svg)](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/actions/workflows/build.yml/badge.svg)
@@ -10,16 +10,44 @@
 
 ![commercetools logo](https://unpkg.com/@commercetools-frontend/assets/logos/commercetools_primary-logo_horizontal_RGB.png)
 
-This project provides a commercetools connector integrating between the conmmercetools and EasyCredit PSP
+easyCredit-Ratenkauf - use the easiest installment purchase in Germany now.
+
+Our credo of simple, fair and secure applies to both installment purchase customers and retailers. The fast, simple and seamless process with an immediate online credit check can be securely integrated into your online store. We cover the loss risk and you can receive your payment after just three days.
+
+You can rely on our many years of experience in liquidity management and the proven high level of customer satisfaction with easyCredit.
+
+## Advantages for the merchant
+
+- **Simple** - Easy integration of the plugin.
+
+- **Fair** - Simple, transparent pricing model.
+
+- **Secure** - Maximum protection of payment data has top priority.
+
+## Advantages for the end customer
+
+- **Immediate** - Immediate credit decision in the payment process. Conveniently without PostIdent procedure.
+
+- **Fair** - Clear presentation of the installment price without hidden costs or fees.
+
+- **Flexible** - Early repayment and payment breaks by the installment purchase customer possible.
+
+## Product details
+
+- **Purchase amounts**: 200 euros to 10,000 euros
+
+- **Terms**: 2 to 60 months freely selectable
+
+- **Can be used in German online stores**
 
 ## 📔 Supported features
 
 ### Installment payment
 
-- Create payments
-- Authorize payments
-- Capture payments
-- Refund payments
+- [Create payments](/docs/CreatePayment.md)
+- [Authorize payments](/docs/AuthorizePayment.md)
+- [Capture payments](/docs/CapturePayment.md)
+- [Refund payments](/docs/RefundPayment.md)
 
 ## Prerequisite
 
@@ -40,12 +68,30 @@ Complete integration requires running/intergrating both of the modules. Please f
 
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
 
+Please follow these file for further information on how to contribute to this repository.
+
+- [Contributing guideline](/docs/CONTRIBUTING.md)
+- [Issue template](/docs/IssueTemplate.md)
+
 ## 📝 License
 
-Distributed under the MIT License. See LICENSE for more information.
+Distributed under the MIT License. See [LICENSE](/LICENSE) for more information.
 
 ## 📞 Contact
 
-[Get in touch with us](https://www.easycredit.de/service)
+Are you interested and would like to use easyCredit-Ratenkauf?
+
+Simply get in touch with us at
+
+[sales.ratenkauf@easycredit.de](mailto:sales.ratenkauf@easycredit.de)
+
+[+49 (0) 911 5390 2726](tel:+4991153902726)
+
+Or register directly here:
+
+[https://partner.easycredit-ratenkauf.de/registrierung](https://partner.easycredit-ratenkauf.de/registrierung)
+
+
+Please note that you need a valid contract to use the connector.
 
 <div align="center"> <b>Happy Coding! 🚀</b> </div>
