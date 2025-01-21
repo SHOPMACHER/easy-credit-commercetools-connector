@@ -2,6 +2,13 @@
 
 This guide provides instructions on how to integrate and display the connector's provided web-components which are [EasyCredit Web Components](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/getting-started-installation--docs) but with our connector's validation logic.
 
+## 📐 Architecture Principles
+
+This repository contains two standalone modules that interact with commercetools and EasyCredit.
+Complete integration requires running/intergrating both of the modules. Please find detail information in their readme below
+
+![Payment flow](../docs/assets/payment-flow.png "Payment flow")
+
 ## Table of Contents
 
 - [Step 1: Configuration](#step-1-configure-widget-settings)

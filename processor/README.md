@@ -2,6 +2,14 @@
 
 This guide provides information on the functionality of the processor connector.
 
+
+## 📐 Architecture Principles
+
+This repository contains two standalone modules that interact with commercetools and EasyCredit.
+Complete integration requires running/intergrating both of the modules. Please find detail information in their readme below
+
+![Payment flow](../docs/assets/payment-flow.png "Payment flow")
+
 ## Table of Contents
 
 - [Basic configs](#configure-processor-settings)

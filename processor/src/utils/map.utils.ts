@@ -57,7 +57,7 @@ export const mapCTCartToECPayment = async (
   const connectorUrlWithoutSplash = connectorUrl?.value.endsWith('/')
     ? connectorUrl?.value.slice(0, -1)
     : connectorUrl?.value;
-  console.log(cart.billingAddress);
+
   return {
     orderDetails: {
       orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),

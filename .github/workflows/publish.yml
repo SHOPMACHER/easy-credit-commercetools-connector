@@ -12,7 +12,7 @@ on:
 
 jobs:
   publish:
-    name: Publish for commercetools Checkout 
+    name: Publish for EasyCredit connector
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:
