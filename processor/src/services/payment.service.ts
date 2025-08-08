@@ -1,6 +1,8 @@
 import { Address, Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
+import { getShippingAddress } from '../utils/map.utils';
+
 import {
   CTCartState,
   CTTransactionState,
@@ -44,8 +46,8 @@ const validateCart = (cart: Cart): Errorx[] => {
   const config = readConfiguration().easyCredit;
   const errors: Errorx[] = [];
 
-  const billingAddress = cart.billingAddress as Address;
-  const shippingAddress = cart.shippingAddress as Address;
+  const billingAddress = cart.billingAddress;
+  const shippingAddress = getShippingAddress(cart);
 
   validateAddresses(billingAddress, shippingAddress, { webShopId: config.webShopId }, errors);
   validateCurrency(cart.totalPrice.currencyCode, { webShopId: config.webShopId }, errors);

@@ -1,4 +1,9 @@
-import { mapCTCartToECPayment, mapCTCartToCTPayment, mapUpdateActionForRefunds } from '../../src/utils/map.utils'; // Adjust the import path as necessary
+import {
+  mapCTCartToECPayment,
+  mapCTCartToCTPayment,
+  mapUpdateActionForRefunds,
+  getShippingAddress,
+} from '../../src/utils/map.utils'; // Adjust the import path as necessary
 import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
@@ -253,6 +258,126 @@ describe('Payment Mapping', () => {
       ];
 
       expect(mapUpdateActionForRefunds(ctPendingRefunds, ecCompletedRefunds)).toStrictEqual(expectedResult);
+    });
+  });
+
+  describe('getShippingAddress', () => {
+    it('should return cart.shippingAddress when shippingMode is not Multiple', () => {
+      const mockCart: Cart = {
+        shippingMode: 'Single',
+        shippingAddress: {
+          streetName: 'Main St',
+          postalCode: '12345',
+          city: 'Berlin',
+          country: 'DE',
+          firstName: 'John',
+          lastName: 'Doe',
+        },
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toEqual(mockCart.shippingAddress);
+    });
+
+    it('should return first shipping address when shippingMode is Multiple', () => {
+      const mockShippingAddress = {
+        streetName: 'First Address St',
+        postalCode: '54321',
+        city: 'Munich',
+        country: 'DE',
+        firstName: 'Jane',
+        lastName: 'Smith',
+      };
+
+      const mockCart: Cart = {
+        shippingMode: 'Multiple',
+        shipping: [
+          {
+            shippingAddress: mockShippingAddress,
+          },
+          {
+            shippingAddress: {
+              streetName: 'Second Address St',
+              postalCode: '67890',
+              city: 'Hamburg',
+              country: 'DE',
+              firstName: 'Bob',
+              lastName: 'Wilson',
+            },
+          },
+        ],
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toEqual(mockShippingAddress);
+    });
+
+    it('should return undefined when shippingMode is Multiple but shipping array is empty', () => {
+      const mockCart: Cart = {
+        shippingMode: 'Multiple',
+        shipping: [],
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when shippingMode is Multiple but shipping is undefined', () => {
+      const mockCart: Cart = {
+        shippingMode: 'Multiple',
+        shipping: undefined,
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when shippingMode is Multiple but first shipping entry has no shippingAddress', () => {
+      const mockCart: Cart = {
+        shippingMode: 'Multiple',
+        shipping: [
+          {
+            shippingAddress: undefined,
+          },
+        ],
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when cart has no shippingAddress for single mode', () => {
+      const mockCart: Cart = {
+        shippingMode: 'Single',
+        shippingAddress: undefined,
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle undefined shippingMode gracefully', () => {
+      const mockCart: Cart = {
+        shippingMode: undefined,
+        shippingAddress: {
+          streetName: 'Default St',
+          postalCode: '11111',
+          city: 'Default City',
+          country: 'DE',
+          firstName: 'Default',
+          lastName: 'User',
+        },
+      } as unknown as Cart;
+
+      const result = getShippingAddress(mockCart);
+
+      expect(result).toEqual(mockCart.shippingAddress);
     });
   });
 });

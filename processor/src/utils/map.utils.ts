@@ -58,6 +58,8 @@ export const mapCTCartToECPayment = async (
     ? connectorUrl?.value.slice(0, -1)
     : connectorUrl?.value;
 
+  const shippingAddress = getShippingAddress(cart);
+
   return {
     orderDetails: {
       orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
@@ -65,16 +67,16 @@ export const mapCTCartToECPayment = async (
       numberOfProductsInShoppingCart: cart.lineItems.length,
       withoutFlexprice: false,
       invoiceAddress: mapAddress(cart.billingAddress as Address),
-      shippingAddress: mapAddress(cart.shippingAddress as Address),
+      shippingAddress: mapAddress(shippingAddress as Address),
       shoppingCartInformation: cart.lineItems.map(mapLineItem) as ECTransactionOrderDetailsShoppingCartInformation[],
     },
     customer: {
-      firstName: cart.shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
-      lastName: cart.shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
+      firstName: shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
+      lastName: shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
       contact: {
         email: cart?.customerEmail ?? '',
-        mobilePhoneNumber: cart?.shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
-        phoneNumber: cart?.shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+        mobilePhoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+        phoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
         phoneNumbersConfirmed: true,
       },
     },
@@ -148,4 +150,12 @@ export const mapUpdateActionForRefunds = (
   }
 
   return updateActions as PaymentUpdateAction[];
+};
+
+export const getShippingAddress = (cart: Cart): Address | undefined => {
+  if (cart.shippingMode === 'Multiple') {
+    // Safely access first shipping address
+    return cart.shipping?.[0]?.shippingAddress;
+  }
+  return cart.shippingAddress;
 };
