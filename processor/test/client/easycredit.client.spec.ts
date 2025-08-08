@@ -1,8 +1,9 @@
+/* eslint-disable no-global-assign */
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../../src/utils/constant.utils';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { ECTransaction } from '../../src/types/payment.types';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { log } from '../../src/libs/logger';
 
 // @ts-expect-error: Mock fetch globally
@@ -138,7 +139,6 @@ describe('initEasyCreditClient', () => {
 
       try {
         await easyCreditClient.createPayment(payload);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         expect(error).toBeInstanceOf(Errorx);
         expect(error.code).toBe(mockErrorResponse.title);
@@ -232,7 +232,6 @@ describe('initEasyCreditClient', () => {
 
       try {
         await easyCreditClient.getPayment(technicalTransactionId);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         expect(error).toBeInstanceOf(Errorx);
         expect(error.code).toBe(mockErrorResponse.title);
@@ -357,7 +356,6 @@ describe('initEasyCreditClient', () => {
 
       try {
         await easyCreditClient.getMerchantTransaction(transactionId);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         expect(error).toBeInstanceOf(Errorx);
         expect(error.code).toBe(mockErrorResponse.title);

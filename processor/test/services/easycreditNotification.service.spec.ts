@@ -1,12 +1,12 @@
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
 import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
-import { updatePayment, getPaymentByEasyCreditRefundBookingId } from '../../src/commercetools/payment.commercetools';
+import { getPaymentByEasyCreditRefundBookingId, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
 import { getCompletedRefunds, getPendingRefundTransactions } from '../../src/utils/payment.utils';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { mapUpdateActionForRefunds } from '../../src/utils/map.utils';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');

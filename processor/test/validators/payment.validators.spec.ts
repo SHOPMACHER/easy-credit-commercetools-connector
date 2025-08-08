@@ -1,21 +1,21 @@
 import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import {
   validateAddresses,
-  validateCurrency,
   validateCartAmount,
-  validatePayment,
-  validatePendingTransaction,
-  validateTransaction,
-  validateInitialOrPendingTransaction,
-  validateSuccessTransaction,
-  validatePaymentAmount,
+  validateCurrency,
   validateECTransactionId,
+  validateInitialOrPendingTransaction,
+  validatePayment,
+  validatePaymentAmount,
+  validatePendingTransaction,
+  validateSuccessTransaction,
+  validateTransaction,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
 import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 
 jest.mock('../../src/utils/commerceTools.utils', () => ({

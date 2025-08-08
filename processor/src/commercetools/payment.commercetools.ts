@@ -10,7 +10,6 @@ export const getPaymentById = async (paymentId: string) => {
     const { body: paymentObject } = response;
 
     return paymentObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in getting CommerceTools Payment', error);
 
@@ -38,7 +37,6 @@ export async function updatePayment(payment: Payment, updateActions: PaymentUpda
     const { body: paymentObject } = response;
 
     return paymentObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in updatePayment', error);
 
@@ -62,7 +60,6 @@ export async function createPayment(payment: PaymentDraft): Promise<Payment> {
     const { body: paymentObject } = response;
 
     return paymentObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in createPayment', error);
 

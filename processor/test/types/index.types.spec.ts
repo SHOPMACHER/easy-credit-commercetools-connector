@@ -1,5 +1,5 @@
-import { describe, test, expect, jest } from '@jest/globals';
-import { Message, ValidatorCreator, ValidatorFunction, Wrapper, ConnectorEnvVars } from '../../src/types/index.types';
+import { describe, expect, jest, test } from '@jest/globals';
+import { ConnectorEnvVars, Message, ValidatorCreator, ValidatorFunction, Wrapper } from '../../src/types/index.types';
 
 const functions = {
   isMessage: jest.fn((obj: Message): obj is Message => {

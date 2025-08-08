@@ -32,11 +32,11 @@ import { createPayment, getPaymentById, updatePayment } from '../commercetools/p
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import {
+  getShippingAddress,
   mapAmountToCTTransactionAmount,
   mapCreatePaymentResponse,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
-  getShippingAddress,
 } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_TECHNICAL_TRANSACTION_ID } from '../utils/constant.utils';

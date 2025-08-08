@@ -1,15 +1,15 @@
 import {
-  getPaymentById,
-  updatePayment,
   createPayment,
   getPaymentByEasyCreditRefundBookingId,
+  getPaymentById,
+  updatePayment,
 } from '../../src/commercetools/payment.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import { log } from '../../src/libs/logger';
 import { Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/payment';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/client/create.client');
 jest.mock('../../src/libs/logger');
@@ -279,7 +279,6 @@ describe('Payment Functions', () => {
 
       try {
         await getPaymentByEasyCreditRefundBookingId(ecRefundBookingId);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (error: any) {
         expect(getPayments).toHaveBeenCalledTimes(1);
         expect(getPayments).toHaveBeenCalledWith({

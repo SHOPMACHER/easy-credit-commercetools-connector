@@ -1,5 +1,5 @@
 import { authMiddlewareOptions } from '../../src/middleware/auth.middleware';
-import { describe, it, expect } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 
 describe('Test auth.middleware.ts', () => {
   it('should have correct options', () => {

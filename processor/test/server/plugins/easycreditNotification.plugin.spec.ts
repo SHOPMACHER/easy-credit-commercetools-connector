@@ -1,5 +1,5 @@
 import { setupFastify } from '../../../src/server/server';
-import { describe, jest, it, expect } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import easycreditNotificationPlugin from '../../../src/server/plugins/easycreditNotification.plugin';
 
 describe('test easycreditNotification plugin', () => {

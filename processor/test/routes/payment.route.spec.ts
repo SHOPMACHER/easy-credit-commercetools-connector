@@ -2,10 +2,10 @@ import fastify from 'fastify';
 import { paymentsRoute } from '../../src/routes/payment.route';
 import {
   handleAuthorizeECPayment,
-  handleCreatePayment,
-  handlePaymentMethod,
-  handleGetPayment,
   handleCapturePayment,
+  handleCreatePayment,
+  handleGetPayment,
+  handlePaymentMethod,
   handleRefundPayment,
 } from '../../src/services/payment.service';
 import {
@@ -16,7 +16,7 @@ import {
   SessionHeaderAuthenticationHook,
 } from '@commercetools/connect-payments-sdk';
 import { IncomingHttpHeaders } from 'node:http';
-import { describe, jest, it, expect, afterEach, beforeAll, afterAll } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 
 // Mocks for imported service functions
 jest.mock('../../src/services/payment.service', () => ({

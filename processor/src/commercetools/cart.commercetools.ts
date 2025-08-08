@@ -10,7 +10,6 @@ export const getCartById = async (cartId: string) => {
     const { body: cartObject } = response;
 
     return cartObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in getting CommerceTools Cart', error);
 
@@ -62,7 +61,6 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
     const { body: cartObject } = response;
 
     return cartObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in updatePayment', error);
 

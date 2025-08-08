@@ -1,5 +1,5 @@
 import { setupFastify } from '../../../src/server/server';
-import { describe, jest, it, expect } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import webhookPlugin from '../../../src/server/plugins/webhook.plugin';
 
 describe('test paymentPlugin', () => {

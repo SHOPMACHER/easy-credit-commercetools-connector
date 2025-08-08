@@ -19,10 +19,10 @@ import {
 } from '../dtos/payments/authorizePayment.dto';
 import {
   handleAuthorizeECPayment,
-  handleCreatePayment,
-  handlePaymentMethod,
-  handleGetPayment,
   handleCapturePayment,
+  handleCreatePayment,
+  handleGetPayment,
+  handlePaymentMethod,
   handleRefundPayment,
 } from '../services/payment.service';
 import {

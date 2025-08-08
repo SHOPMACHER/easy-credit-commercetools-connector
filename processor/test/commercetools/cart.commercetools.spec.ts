@@ -1,4 +1,4 @@
-import { getCartById, updateCart, getCartByPaymentId } from '../../src/commercetools/cart.commercetools';
+import { getCartById, getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import { log } from '../../src/libs/logger';
 import { Errorx } from '@commercetools/connect-payments-sdk';

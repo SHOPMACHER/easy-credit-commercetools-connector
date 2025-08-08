@@ -1,4 +1,4 @@
-import { describe, test, expect } from '@jest/globals';
+import { describe, expect, test } from '@jest/globals';
 import {
   EASYCREDIT_BASE_API_URL,
   EASYCREDIT_PARTNER_BASE_API_URL,

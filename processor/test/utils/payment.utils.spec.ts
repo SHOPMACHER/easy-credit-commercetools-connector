@@ -1,15 +1,15 @@
 import { Cart, Payment } from '@commercetools/connect-payments-sdk';
 import {
-  getPendingTransaction,
-  getPayment,
-  getTransaction,
-  getSuccessTransaction,
-  getPendingRefundTransactions,
   getCompletedRefunds,
+  getPayment,
+  getPendingRefundTransactions,
+  getPendingTransaction,
+  getSuccessTransaction,
+  getTransaction,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import { CTTransactionState, CTTransactionType, ECBooking } from '../../src/types/payment.types';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
-import { describe, it, expect } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 
 describe('Payment Utility Functions', () => {
   describe('getPendingTransaction', () => {

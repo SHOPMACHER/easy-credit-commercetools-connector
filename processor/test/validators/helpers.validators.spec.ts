@@ -1,14 +1,14 @@
 import {
-  standardString,
-  standardEmail,
-  standardNaturalNumber,
-  standardKey,
-  standardUrl,
-  standardBoolean,
+  array,
   getValidateMessages,
   optional,
-  array,
   region,
+  standardBoolean,
+  standardEmail,
+  standardKey,
+  standardNaturalNumber,
+  standardString,
+  standardUrl,
 } from '../../src/validators/helpers.validators';
 
 describe('Validation Helpers', () => {

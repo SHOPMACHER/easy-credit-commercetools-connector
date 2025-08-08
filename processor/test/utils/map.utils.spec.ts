@@ -1,8 +1,8 @@
 import {
-  mapCTCartToECPayment,
-  mapCTCartToCTPayment,
-  mapUpdateActionForRefunds,
   getShippingAddress,
+  mapCTCartToCTPayment,
+  mapCTCartToECPayment,
+  mapUpdateActionForRefunds,
 } from '../../src/utils/map.utils'; // Adjust the import path as necessary
 import {
   EASYCREDIT_CONNECTOR_KEY,
@@ -21,7 +21,7 @@ import {
   ECTransaction,
   ECTransactionCustomerRelationship,
 } from '../../src/types/payment.types';
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),

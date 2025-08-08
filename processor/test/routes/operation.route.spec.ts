@@ -1,5 +1,5 @@
 import { setupFastify } from '../../src/server/server';
-import { describe, jest, it, expect } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 import { paymentSDK } from '../../src/payment-sdk';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 
@@ -26,16 +26,10 @@ jest.mock('../../src/client/easycredit.client.ts', () => ({
 describe('test operationRoute', () => {
   it('should call healthCheck handler', async () => {
     (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-      return async (request: any, reply: any) => {
-        console.log('Mock authenticate called');
-      };
+      return async () => {};
     });
     (paymentSDK.oauth2AuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-      return async (request: any, reply: any) => {
-        console.log('Mock authenticate called');
-      };
+      return async () => {};
     });
 
     (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -57,10 +51,7 @@ describe('test operationRoute', () => {
 
   it('should call isWidgetEnabled handler', async () => {
     (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-      return async (request: any, reply: any) => {
-        console.log('Mock authenticate called');
-      };
+      return async () => {};
     });
 
     const server = await setupFastify();

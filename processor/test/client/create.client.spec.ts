@@ -1,4 +1,4 @@
-import { describe, it, jest, expect, afterEach, beforeAll } from '@jest/globals';
+import { afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { createClient } from '../../src/client/build.client';
 import { createApiBuilderFromCtpClient } from '@commercetools/platform-sdk';
 import { readConfiguration } from '../../src/utils/config.utils';

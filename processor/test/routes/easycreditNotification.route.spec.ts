@@ -1,7 +1,7 @@
 import { easyCreditRoutes } from './../../src/routes/easycreditNotification.route';
 import { handleEasyCreditNotification } from './../../src/services/easycreditNotification.service';
 import fastify from 'fastify';
-import { describe, jest, it, expect, afterEach, beforeAll, afterAll } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 
 // Mocks for imported service functions
 jest.mock('../../src/services/easycreditNotification.service.ts', () => ({

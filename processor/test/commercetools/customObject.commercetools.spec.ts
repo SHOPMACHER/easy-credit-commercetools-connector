@@ -1,4 +1,4 @@
-import { updateCustomObject, getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
+import { getCustomObjectByKey, updateCustomObject } from '../../src/commercetools/customObject.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import { log } from '../../src/libs/logger';
 import { Errorx } from '@commercetools/connect-payments-sdk';

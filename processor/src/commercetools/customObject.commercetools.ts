@@ -17,7 +17,6 @@ export async function updateCustomObject(customObject: CustomObjectDraft): Promi
     const { body: object } = response;
 
     return object;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in updateCustomObject', error);
 
@@ -42,7 +41,6 @@ export async function getCustomObjectByKey(container: string, key: string): Prom
       .execute();
 
     return customObject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     log.error('Error in getCustomObjectByKey', error);
 

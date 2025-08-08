@@ -1,7 +1,7 @@
 import { healthCheck, isWidgetEnabled } from '../../src/services/connector.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { readConfiguration } from '../../src/utils/config.utils';
 
 // Mock dependencies

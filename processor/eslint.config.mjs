@@ -18,12 +18,8 @@ const compat = new FlatCompat({
 });
 
 export default [
-  ...compat.extends(
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'prettier',
-    'plugin:prettier/recommended',
-  ),
+  js.configs.recommended,
+  ...compat.extends('plugin:@typescript-eslint/recommended', 'prettier', 'plugin:prettier/recommended'),
   {
     plugins: {
       '@typescript-eslint': typescriptEslint,
@@ -31,14 +27,17 @@ export default [
       prettier,
       'unused-imports': unusedImports,
     },
-    files: ['*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       globals: {
         ...globals.node,
         ...globals.jest,
       },
-
       parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
     },
 
     rules: {
@@ -46,6 +45,7 @@ export default [
       'no-console': ['error'],
       'no-unused-vars': 'off',
       'no-irregular-whitespace': 'warn',
+      'no-unused-expressions': 'off', // Disable base rule
       'unused-imports/no-unused-imports': 'error',
 
       'unused-imports/no-unused-vars': [
@@ -61,6 +61,14 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn'],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-var-requires': 'off',
+      '@typescript-eslint/no-unused-expressions': [
+        'error',
+        {
+          allowShortCircuit: true,
+          allowTernary: true,
+          allowTaggedTemplates: true,
+        },
+      ],
 
       'sort-imports': [
         'error',
@@ -72,6 +80,8 @@ export default [
         },
       ],
     },
-    ignores: ['node_modules/*', 'build/*', '.nvmrc'],
+  },
+  {
+    ignores: ['node_modules/*', 'build/*', '.nvmrc', 'dist/*'],
   },
 ];
