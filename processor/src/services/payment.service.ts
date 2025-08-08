@@ -1,7 +1,6 @@
-import { Address, Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
+import { Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
 import { readConfiguration } from '../utils/config.utils';
-import { getShippingAddress } from '../utils/map.utils';
 
 import {
   CTCartState,
@@ -37,6 +36,7 @@ import {
   mapCreatePaymentResponse,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
+  getShippingAddress,
 } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_TECHNICAL_TRANSACTION_ID } from '../utils/constant.utils';
