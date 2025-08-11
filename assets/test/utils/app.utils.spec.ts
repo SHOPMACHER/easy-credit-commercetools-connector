@@ -61,6 +61,6 @@ describe('findElement', () => {
 
   it('should throw an error if the element does not exist', () => {
     // Try finding a non-existent element
-    expect(() => findElement('#non-existent')).toThrowError('Element not found: #non-existent');
+    expect(() => findElement('#non-existent')).toThrow('Element not found: #non-existent');
   });
 });
