@@ -1,5 +1,6 @@
-import { ECLabelComponentBuilder, ECLabelComponent } from './../../src/components/label.component';
-import { describe, jest, it, expect, beforeEach, afterEach } from '@jest/globals';
+/* eslint-disable no-global-assign */
+import { ECLabelComponent, ECLabelComponentBuilder } from './../../src/components/label.component';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
 
 jest.mock('../../src/utils/app.utils');
@@ -27,9 +28,9 @@ describe('ECLabelComponentBuilder', () => {
     const component = builder.build();
 
     expect(component).toBeInstanceOf(ECLabelComponent);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((component as any).processorUrl).toBe(mockWebComponentOptions.processorUrl);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((component as any).sessionId).toBe(mockWebComponentOptions.sessionId);
   });
 });
@@ -96,10 +97,12 @@ describe('ECLabelComponent', () => {
       throw new Error('Failed to fetch config');
     });
 
-    console.error = jest.fn();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     await component.mount('#widget-element');
 
-    expect(console.error).toHaveBeenCalledWith('Failed to get EasyCredit label', expect.any(Error));
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to get EasyCredit label', expect.any(Error));
+
+    consoleErrorSpy.mockRestore();
   });
 });

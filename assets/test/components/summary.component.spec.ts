@@ -1,7 +1,8 @@
+/* eslint-disable no-global-assign */
 import { ECSummaryComponent, ECSummaryComponentBuilder } from '../../src/components/summary.component';
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
-import { WebComponentOptions, SummaryComponentOptions } from '../../src/types/main';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { SummaryComponentOptions, WebComponentOptions } from '../../src/types/main';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 // Mock the imported utility functions
 jest.mock('../../src/utils/app.utils');
@@ -29,11 +30,11 @@ describe('ECSummaryComponent', () => {
       const component = builder.build(summaryComponentOptions);
 
       expect(component).toBeInstanceOf(ECSummaryComponent);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect((component as any).processorUrl).toBe(baseOptions.processorUrl);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect((component as any).sessionId).toBe(baseOptions.sessionId);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect((component as any).summaryComponentOptions).toBe(summaryComponentOptions);
     });
   });

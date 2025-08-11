@@ -1,5 +1,6 @@
+/* eslint-disable no-global-assign */
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ECWidgetComponent, ECWidgetComponentBuilder } from '../../src/components/widget.component';
 
 // Mocking utilities and global objects
@@ -32,9 +33,9 @@ describe('ECWidgetComponentBuilder', () => {
     const component = builder.build(mockWidgetComponentOptions);
 
     expect(component).toBeInstanceOf(ECWidgetComponent);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((component as any).processorUrl).toBe(mockWebComponentOptions.processorUrl);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((component as any).sessionId).toBe(mockWebComponentOptions.sessionId);
   });
 });
@@ -121,7 +122,6 @@ describe('ECWidgetComponent', () => {
   });
 
   it('should return the correct HTML template for the widget', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const template = (component as any)._getTemplate('mock-webshop-id');
 
     expect(template).toBe('<easycredit-widget amount="100" webshop-id="mock-webshop-id" />');

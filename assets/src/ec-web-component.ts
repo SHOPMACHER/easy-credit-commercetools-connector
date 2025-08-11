@@ -1,9 +1,9 @@
 import {
-  WebComponentOptions,
-  WebComponent,
   CheckoutComponentBuilder,
-  WidgetComponentBuilder,
   SummaryComponentBuilder,
+  WebComponent,
+  WebComponentOptions,
+  WidgetComponentBuilder,
 } from './types/main';
 import { ECWidgetComponentBuilder } from './components/widget.component.ts';
 import { ECCheckoutComponentBuilder } from './components/checkout.component.ts';

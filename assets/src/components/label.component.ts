@@ -35,6 +35,7 @@ export class ECLabelComponent implements LabelComponent {
         }
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to get EasyCredit label', error);
     }
   }

@@ -1,5 +1,5 @@
-import { importEasyCreditScript, findElement } from '../../src/utils/app.utils';
-import { describe, jest, it, expect, beforeEach } from '@jest/globals';
+import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 describe('importEasyCreditScript', () => {
   beforeEach(() => {

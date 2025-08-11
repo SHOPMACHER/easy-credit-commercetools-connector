@@ -40,6 +40,7 @@ export class ECWidgetComponent implements WidgetComponent {
         }
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to get EasyCredit Widget', error);
     }
   }

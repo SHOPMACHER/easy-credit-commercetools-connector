@@ -1,6 +1,7 @@
-import { ECCheckoutComponentBuilder, ECCheckoutComponent } from '../../src/components/checkout.component';
-import { WebComponentOptions, CheckoutComponentOptions } from '../../src/types/main';
-import { describe, jest, it, expect, beforeEach, afterEach } from '@jest/globals';
+/* eslint-disable no-global-assign */
+import { ECCheckoutComponent, ECCheckoutComponentBuilder } from '../../src/components/checkout.component';
+import { CheckoutComponentOptions, WebComponentOptions } from '../../src/types/main';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
 
 // Mock the imported utility functions
