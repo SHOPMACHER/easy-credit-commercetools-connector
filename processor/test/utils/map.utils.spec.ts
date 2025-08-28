@@ -301,7 +301,7 @@ describe('Payment Mapping', () => {
 
       const result = mapAddress(addressWithoutStreetName);
 
-      expect(result.address).toBe(' 123');
+      expect(result.address).toBe('123'); // Only streetNumber, no leading space
       expect(result.city).toBe('Berlin'); // Verify other fields are preserved
     });
 
@@ -313,7 +313,7 @@ describe('Payment Mapping', () => {
 
       const result = mapAddress(addressWithoutStreetNumber);
 
-      expect(result.address).toBe('Musterstraße ');
+      expect(result.address).toBe('Musterstraße'); // Only streetName, no trailing space
       expect(result.city).toBe('Berlin'); // Verify other fields are preserved
     });
 
@@ -326,7 +326,7 @@ describe('Payment Mapping', () => {
 
       const result = mapAddress(addressWithoutStreetInfo);
 
-      expect(result.address).toBe(' ');
+      expect(result.address).toBe(''); // Empty string, no spaces
     });
 
     it('should use empty strings for missing optional fields', () => {
@@ -364,7 +364,7 @@ describe('Payment Mapping', () => {
       const result = mapAddress(addressWithNulls);
 
       expect(result).toEqual({
-        address: ' ',
+        address: '', // Empty string, no spaces when both are null
         additionalAddressInformation: '',
         zip: '',
         city: '',
@@ -407,7 +407,7 @@ describe('Payment Mapping', () => {
 
       const result = mapAddress(addressOnlyStreetName);
 
-      expect(result.address).toBe('Lonely Street ');
+      expect(result.address).toBe('Lonely Street'); // No trailing space
       expect(result.additionalAddressInformation).toBe('');
       expect(result.country).toBe('DE');
     });
@@ -451,6 +451,43 @@ describe('Payment Mapping', () => {
 
       expect(result.lastName).toBe(''); // Should fallback to empty string when address is undefined
       expect(result.firstName).toBe(''); // All fields should fallback
+      expect(result.address).toBe(''); // Address should be empty string, not spaces
+    });
+
+    it('should handle addresses with only street number', () => {
+      const addressOnlyStreetNumber: Address = {
+        streetNumber: '42',
+        country: 'DE',
+      };
+
+      const result = mapAddress(addressOnlyStreetNumber);
+
+      expect(result.address).toBe('42'); // Only number, no leading space
+      expect(result.country).toBe('DE');
+    });
+
+    it('should handle addresses with whitespace-only strings', () => {
+      const addressWithWhitespace: Address = {
+        streetName: '   ', // Only whitespace
+        streetNumber: '\t\n', // Only whitespace with tabs/newlines
+        country: 'DE',
+      };
+
+      const result = mapAddress(addressWithWhitespace);
+
+      expect(result.address).toBe(''); // Whitespace-only strings should be filtered out
+    });
+
+    it('should handle addresses with empty strings', () => {
+      const addressWithEmptyStrings: Address = {
+        streetName: '',
+        streetNumber: '',
+        country: 'DE',
+      };
+
+      const result = mapAddress(addressWithEmptyStrings);
+
+      expect(result.address).toBe(''); // Empty strings should be filtered out
     });
   });
 
