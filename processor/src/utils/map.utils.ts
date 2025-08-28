@@ -25,7 +25,7 @@ import { getCustomObjectByKey } from '../commercetools/customObject.commercetool
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
 
 export const mapAddress = (address: Address) => ({
-  address: (address?.streetName ?? '') + ' ' + (address?.streetNumber ?? ''),
+  address: (address?.streetName?.trim() ?? '') + ' ' + (address?.streetNumber?.trim() ?? ''),
   additionalAddressInformation: address?.additionalStreetInfo ?? '',
   zip: address?.postalCode ?? '',
   city: address?.city ?? '',
