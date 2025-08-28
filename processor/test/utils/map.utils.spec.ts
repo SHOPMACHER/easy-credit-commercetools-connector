@@ -1,7 +1,9 @@
 import {
   getShippingAddress,
+  mapAddress,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
+  mapLineItem,
   mapUpdateActionForRefunds,
 } from '../../src/utils/map.utils'; // Adjust the import path as necessary
 import {
@@ -22,6 +24,8 @@ import {
   ECTransactionCustomerRelationship,
 } from '../../src/types/payment.types';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
+import { LineItem } from '@commercetools/connect-payments-sdk';
 
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),
@@ -57,6 +61,7 @@ describe('Payment Mapping', () => {
         customerEmail: 'john@doe.com',
         billingAddress: {
           streetName: 'Main St',
+          streetNumber: '55',
           additionalStreetInfo: 'Apt 4B',
           postalCode: '12345',
           city: 'Berlin',
@@ -67,6 +72,7 @@ describe('Payment Mapping', () => {
         },
         shippingAddress: {
           streetName: 'Main St',
+          streetNumber: '55',
           additionalStreetInfo: '',
           postalCode: '12345',
           city: 'Berlin',
@@ -118,7 +124,7 @@ describe('Payment Mapping', () => {
           numberOfProductsInShoppingCart: 1,
           withoutFlexprice: false,
           invoiceAddress: {
-            address: 'Main St',
+            address: 'Main St 55',
             additionalAddressInformation: 'Apt 4B',
             zip: '12345',
             city: 'Berlin',
@@ -127,7 +133,7 @@ describe('Payment Mapping', () => {
             lastName: 'Doe',
           },
           shippingAddress: {
-            address: 'Main St',
+            address: 'Main St 55',
             additionalAddressInformation: '',
             zip: '12345',
             city: 'Berlin',
@@ -261,12 +267,435 @@ describe('Payment Mapping', () => {
     });
   });
 
+  describe('mapAddress', () => {
+    const mockCompleteAddress: Address = {
+      streetName: 'Musterstraße',
+      streetNumber: '123',
+      additionalStreetInfo: 'Apartment 4B',
+      postalCode: '12345',
+      city: 'Berlin',
+      country: 'DE',
+      firstName: 'John',
+      lastName: 'Doe',
+    };
+
+    it('should map complete address correctly', () => {
+      const result = mapAddress(mockCompleteAddress);
+
+      expect(result).toEqual({
+        address: 'Musterstraße 123',
+        additionalAddressInformation: 'Apartment 4B',
+        zip: '12345',
+        city: 'Berlin',
+        country: 'DE',
+        firstName: 'John',
+        lastName: 'Doe',
+      });
+    });
+
+    it('should handle missing street name with empty string', () => {
+      const addressWithoutStreetName: Address = {
+        ...mockCompleteAddress,
+        streetName: undefined,
+      };
+
+      const result = mapAddress(addressWithoutStreetName);
+
+      expect(result.address).toBe(' 123');
+      expect(result.city).toBe('Berlin'); // Verify other fields are preserved
+    });
+
+    it('should handle missing street number with empty string', () => {
+      const addressWithoutStreetNumber: Address = {
+        ...mockCompleteAddress,
+        streetNumber: undefined,
+      };
+
+      const result = mapAddress(addressWithoutStreetNumber);
+
+      expect(result.address).toBe('Musterstraße ');
+      expect(result.city).toBe('Berlin'); // Verify other fields are preserved
+    });
+
+    it('should handle missing both street name and number', () => {
+      const addressWithoutStreetInfo: Address = {
+        ...mockCompleteAddress,
+        streetName: undefined,
+        streetNumber: undefined,
+      };
+
+      const result = mapAddress(addressWithoutStreetInfo);
+
+      expect(result.address).toBe(' ');
+    });
+
+    it('should use empty strings for missing optional fields', () => {
+      const minimalAddress: Address = {
+        streetName: 'Main Street',
+        streetNumber: '1',
+        country: 'DE', // Required field
+      };
+
+      const result = mapAddress(minimalAddress);
+
+      expect(result).toEqual({
+        address: 'Main Street 1',
+        additionalAddressInformation: '',
+        zip: '',
+        city: '',
+        country: 'DE',
+        firstName: '',
+        lastName: '',
+      });
+    });
+
+    it('should handle null values correctly', () => {
+      const addressWithNulls: Address = {
+        streetName: null as any,
+        streetNumber: null as any,
+        additionalStreetInfo: null as any,
+        postalCode: null as any,
+        city: null as any,
+        country: 'DE', // Required field
+        firstName: null as any,
+        lastName: null as any,
+      };
+
+      const result = mapAddress(addressWithNulls);
+
+      expect(result).toEqual({
+        address: ' ',
+        additionalAddressInformation: '',
+        zip: '',
+        city: '',
+        country: 'DE',
+        firstName: '',
+        lastName: '',
+      });
+    });
+
+    it('should handle address with special characters', () => {
+      const addressWithSpecialChars: Address = {
+        streetName: 'Straße-Ñame',
+        streetNumber: '123/A',
+        additionalStreetInfo: 'Étage 2',
+        postalCode: 'D-12345',
+        city: 'München',
+        country: 'DE',
+        firstName: 'José',
+        lastName: "O'Connor",
+      };
+
+      const result = mapAddress(addressWithSpecialChars);
+
+      expect(result).toEqual({
+        address: 'Straße-Ñame 123/A',
+        additionalAddressInformation: 'Étage 2',
+        zip: 'D-12345',
+        city: 'München',
+        country: 'DE',
+        firstName: 'José',
+        lastName: "O'Connor",
+      });
+    });
+
+    it('should handle addresses with only street name', () => {
+      const addressOnlyStreetName: Address = {
+        streetName: 'Lonely Street',
+        country: 'DE',
+      };
+
+      const result = mapAddress(addressOnlyStreetName);
+
+      expect(result.address).toBe('Lonely Street ');
+      expect(result.additionalAddressInformation).toBe('');
+      expect(result.country).toBe('DE');
+    });
+
+    it('should handle undefined lastName specifically', () => {
+      const addressWithoutLastName = {
+        streetName: 'Test St',
+        streetNumber: '123',
+        postalCode: '12345',
+        city: 'Test City',
+        country: 'DE',
+        firstName: 'John',
+        // lastName property completely omitted to trigger nullish coalescing
+      } as Address;
+
+      const result = mapAddress(addressWithoutLastName);
+
+      expect(result.lastName).toBe(''); // Should fallback to empty string
+      expect(result.firstName).toBe('John'); // Other fields should remain
+    });
+
+    it('should handle undefined firstName specifically', () => {
+      const addressWithoutFirstName = {
+        streetName: 'Test St',
+        streetNumber: '123',
+        postalCode: '12345',
+        city: 'Test City',
+        country: 'DE',
+        lastName: 'Doe',
+        // firstName property completely omitted to trigger nullish coalescing on line 32
+      } as Address;
+
+      const result = mapAddress(addressWithoutFirstName);
+
+      expect(result.firstName).toBe(''); // Should fallback to empty string - THIS IS LINE 32
+      expect(result.lastName).toBe('Doe'); // Other fields should remain
+    });
+
+    it('should handle completely undefined address object', () => {
+      const result = mapAddress(undefined as any);
+
+      expect(result.lastName).toBe(''); // Should fallback to empty string when address is undefined
+      expect(result.firstName).toBe(''); // All fields should fallback
+    });
+  });
+
+  describe('mapLineItem', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    const mockCompleteLineItem: LineItem = {
+      id: 'lineitem-123',
+      name: {
+        de: 'Deutsches Produkt',
+        'de-DE': 'German Product',
+        en: 'English Product',
+      },
+      quantity: 2,
+      price: {
+        value: {
+          centAmount: 5000,
+          fractionDigits: 2,
+          currencyCode: 'EUR',
+        },
+      },
+      variant: {
+        sku: 'SKU-12345',
+      },
+    } as unknown as LineItem;
+
+    it('should map complete line item correctly', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50); // 5000 / 100
+
+      const result = mapLineItem(mockCompleteLineItem);
+
+      expect(convertCentsToEur).toHaveBeenCalledWith(5000, 2);
+      expect(result).toEqual({
+        productName: 'Deutsches Produkt',
+        quantity: 2,
+        price: 50, // 5000 / 100
+        articleNumber: [
+          {
+            numberType: 'GTIN',
+            number: 'SKU-12345',
+          },
+        ],
+      });
+    });
+
+    it('should fallback to de-DE when de is not available', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemWithoutDe: LineItem = {
+        ...mockCompleteLineItem,
+        name: {
+          'de-DE': 'German Product Fallback',
+          en: 'English Product',
+        },
+      };
+
+      const result = mapLineItem(lineItemWithoutDe);
+
+      expect(result.productName).toBe('German Product Fallback');
+    });
+
+    it('should handle missing name properties gracefully', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemWithoutNames: LineItem = {
+        ...mockCompleteLineItem,
+        name: {} as any,
+      };
+
+      const result = mapLineItem(lineItemWithoutNames);
+
+      expect(result.productName).toBeUndefined();
+      expect(result.quantity).toBe(2);
+    });
+
+    it('should handle undefined variant sku', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemWithoutSku: LineItem = {
+        ...mockCompleteLineItem,
+        variant: {
+          sku: undefined,
+        },
+      } as unknown as LineItem;
+
+      const result = mapLineItem(lineItemWithoutSku);
+
+      expect(result.articleNumber).toEqual([
+        {
+          numberType: 'GTIN',
+          number: undefined,
+        },
+      ]);
+    });
+
+    it('should handle zero quantity', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemZeroQuantity: LineItem = {
+        ...mockCompleteLineItem,
+        quantity: 0,
+      };
+
+      const result = mapLineItem(lineItemZeroQuantity);
+
+      expect(result.quantity).toBe(0);
+      expect(result.productName).toBe('Deutsches Produkt');
+    });
+
+    it('should handle high precision prices', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(123.456); // 123456 / 1000
+
+      const lineItemHighPrecision: LineItem = {
+        ...mockCompleteLineItem,
+        price: {
+          value: {
+            centAmount: 123456,
+            fractionDigits: 3,
+            currencyCode: 'EUR',
+          },
+        },
+      } as unknown as LineItem;
+
+      const result = mapLineItem(lineItemHighPrecision);
+
+      expect(convertCentsToEur).toHaveBeenCalledWith(123456, 3);
+      expect(result.price).toBe(123.456); // 123456 / 1000
+    });
+
+    it('should handle zero price', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(0); // 0 / 100
+
+      const lineItemZeroPrice: LineItem = {
+        ...mockCompleteLineItem,
+        price: {
+          value: {
+            centAmount: 0,
+            fractionDigits: 2,
+            currencyCode: 'EUR',
+          },
+        },
+      } as unknown as LineItem;
+
+      const result = mapLineItem(lineItemZeroPrice);
+
+      expect(convertCentsToEur).toHaveBeenCalledWith(0, 2);
+      expect(result.price).toBe(0);
+    });
+
+    it('should handle special characters in product name', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemSpecialChars: LineItem = {
+        ...mockCompleteLineItem,
+        name: {
+          de: 'Spëcïal Prödüct & More™',
+          'de-DE': 'Special Product & More',
+        },
+      };
+
+      const result = mapLineItem(lineItemSpecialChars);
+
+      expect(result.productName).toBe('Spëcïal Prödüct & More™');
+    });
+
+    it('should handle special characters in SKU', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemSpecialSku: LineItem = {
+        ...mockCompleteLineItem,
+        variant: {
+          sku: 'SKU-123/ABC_XYZ.001',
+        },
+      } as unknown as LineItem;
+
+      const result = mapLineItem(lineItemSpecialSku);
+
+      expect(result.articleNumber[0].number).toBe('SKU-123/ABC_XYZ.001');
+    });
+
+    it('should handle large quantities', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const lineItemLargeQuantity: LineItem = {
+        ...mockCompleteLineItem,
+        quantity: 999,
+      };
+
+      const result = mapLineItem(lineItemLargeQuantity);
+
+      expect(result.quantity).toBe(999);
+    });
+
+    it('should always use GTIN as numberType', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(50);
+
+      const result = mapLineItem(mockCompleteLineItem);
+
+      expect(result.articleNumber).toHaveLength(1);
+      expect(result.articleNumber[0].numberType).toBe('GTIN');
+    });
+
+    it('should handle minimal line item structure', () => {
+      (convertCentsToEur as jest.Mock).mockReturnValue(1); // 100 / 100
+
+      const minimalLineItem: LineItem = {
+        name: { de: 'Minimal Product' },
+        quantity: 1,
+        price: {
+          value: {
+            centAmount: 100,
+            fractionDigits: 2,
+            currencyCode: 'EUR',
+          },
+        },
+        variant: {
+          sku: 'MIN-001',
+        },
+      } as unknown as LineItem;
+
+      const result = mapLineItem(minimalLineItem);
+
+      expect(result).toEqual({
+        productName: 'Minimal Product',
+        quantity: 1,
+        price: 1, // 100 / 100
+        articleNumber: [
+          {
+            numberType: 'GTIN',
+            number: 'MIN-001',
+          },
+        ],
+      });
+    });
+  });
+
   describe('getShippingAddress', () => {
     it('should return cart.shippingAddress when shippingMode is not Multiple', () => {
       const mockCart: Cart = {
         shippingMode: 'Single',
         shippingAddress: {
           streetName: 'Main St',
+          streetNumber: '55',
           postalCode: '12345',
           city: 'Berlin',
           country: 'DE',
@@ -283,6 +712,7 @@ describe('Payment Mapping', () => {
     it('should return first shipping address when shippingMode is Multiple', () => {
       const mockShippingAddress = {
         streetName: 'First Address St',
+        streetNumber: '55',
         postalCode: '54321',
         city: 'Munich',
         country: 'DE',
@@ -299,6 +729,7 @@ describe('Payment Mapping', () => {
           {
             shippingAddress: {
               streetName: 'Second Address St',
+              streetNumber: '55',
               postalCode: '67890',
               city: 'Hamburg',
               country: 'DE',
@@ -367,6 +798,7 @@ describe('Payment Mapping', () => {
         shippingMode: undefined,
         shippingAddress: {
           streetName: 'Default St',
+          streetNumber: '55',
           postalCode: '11111',
           city: 'Default City',
           country: 'DE',

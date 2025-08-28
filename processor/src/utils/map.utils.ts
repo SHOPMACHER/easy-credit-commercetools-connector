@@ -24,8 +24,8 @@ import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/sr
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
 
-const mapAddress = (address: Address) => ({
-  address: address?.streetName ?? '',
+export const mapAddress = (address: Address) => ({
+  address: (address?.streetName ?? '') + ' ' + (address?.streetNumber ?? ''),
   additionalAddressInformation: address?.additionalStreetInfo ?? '',
   zip: address?.postalCode ?? '',
   city: address?.city ?? '',
@@ -34,7 +34,7 @@ const mapAddress = (address: Address) => ({
   lastName: address?.lastName ?? '',
 });
 
-const mapLineItem = (lineItem: LineItem) => ({
+export const mapLineItem = (lineItem: LineItem) => ({
   productName: lineItem.name.de ?? lineItem.name['de-DE'], // Assuming the name is in German
   quantity: lineItem.quantity,
   price: convertCentsToEur(lineItem.price.value.centAmount, lineItem.price.value.fractionDigits),
