@@ -18,7 +18,6 @@ import { CTTransactionState } from '../types/payment.types';
 export const handleEasyCreditNotification = async (resourceId: string): Promise<void> => {
   try {
     validateECTransactionId(resourceId);
-
     const ecTransaction = await initEasyCreditClient().getMerchantTransaction(resourceId);
 
     await Promise.all([
@@ -43,21 +42,20 @@ const handleRefundNotifications = async (ecTransaction: any): Promise<void> => {
 
   const firstRefundBookingId = ecCompletedRefunds[0]?.bookingId;
   if (!firstRefundBookingId) {
-    log.warn('No booking ID found for completed refund');
+    log.error('No booking ID found for completed refund');
     return;
   }
 
   const ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
   const ctPendingRefunds = getPendingRefundTransactions(ctPayment);
 
-  if (ctPendingRefunds.length === 0) {
-    log.info('No pending refund transactions to update');
+  if (ctPendingRefunds?.length === 0) {
+    log.error('No pending refund transactions to update');
     return;
   }
-
   const updateActions = mapUpdateActionForRefunds(ctPendingRefunds, ecCompletedRefunds);
 
-  if (updateActions.length > 0) {
+  if (updateActions?.length > 0) {
     await updatePayment(ctPayment, updateActions);
     log.info(`Updated ${updateActions.length} refund transactions`, { paymentId: ctPayment.id });
   }
@@ -67,18 +65,24 @@ const handleRefundNotifications = async (ecTransaction: any): Promise<void> => {
  * Processes capture notifications and updates CommerceTools payment states
  */
 const handleCaptureNotifications = async (ecTransaction: any, resourceId: string): Promise<void> => {
-  const ecCaptureBookings = getCaptureBooking(ecTransaction.bookings);
   // EC orderId maps to CommerceTools paymentId
   const paymentId = ecTransaction.orderDetails?.orderId;
 
-  if (ecCaptureBookings.length === 0 || !paymentId) {
+  if (!paymentId) {
+    log.warn('No payment ID found in EC transaction order details');
+    return;
+  }
+
+  const ecCaptureBookings = getCaptureBooking(ecTransaction.bookings);
+
+  if (ecCaptureBookings?.length === 0) {
     return;
   }
 
   const ctPayment = await getPaymentById(paymentId);
   const ctPendingCaptures = getPendingCaptureTransactions(ctPayment);
 
-  if (ctPendingCaptures.length === 0) {
+  if (ctPendingCaptures?.length === 0) {
     log.info('No pending capture transactions to update');
     return;
   }
