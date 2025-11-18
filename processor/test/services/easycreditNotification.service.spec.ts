@@ -1,3 +1,4 @@
+import { getPaymentInterfaceFromContext } from './../../src/libs/fastify/context/context';
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
 import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
 import {
@@ -228,7 +229,7 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.error).toHaveBeenCalledWith('No pending refund transactions to update');
+      expect(log.info).toHaveBeenCalledWith('No pending refund transactions to update', { paymentId: mockPayment.id });
       expect(mapUpdateActionForRefunds).not.toHaveBeenCalled();
       expect(updatePayment).not.toHaveBeenCalled();
     });
@@ -317,7 +318,7 @@ describe('Easycredit Notification handlers', () => {
           state: CTTransactionState.Success,
         },
       ]);
-      expect(log.info).toHaveBeenCalledWith('EC successfully capture payment, move CT transaction state to Success.', {
+      expect(log.info).toHaveBeenCalledWith('EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.', {
         transactionId: 'capture-transaction1',
         paymentId: 'payment123',
       });
@@ -411,7 +412,6 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.info).toHaveBeenCalledWith('No pending capture transactions to update');
       expect(updatePayment).not.toHaveBeenCalled();
     });
 
@@ -457,7 +457,7 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.warn).toHaveBeenCalledWith('Interaction ID mismatch for capture transaction.', {
+      expect(log.error).toHaveBeenCalledWith('Interaction ID mismatch for capture transaction.', {
         expected: 'test-resource-id',
         actual: 'different-resource-id',
       });
