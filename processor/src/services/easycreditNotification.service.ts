@@ -105,7 +105,7 @@ const handleCaptureNotifications = async (
   }
 
   const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
-  // TODO : Should change this logic on next major release
+  // Should change this logic on next major release
   if (ctPendingCaptureTransactions?.length === 0) {
     const ctAuthorizedTransactions = getSuccessTransaction(ctPayment);
     if (!ctAuthorizedTransactions) {
