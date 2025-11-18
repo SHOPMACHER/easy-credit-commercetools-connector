@@ -1,4 +1,3 @@
-import { getPaymentInterfaceFromContext } from './../../src/libs/fastify/context/context';
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
 import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
 import {
@@ -318,10 +317,13 @@ describe('Easycredit Notification handlers', () => {
           state: CTTransactionState.Success,
         },
       ]);
-      expect(log.info).toHaveBeenCalledWith('EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.', {
-        transactionId: 'capture-transaction1',
-        paymentId: 'payment123',
-      });
+      expect(log.info).toHaveBeenCalledWith(
+        'EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.',
+        {
+          transactionId: 'capture-transaction1',
+          paymentId: 'payment123',
+        },
+      );
     });
 
     it('should log warning when no payment ID found in EC transaction order details', async () => {
