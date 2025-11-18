@@ -27,3 +27,5 @@ export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
 export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
 
 export const EASYCREDIT_TECHNICAL_TRANSACTION_ID = 'easy-credit-technical-transaction-id';
+
+export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';

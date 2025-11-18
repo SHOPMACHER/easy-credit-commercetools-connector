@@ -1,9 +1,18 @@
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
 import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
-import { getPaymentByEasyCreditRefundBookingId, updatePayment } from '../../src/commercetools/payment.commercetools';
+import {
+  getPaymentByEasyCreditRefundBookingId,
+  getPaymentById,
+  updatePayment,
+} from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
-import { getCompletedRefunds, getPendingRefundTransactions } from '../../src/utils/payment.utils';
+import {
+  getCaptureBooking,
+  getCompletedRefunds,
+  getPendingCaptureTransactions,
+  getPendingRefundTransactions,
+} from '../../src/utils/payment.utils';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { mapUpdateActionForRefunds } from '../../src/utils/map.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -149,17 +158,312 @@ describe('Easycredit Notification handlers', () => {
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, updateActions);
     });
 
-    it('should throw and log error', async () => {
-      const mockError = new Error('get transaction failed');
+    it('should log error when completed refunds have no booking ID', async () => {
+      const mockECMerchantTransaction = {
+        bookings: [
+          {
+            bookingType: 'RefundBooking',
+            uuid: 'b6731d8c-27d0-4a82-ac35-5d19c0a1f5c8',
+            created: '2024-10-29T10:08:35+01:00',
+            type: 'REFUND',
+            status: 'DONE',
+            message: null,
+            amount: 12.0,
+            // bookingId is missing - this should trigger the error
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
-        getMerchantTransaction: jest.fn().mockRejectedValue(mockError),
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
       });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([
+        mockECMerchantTransaction.bookings[0], // This has no bookingId
+      ]);
 
       const resourceId = 'payment123';
 
-      await expect(handleEasyCreditNotification(resourceId)).rejects.toThrow('get transaction failed');
-      expect(log.error).toHaveBeenCalledWith('Error in handling EasyCredit notification', mockError);
+      await handleEasyCreditNotification(resourceId);
+
+      expect(log.error).toHaveBeenCalledWith('No booking ID found for completed refund');
+      expect(getPaymentByEasyCreditRefundBookingId).not.toHaveBeenCalled();
+    });
+
+    it('should log error when no pending refund transactions exist', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [], // No transactions
+      };
+
+      const mockECMerchantTransaction = {
+        bookings: [
+          {
+            bookingType: 'RefundBooking',
+            uuid: 'b6731d8c-27d0-4a82-ac35-5d19c0a1f5c8',
+            created: '2024-10-29T10:08:35+01:00',
+            type: 'REFUND',
+            status: 'DONE',
+            message: null,
+            amount: 12.0,
+            bookingId: 'transaction1',
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+
+      // @ts-expect-error mocked
+      (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockResolvedValue(mockPayment);
+
+      (getPendingRefundTransactions as jest.Mock).mockReturnValue([]); // Empty array - no pending transactions
+
+      const resourceId = 'payment123';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(log.info).toHaveBeenCalledWith('No pending refund transactions to update', { paymentId: mockPayment.id });
+      expect(mapUpdateActionForRefunds).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
+    });
+
+    it('should handle the case when no completed refunds exist', async () => {
+      const mockECMerchantTransaction = {
+        bookings: [
+          {
+            bookingType: 'RefundBooking',
+            uuid: 'b6731d8c-27d0-4a82-ac35-5d19c0a1f5c8',
+            created: '2024-10-29T10:08:35+01:00',
+            type: 'REFUND',
+            status: 'PENDING', // Not completed
+            message: null,
+            amount: 12.0,
+            bookingId: 'transaction1',
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]); // No completed refunds
+
+      const resourceId = 'payment123';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(getPaymentByEasyCreditRefundBookingId).not.toHaveBeenCalled();
+      expect(log.error).not.toHaveBeenCalled();
+    });
+
+    it('should handle capture notifications successfully', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [
+          {
+            id: 'capture-transaction1',
+            type: CTTransactionType.Charge,
+            state: CTTransactionState.Pending,
+            interactionId: 'test-resource-id',
+          },
+        ],
+      };
+
+      const mockECMerchantTransaction = {
+        orderDetails: {
+          orderId: 'payment123', // Maps to CommerceTools payment ID
+        },
+        bookings: [
+          {
+            bookingType: 'CaptureBooking',
+            uuid: 'capture-uuid-1',
+            created: '2024-10-29T10:08:35+01:00',
+            type: 'CAPTURE',
+            status: 'DONE',
+            message: null,
+            amount: 100.0,
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]); // No refunds to process
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (getPendingCaptureTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
+
+      const resourceId = 'test-resource-id';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(getPaymentById).toHaveBeenCalledWith('payment123');
+      expect(updatePayment).toHaveBeenCalledWith(mockPayment, [
+        {
+          action: 'changeTransactionState',
+          transactionId: 'capture-transaction1',
+          state: CTTransactionState.Success,
+        },
+      ]);
+      expect(log.info).toHaveBeenCalledWith(
+        'EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.',
+        {
+          transactionId: 'capture-transaction1',
+          paymentId: 'payment123',
+        },
+      );
+    });
+
+    it('should log warning when no payment ID found in EC transaction order details', async () => {
+      const mockECMerchantTransaction = {
+        orderDetails: {}, // Missing orderId
+        bookings: [
+          {
+            bookingType: 'CaptureBooking',
+            uuid: 'capture-uuid-1',
+            type: 'CAPTURE',
+            status: 'DONE',
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+
+      const resourceId = 'test-resource-id';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(log.warn).toHaveBeenCalledWith('No payment ID found in EC transaction order details');
+      expect(getPaymentById).not.toHaveBeenCalled();
+    });
+
+    it('should handle case when no capture bookings exist', async () => {
+      const mockECMerchantTransaction = {
+        orderDetails: {
+          orderId: 'payment123',
+        },
+        bookings: [], // No capture bookings
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([]); // No capture bookings
+
+      const resourceId = 'test-resource-id';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(getPaymentById).not.toHaveBeenCalled();
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('should log info when no pending capture transactions exist', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [], // No pending transactions
+      };
+
+      const mockECMerchantTransaction = {
+        orderDetails: {
+          orderId: 'payment123',
+        },
+        bookings: [
+          {
+            bookingType: 'CaptureBooking',
+            uuid: 'capture-uuid-1',
+            type: 'CAPTURE',
+            status: 'DONE',
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (getPendingCaptureTransactions as jest.Mock).mockReturnValue([]); // No pending captures
+
+      const resourceId = 'test-resource-id';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(updatePayment).not.toHaveBeenCalled();
+    });
+
+    it('should log warning when interaction ID mismatch for capture transaction', async () => {
+      const mockPayment = {
+        id: 'payment123',
+        transactions: [
+          {
+            id: 'capture-transaction1',
+            type: CTTransactionType.Charge,
+            state: CTTransactionState.Pending,
+            interactionId: 'different-resource-id', // Mismatch
+          },
+        ],
+      };
+
+      const mockECMerchantTransaction = {
+        orderDetails: {
+          orderId: 'payment123',
+        },
+        bookings: [
+          {
+            bookingType: 'CaptureBooking',
+            uuid: 'capture-uuid-1',
+            type: 'CAPTURE',
+            status: 'DONE',
+          },
+        ],
+      } as unknown as ECGetMerchantTransactionResponse;
+
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
+      });
+
+      (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (getPendingCaptureTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
+
+      const resourceId = 'test-resource-id';
+
+      await handleEasyCreditNotification(resourceId);
+
+      expect(log.error).toHaveBeenCalledWith('Interaction ID mismatch for capture transaction.', {
+        expected: 'test-resource-id',
+        actual: 'different-resource-id',
+      });
+      expect(updatePayment).not.toHaveBeenCalled();
     });
   });
 });

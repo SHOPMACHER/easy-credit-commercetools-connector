@@ -236,6 +236,9 @@ export type ECGetMerchantTransactionResponse = {
   status: string;
   bookings: ECBooking[];
   refundsTotalValue: number;
+  orderDetails?: {
+    orderId: string;
+  };
 };
 
 export type ECBooking = {

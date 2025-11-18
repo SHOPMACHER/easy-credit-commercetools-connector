@@ -21,6 +21,7 @@ To use this functionality, the following conditions must be met:
 1. **Validate and get `payment`**: Use `paymentId` to get related CT `payment` data.
 2. **Retrieve EC `technicalTransactionId`**: The id is stored in a custom field named `easyCreditTechnicalTransactionId` under the payment transaction
 3. **Capture & update payment**: With the `technicalTransactionId`, a request is sent to authorize this transaction and update the transaction state accordingly
+4. **Reflect the change to CT transactions**: A new transaction with type `Charge` and `Pending` state will be added to the payment. As the EC capture procedure asynchronously, the new `Charge` transaction state will be then updated accordingly
 
 ![Capture payment flow](./assets/easycredit-capture-payment-flow.png)
 <br />

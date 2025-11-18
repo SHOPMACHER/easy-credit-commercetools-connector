@@ -119,6 +119,7 @@ export const handleCreatePayment = async (
           type: CTTransactionType.Authorization,
           amount: cart.totalPrice,
           interactionId: ecPayment.transactionId,
+          timestamp: new Date().toISOString(),
           custom: {
             type: {
               typeId: 'type',
@@ -290,11 +291,28 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
       });
     }
 
-    await initEasyCreditClient().capturePayment(
+    const response = await initEasyCreditClient().capturePayment(
       easyCreditTransaction.decision.transactionId,
       paymentId,
       trackingNumber,
     );
+
+    if (response) {
+      await updatePayment(payment, [
+        {
+          action: 'addTransaction',
+          transaction: {
+            type: CTTransactionType.Charge,
+            state: CTTransactionState.Pending,
+            amount: transaction.amount,
+            interactionId: transaction.interactionId,
+            timestamp: new Date().toISOString(),
+            custom: transaction.custom,
+          },
+        },
+      ]);
+      log.info('Capture payment initiated successfully', { paymentId });
+    }
   } catch (error) {
     log.error('Error in capturing payment', error);
     throw error;

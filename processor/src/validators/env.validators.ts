@@ -95,7 +95,7 @@ const envValidators = [
     ['easyCredit', 'debug'],
     {
       code: 'InvalidDebug',
-      message: 'Mollie debug should be a valid string of either "0" or "1".',
+      message: 'Debug should be a valid string of either "0" or "1".',
       referencedBy: 'environmentVariables',
     },
     {
