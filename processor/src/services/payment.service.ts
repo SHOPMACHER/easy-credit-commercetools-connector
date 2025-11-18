@@ -311,9 +311,8 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
           },
         },
       ]);
+      log.info('Capture payment initiated successfully', { paymentId });
     }
-
-    log.info('Capture payment initiated successfully', { paymentId });
   } catch (error) {
     log.error('Error in capturing payment', error);
     throw error;

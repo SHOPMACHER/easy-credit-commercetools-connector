@@ -67,3 +67,9 @@ export const getPendingCaptureTransactions = (payment: Payment): Transaction[] =
     (transaction) => transaction.type === CTTransactionType.Charge && transaction.state === CTTransactionState.Pending,
   );
 };
+
+export const getSuccessCaptureTransactions = (payment: Payment): Transaction[] => {
+  return payment.transactions.filter(
+    (transaction) => transaction.type === CTTransactionType.Charge && transaction.state === CTTransactionState.Success,
+  );
+};

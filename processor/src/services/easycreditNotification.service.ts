@@ -1,19 +1,22 @@
+import { Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import {
   getPaymentByEasyCreditRefundBookingId,
   getPaymentById,
   updatePayment,
 } from '../commercetools/payment.commercetools';
+import { log } from '../libs/logger';
+import { CTTransactionState, CTTransactionType, ECGetMerchantTransactionResponse } from '../types/payment.types';
 import { mapUpdateActionForRefunds } from '../utils/map.utils';
 import {
   getCaptureBooking,
   getCompletedRefunds,
   getPendingCaptureTransactions,
   getPendingRefundTransactions,
+  getSuccessCaptureTransactions,
+  getSuccessTransaction,
 } from '../utils/payment.utils';
-import { log } from '../libs/logger';
 import { validateECTransactionId } from '../validators/payment.validators';
-import { CTTransactionState } from '../types/payment.types';
 
 export const handleEasyCreditNotification = async (resourceId: string): Promise<void> => {
   try {
@@ -33,7 +36,7 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
 /**
  * Processes refund notifications and updates CommerceTools payment states
  */
-const handleRefundNotifications = async (ecTransaction: any): Promise<void> => {
+const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransactionResponse): Promise<void> => {
   const ecCompletedRefunds = getCompletedRefunds(ecTransaction.bookings);
 
   if (ecCompletedRefunds.length === 0) {
@@ -50,21 +53,31 @@ const handleRefundNotifications = async (ecTransaction: any): Promise<void> => {
   const ctPendingRefunds = getPendingRefundTransactions(ctPayment);
 
   if (ctPendingRefunds?.length === 0) {
-    log.error('No pending refund transactions to update');
+    log.info('No pending refund transactions to update', { paymentId: ctPayment.id });
     return;
   }
   const updateActions = mapUpdateActionForRefunds(ctPendingRefunds, ecCompletedRefunds);
 
   if (updateActions?.length > 0) {
     await updatePayment(ctPayment, updateActions);
-    log.info(`Updated ${updateActions.length} refund transactions`, { paymentId: ctPayment.id });
+    log.info('Successfully updated refund transactions from EasyCredit notification', {
+      paymentId: ctPayment.id,
+    });
   }
 };
 
 /**
  * Processes capture notifications and updates CommerceTools payment states
  */
-const handleCaptureNotifications = async (ecTransaction: any, resourceId: string): Promise<void> => {
+const handleCaptureNotifications = async (
+  ecTransaction: ECGetMerchantTransactionResponse,
+  resourceId: string,
+): Promise<void> => {
+  if (!ecTransaction?.orderDetails) {
+    log.warn('No order details found in EC transaction');
+    return;
+  }
+
   // EC orderId maps to CommerceTools paymentId
   const paymentId = ecTransaction.orderDetails?.orderId;
 
@@ -80,32 +93,72 @@ const handleCaptureNotifications = async (ecTransaction: any, resourceId: string
   }
 
   const ctPayment = await getPaymentById(paymentId);
-  const ctPendingCaptures = getPendingCaptureTransactions(ctPayment);
+  const ctSuccessCaptures = getSuccessCaptureTransactions(ctPayment);
 
-  if (ctPendingCaptures?.length === 0) {
-    log.info('No pending capture transactions to update');
-    return;
-  }
-
-  const pendingCapture = ctPendingCaptures[0];
-  if (pendingCapture.interactionId !== resourceId) {
-    log.warn('Interaction ID mismatch for capture transaction.', {
-      expected: resourceId,
-      actual: pendingCapture.interactionId,
+  // No multiple capture processing
+  if (ctSuccessCaptures?.length > 0) {
+    log.warn('Capture transaction already marked as Success, no further action needed.', {
+      paymentId: ctPayment.id,
+      transactionId: ctSuccessCaptures[0].id,
     });
     return;
   }
 
-  await updatePayment(ctPayment, [
+  const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
+  // TODO : Should change this logic on next major release
+  if (ctPendingCaptureTransactions?.length === 0) {
+    const ctAuthorizedTransactions = getSuccessTransaction(ctPayment);
+    if (!ctAuthorizedTransactions) {
+      log.error('No authorized transaction found to create capture from.', {
+        paymentId: ctPayment.id,
+      });
+      return;
+    }
+    const updatedPayment = await createCaptureTransactionFromAuthorized(ctPayment, ctAuthorizedTransactions);
+    await updatePendingCaptureToSuccess(updatedPayment, getPendingCaptureTransactions(updatedPayment)[0]);
+  } else {
+    const pendingCapture = ctPendingCaptureTransactions[0];
+    if (pendingCapture.interactionId !== resourceId) {
+      log.error('Interaction ID mismatch for capture transaction.', {
+        expected: resourceId,
+        actual: pendingCapture.interactionId,
+      });
+      return;
+    }
+    await updatePendingCaptureToSuccess(ctPayment, pendingCapture);
+  }
+};
+
+const createCaptureTransactionFromAuthorized = async (
+  ctPayment: Payment,
+  authorizedTransaction: Transaction,
+): Promise<Payment> => {
+  return await updatePayment(ctPayment, [
+    {
+      action: 'addTransaction',
+      transaction: {
+        type: CTTransactionType.Charge,
+        state: CTTransactionState.Pending,
+        amount: authorizedTransaction.amount,
+        interactionId: authorizedTransaction.interactionId,
+        timestamp: new Date().toISOString(),
+        custom: authorizedTransaction.custom,
+      },
+    },
+  ]);
+};
+
+const updatePendingCaptureToSuccess = async (ctPayment: Payment, pendingCapture: Transaction): Promise<Payment> => {
+  log.info('EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.', {
+    transactionId: pendingCapture.id,
+    paymentId: ctPayment.id,
+  });
+
+  return await updatePayment(ctPayment, [
     {
       action: 'changeTransactionState',
       transactionId: pendingCapture.id,
       state: CTTransactionState.Success,
     },
   ]);
-
-  log.info('EC successfully capture payment, move CT transaction state to Success.', {
-    transactionId: pendingCapture.id,
-    paymentId: ctPayment.id,
-  });
 };

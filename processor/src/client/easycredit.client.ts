@@ -134,7 +134,7 @@ class EasyCreditApiClient implements EasyCreditClient {
       });
 
       if (response.status !== 202) {
-        throw new Error('Capture request returned invalid status code');
+        throw new Error(`Capture request returned invalid status code ${response.status}`);
       }
 
       return true;
