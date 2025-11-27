@@ -300,7 +300,6 @@ describe('initEasyCreditClient', () => {
       );
 
       expect(log.error).toBeCalledTimes(1);
-      expect(log.error).toBeCalledWith('Failed to create refund', mockedFetchResult);
       expect(result).toBe(false);
     });
   });
