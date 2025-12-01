@@ -107,7 +107,10 @@ class EasyCreditApiClient implements EasyCreditClient {
       );
 
       if (response.status !== 202) {
-        throw new Error('Authorize request returned invalid status code');
+        const errorData = await response.json();
+        throw new Error(
+          `Authorize request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
+        );
       }
 
       return true;
@@ -134,7 +137,10 @@ class EasyCreditApiClient implements EasyCreditClient {
       });
 
       if (response.status !== 202) {
-        throw new Error(`Capture request returned invalid status code ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(
+          `Capture request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
+        );
       }
 
       return true;
@@ -169,7 +175,10 @@ class EasyCreditApiClient implements EasyCreditClient {
       });
 
       if (response.status !== 202) {
-        throw new Error('Refund request returned invalid status code');
+        const errorData = await response.json();
+        throw new Error(
+          `Refund request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
+        );
       }
 
       return true;
