@@ -1,7 +1,7 @@
 {
   "name": "@shopmacher/easy-credit-commercetools-component",
   "private": false,
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "main": "public/connector-enabler.umd.js",
   "module": "public/connector-enabler.es.js",
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.1.0",
-    "@types/node": "22.5.5",
+    "@types/node": "^22.19.3",
     "@typescript-eslint/eslint-plugin": "^8.6.0",
     "eslint": "^9.12.0",
     "eslint-config-prettier": "9.1.0",
@@ -45,12 +45,12 @@
     "sass": "1.79.1",
     "ts-jest": "^29.4.1",
     "typescript": "5.6.2",
-    "vite": "^5.4.21",
+    "vite": "^7.3.0",
     "vite-plugin-css-injected-by-js": "3.5.1"
   },
   "overrides": {
     "path-to-regexp": "3.3.0",
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.25.0"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.9.5"
