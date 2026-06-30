@@ -14,7 +14,9 @@ import { parse as queryStringParse } from 'node:querystring';
 export const setupFastify = async () => {
   // Create fastify server instance
   const server = Fastify({
-    querystringParser: (str) => queryStringParse(str),
+    routerOptions: {
+      querystringParser: (str) => queryStringParse(str),
+    },
   });
 
   // Setup error handler

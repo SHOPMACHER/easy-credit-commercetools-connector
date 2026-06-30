@@ -19,6 +19,14 @@ export class AppLogger implements Logger {
 
 export const appLogger = new AppLogger();
 
+const getCheckoutUrl = (): string => {
+  if (process.env.CTP_CHECKOUT_URL) {
+    return process.env.CTP_CHECKOUT_URL;
+  }
+  const sessionUrl = process.env.CTP_SESSION_URL ?? '';
+  return sessionUrl.replace('://session.', '://checkout.');
+};
+
 export const paymentSDK = setupPaymentSDK({
   apiUrl: process.env.CTP_API_URL as string,
   authUrl: process.env.CTP_AUTH_URL as string,
@@ -26,6 +34,7 @@ export const paymentSDK = setupPaymentSDK({
   clientSecret: process.env.CTP_CLIENT_SECRET as string,
   projectKey: process.env.CTP_PROJECT_KEY as string,
   sessionUrl: process.env.CTP_SESSION_URL as string,
+  checkoutUrl: getCheckoutUrl(),
   jwksUrl: process.env.CTP_JWKS_URL as string,
   jwtIssuer: process.env.CTP_JWT_ISSUER as string,
   getContextFn: (): RequestContextData => {
