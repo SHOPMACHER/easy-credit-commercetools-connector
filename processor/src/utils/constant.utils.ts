@@ -26,6 +26,12 @@ export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
 
 export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
 
-export const EASYCREDIT_TECHNICAL_TRANSACTION_ID = 'easy-credit-technical-transaction-id';
+export const EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-technical-transaction-id';
+
+export const EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD = 'easyCreditTechnicalTransactionId';
+
+export function getTransactionCustomTypeKey(): string {
+  return process.env.TRANSACTION_CUSTOM_TYPE_KEY || EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
+}
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';

@@ -39,7 +39,7 @@ import {
   mapCTCartToECPayment,
 } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
-import { EASYCREDIT_TECHNICAL_TRANSACTION_ID } from '../utils/constant.utils';
+import { getTransactionCustomTypeKey } from '../utils/constant.utils';
 
 // Helper to handle validation and return errors
 const validateCart = (cart: Cart): Errorx[] => {
@@ -123,7 +123,7 @@ export const handleCreatePayment = async (
           custom: {
             type: {
               typeId: 'type',
-              key: EASYCREDIT_TECHNICAL_TRANSACTION_ID,
+              key: getTransactionCustomTypeKey(),
             },
             fields: {
               easyCreditTechnicalTransactionId: ecPayment.technicalTransactionId,

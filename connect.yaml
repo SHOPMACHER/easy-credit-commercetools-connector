@@ -51,6 +51,10 @@ deployAs:
           description: Toggle display the EasyCredit Widget (0 or 1)
           required: true
           default: "1"
+        - key: TRANSACTION_CUSTOM_TYPE_KEY
+          description: Key of the custom type for transaction resources. Use an existing key to share a custom type with other connectors.
+          required: false
+          default: easy-credit-technical-transaction-id
       securedConfiguration:
         - key: CTP_CLIENT_SECRET
           description: Commercetools Composable Commerce client secret
