@@ -1,12 +1,12 @@
 import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import {
   validateAddresses,
-  validateCartAmount,
   validateCurrency,
   validateECTransactionId,
   validateInitialOrPendingTransaction,
   validatePayment,
   validatePaymentAmount,
+  validatePaymentTypeAvailability,
   validatePendingTransaction,
   validateSuccessTransaction,
   validateTransaction,
@@ -105,37 +105,69 @@ describe('Validation Functions', () => {
     });
   });
 
-  describe('validateCartAmount', () => {
-    it('should push error if amount is below MIN_CART_AMOUNT', () => {
-      (convertCentsToEur as jest.Mock).mockReturnValue(5);
-      validateCartAmount(500, 2, ecConfig, errors);
-      expect(errors).toHaveLength(1);
-      expect(errors[0]).toEqual(
-        expect.objectContaining({
-          code: 'InvalidAmount',
-          httpErrorStatus: 400,
-          message: expect.stringContaining('zwischen'),
-        }),
+  describe('validatePaymentTypeAvailability', () => {
+    it('should not push errors if the payment type is available', () => {
+      validatePaymentTypeAvailability(
+        500,
+        { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
+        ecConfig,
+        errors,
       );
-    });
-
-    it('should push error if amount is above MAX_CART_AMOUNT', () => {
-      (convertCentsToEur as jest.Mock).mockReturnValue(10001);
-      validateCartAmount(100100, 2, ecConfig, errors);
-      expect(errors).toHaveLength(1);
-      expect(errors[0]).toEqual(
-        expect.objectContaining({
-          code: 'InvalidAmount',
-          httpErrorStatus: 400,
-          message: expect.stringContaining('zwischen'),
-        }),
-      );
-    });
-
-    it('should not push errors for valid cart amount', () => {
-      (convertCentsToEur as jest.Mock).mockReturnValue(200);
-      validateCartAmount(5000, 2, ecConfig, errors);
       expect(errors).toHaveLength(0);
+    });
+
+    it.each([100, 10001])('should push InvalidAmount with the given limits if amount %s is out of range', (amount) => {
+      validatePaymentTypeAvailability(
+        amount,
+        { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        ecConfig,
+        errors,
+      );
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toEqual(
+        expect.objectContaining({
+          code: 'InvalidAmount',
+          httpErrorStatus: 400,
+          message: 'Die Summe des Warenkorbs muss zwischen 200€ und 10.000€ liegen.',
+        }),
+      );
+    });
+
+    it('should format the limits in German regardless of the runtime locale', () => {
+      const toLocaleStringSpy = jest.spyOn(Number.prototype, 'toLocaleString');
+
+      validatePaymentTypeAvailability(
+        100,
+        { enabled: true, available: false, minAmount: 1500, maxAmount: 10000 },
+        ecConfig,
+        errors,
+      );
+
+      expect(errors[0].message).toBe('Die Summe des Warenkorbs muss zwischen 1.500€ und 10.000€ liegen.');
+      expect(toLocaleStringSpy.mock.calls).toEqual([['de-DE'], ['de-DE']]);
+      toLocaleStringSpy.mockRestore();
+    });
+
+    it.each([10, 500, 6000])(
+      'should push PaymentTypeNotAvailable if the payment type is disabled (amount %s)',
+      (amount) => {
+        validatePaymentTypeAvailability(
+          amount,
+          { enabled: false, available: false, minAmount: 50, maxAmount: 5000 },
+          ecConfig,
+          errors,
+        );
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toEqual(
+          expect.objectContaining({ code: 'PaymentTypeNotAvailable', httpErrorStatus: 400, fields: ecConfig }),
+        );
+      },
+    );
+
+    it('should push PaymentTypeNotAvailable if no limits are known', () => {
+      validatePaymentTypeAvailability(500, { enabled: true, available: false }, ecConfig, errors);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toEqual(expect.objectContaining({ code: 'PaymentTypeNotAvailable' }));
     });
   });
 
@@ -271,6 +303,7 @@ describe('Validation Functions', () => {
   describe('validatePaymentAmount', () => {
     it('should throw error if payment amount is smaller than the refund one', () => {
       (getTransaction as jest.Mock).mockReturnValue({});
+      (convertCentsToEur as jest.Mock).mockReturnValue(10);
       const payment: Payment = {
         amountPlanned: {
           centAmount: 1000,

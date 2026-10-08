@@ -14,12 +14,12 @@ import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
 import {
   validateAddresses,
-  validateCartAmount,
   validateCurrency,
   validateInitialOrPendingTransaction,
   validateInitialRefundTransaction,
   validatePayment,
   validatePaymentAmount,
+  validatePaymentTypeAvailability,
   validatePendingTransaction,
   validateSuccessTransaction,
   validateTransaction,
@@ -27,8 +27,16 @@ import {
 import { readConfiguration } from '../../src/utils/config.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { CTTransactionState, CTTransactionType, ECTransactionStatus } from '../../src/types/payment.types';
-import { mapCreatePaymentResponse } from '../../src/utils/map.utils';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECTransactionCustomerRelationship,
+  ECTransactionPaymentType,
+  ECTransactionStatus,
+  PaymentTypesAvailability,
+} from '../../src/types/payment.types';
+import { mapCreatePaymentResponse, mapCTCartToECPayment } from '../../src/utils/map.utils';
+import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -38,7 +46,7 @@ jest.mock('../../src/libs/logger');
 jest.mock('../../src/validators/payment.validators', () => ({
   validateAddresses: jest.fn(),
   validateCurrency: jest.fn(),
-  validateCartAmount: jest.fn(),
+  validatePaymentTypeAvailability: jest.fn(),
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
   validateSuccessTransaction: jest.fn(),
@@ -60,6 +68,17 @@ jest.mock('../../src/utils/config.utils', () => ({
   }),
 }));
 jest.mock('../../src/utils/payment.utils');
+jest.mock('../../src/services/webshop.service');
+
+const allPaymentTypesAvailable: PaymentTypesAvailability = {
+  INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
+  BILL_PAYMENT: { enabled: true, available: true, minAmount: 50, maxAmount: 5000 },
+};
+
+beforeEach(() => {
+  // @ts-expect-error mocked
+  (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(allPaymentTypesAvailable);
+});
 
 describe('Payment handlers', () => {
   describe('handlePaymentMethod', () => {
@@ -67,22 +86,79 @@ describe('Payment handlers', () => {
       jest.clearAllMocks();
     });
 
-    it('should return the payment method when validation passes', async () => {
+    it('should return the payment method with the available payment types', async () => {
       const mockCart = {
         billingAddress: {},
         shippingAddress: {},
-        totalPrice: { currencyCode: 'EUR', centAmount: 1000, fractionDigits: 2 },
+        totalPrice: { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 },
       };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
-      (validateAddresses as jest.Mock).mockReturnValue([]);
-      (validateCurrency as jest.Mock).mockReturnValue([]);
-      (validateCartAmount as jest.Mock).mockReturnValue([]);
 
       const result = await handlePaymentMethod('cart123');
 
-      expect(result).toEqual({ webShopId: 'webShopId123', amount: 10 });
+      expect(result).toEqual({ webShopId: 'webShopId123', amount: 500, paymentTypes: allPaymentTypesAvailable });
       expect(getCartById).toHaveBeenCalledWith('cart123');
+      expect(getPaymentTypesAvailability).toHaveBeenCalledWith(500);
+      expect(validatePaymentTypeAvailability).toHaveBeenCalledWith(
+        500,
+        allPaymentTypesAvailable.INSTALLMENT_PAYMENT,
+        { webShopId: 'webShopId123' },
+        expect.any(Array),
+      );
+    });
+
+    it('should validate installment even if bill payment is available', async () => {
+      const paymentTypes = {
+        INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: true, available: true, minAmount: 50, maxAmount: 5000 },
+      };
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue({
+        totalPrice: { currencyCode: 'EUR', centAmount: 10000, fractionDigits: 2 },
+      });
+      // @ts-expect-error mocked
+      (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(paymentTypes);
+      (validatePaymentTypeAvailability as jest.Mock).mockImplementationOnce(
+        (amount, availability, ecConfig, errors) => {
+          // @ts-expect-error mocked
+          errors.push(new Errorx({ httpErrorStatus: 400, code: 'InvalidAmount', message: 'Invalid amount' }));
+        },
+      );
+
+      await expect(handlePaymentMethod('cart123')).rejects.toThrow(MultiErrorx);
+      expect(validatePaymentTypeAvailability).toHaveBeenCalledWith(
+        100,
+        paymentTypes.INSTALLMENT_PAYMENT,
+        { webShopId: 'webShopId123' },
+        expect.any(Array),
+      );
+    });
+
+    it('should not fetch the webshop info if the address or currency is invalid', async () => {
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue({
+        totalPrice: { currencyCode: 'USD', centAmount: 50000, fractionDigits: 2 },
+      });
+      (validateCurrency as jest.Mock).mockImplementationOnce((currencyCode, ecConfig, errors) => {
+        // @ts-expect-error mocked
+        errors.push(new Errorx({ httpErrorStatus: 400, code: 'InvalidCurrency', message: 'Invalid currency' }));
+      });
+
+      await expect(handlePaymentMethod('cart123')).rejects.toThrow(MultiErrorx);
+      expect(getPaymentTypesAvailability).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow an EasyCreditUnavailable error', async () => {
+      const error = new Errorx({ httpErrorStatus: 503, code: 'EasyCreditUnavailable', message: 'Unavailable' });
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue({
+        totalPrice: { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 },
+      });
+      // @ts-expect-error mocked
+      (getPaymentTypesAvailability as jest.Mock).mockRejectedValueOnce(error);
+
+      await expect(handlePaymentMethod('cart123')).rejects.toBe(error);
     });
 
     it('should throw a MultiErrorx if cart validation fails', async () => {
@@ -168,6 +244,10 @@ describe('Payment handlers', () => {
   });
 
   describe('handleCreatePayment', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
     it('should successfully create a payment and freeze the cart', async () => {
       const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
       const mockPayment = { id: 'payment123' };
@@ -276,6 +356,84 @@ describe('Payment handlers', () => {
         ),
       ).rejects.toThrow('Payment creation failed');
       expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
+    });
+
+    it('should validate the installment payment type and pass it to the easyCredit transaction', async () => {
+      const mockCart = {
+        cartState: 'Active',
+        totalPrice: { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 },
+      };
+      const mockPayment = { id: 'payment123' };
+      const mockECPayment = { transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } } };
+      const redirectLinks = {
+        urlSuccess: 'https://example.com/success',
+        urlCancellation: 'https://example.com/cancel',
+        urlDenial: 'https://example.com/cancel',
+      };
+      const customerRelationship: ECTransactionCustomerRelationship = {
+        customerStatus: 'NEW_CUSTOMER',
+        customerSince: '2024-01-01',
+        numberOfOrders: 0,
+      };
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
+      (createPayment as jest.Mock).mockResolvedValue(mockPayment);
+      // @ts-expect-error mocked
+      (updateCart as jest.Mock).mockResolvedValue(mockCart);
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        createPayment: jest.fn().mockResolvedValue(mockECPayment),
+      });
+      (readConfiguration as jest.Mock).mockReturnValue({ easyCredit: { webShopId: 'webShopId123' } });
+
+      await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+
+      expect(validatePaymentTypeAvailability).toHaveBeenCalledWith(
+        500,
+        allPaymentTypesAvailable.INSTALLMENT_PAYMENT,
+        { webShopId: 'webShopId123' },
+        expect.any(Array),
+      );
+      expect(mapCTCartToECPayment).toHaveBeenCalledWith(
+        mockCart,
+        mockPayment,
+        redirectLinks,
+        customerRelationship,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+      );
+    });
+
+    it('should not create a payment if the payment type is not available', async () => {
+      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 50000 } };
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      // @ts-expect-error mocked
+      (updateCart as jest.Mock).mockResolvedValue(mockCart);
+      (validatePaymentTypeAvailability as jest.Mock).mockImplementationOnce(
+        (amount, availability, ecConfig, errors) => {
+          // @ts-expect-error mocked
+          errors.push(new Errorx({ httpErrorStatus: 400, code: 'PaymentTypeNotAvailable', message: 'Not available' }));
+        },
+      );
+
+      await expect(
+        handleCreatePayment(
+          'cart123',
+          {
+            urlSuccess: 'https://example.com/success',
+            urlCancellation: 'https://example.com/cancel',
+            urlDenial: 'https://example.com/cancel',
+          },
+          {
+            customerStatus: 'NEW_CUSTOMER',
+            customerSince: '2024-01-01',
+            numberOfOrders: 0,
+          },
+        ),
+      ).rejects.toThrow(MultiErrorx);
+      expect(createPayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalledWith(mockCart, [{ action: 'freezeCart' }]);
     });
 
     it('should log and rethrow errors', async () => {

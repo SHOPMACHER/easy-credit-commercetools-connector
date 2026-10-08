@@ -34,7 +34,7 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ## Product details
 
-- **Purchase amounts**: 200 euros to 10,000 euros
+- **Purchase amounts**: Defined by easyCredit per webshop. The connector reads them from easyCredit, they are not configured in the connector.
 
 - **Terms**: 2 to 60 months freely selectable
 

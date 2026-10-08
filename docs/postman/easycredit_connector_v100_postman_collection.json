@@ -74,6 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
+						"description": "Checkout supports installment only. BILL_PAYMENT availability is informational; the success example with BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and an active bill configuration from easyCredit.",
 						"method": "GET",
 						"header": [
 							{
@@ -94,7 +95,78 @@
 							]
 						}
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Installment available",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+						},
+						{
+							"name": "easyCredit unavailable",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									]
+								}
+							},
+							"status": "Service Unavailable",
+							"code": 503,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Config",
@@ -186,6 +258,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
+						"description": "Creates installment payments. Optional paymentType defaults to INSTALLMENT_PAYMENT. Explicit BILL_PAYMENT is rejected with 400 PaymentTypeNotAvailable before cart or payment changes; bill checkout remains deferred to TEBA-248/249. See docs/CreatePayment.md for the request body.",
 						"method": "POST",
 						"header": [
 							{

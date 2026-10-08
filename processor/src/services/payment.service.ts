@@ -9,21 +9,23 @@ import {
   ECRefundPayload,
   ECTransactionCustomerRelationship,
   ECTransactionDecision,
+  ECTransactionPaymentType,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
   ECTransactionStatus,
   GetPaymentMethodResponse,
   GetPaymentResponse,
   PaymentResponse,
+  PaymentTypesAvailability,
 } from '../types/payment.types';
 import { log } from '../libs/logger';
 import {
   validateAddresses,
-  validateCartAmount,
   validateCurrency,
   validateInitialOrPendingTransaction,
   validateInitialRefundTransaction,
   validatePayment,
   validatePaymentAmount,
+  validatePaymentTypeAvailability,
   validatePendingTransaction,
   validateSuccessTransaction,
   validateTransaction,
@@ -40,39 +42,47 @@ import {
 } from '../utils/map.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { getTransactionCustomTypeKey } from '../utils/constant.utils';
+import { getPaymentTypesAvailability } from './webshop.service';
 
-// Helper to handle validation and return errors
-const validateCart = (cart: Cart): Errorx[] => {
-  const config = readConfiguration().easyCredit;
+// The enabler only renders installment, so it alone decides whether easyCredit can be offered.
+const CHECKOUT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
+
+// Throws a MultiErrorx if easyCredit cannot be offered for the cart
+const validateCart = async (cart: Cart): Promise<PaymentTypesAvailability> => {
+  const ecConfig = { webShopId: readConfiguration().easyCredit.webShopId };
   const errors: Errorx[] = [];
 
   const billingAddress = cart.billingAddress;
   const shippingAddress = getShippingAddress(cart);
 
-  validateAddresses(billingAddress, shippingAddress, { webShopId: config.webShopId }, errors);
-  validateCurrency(cart.totalPrice.currencyCode, { webShopId: config.webShopId }, errors);
-  validateCartAmount(
-    cart.totalPrice.centAmount,
-    cart.totalPrice.fractionDigits,
-    { webShopId: config.webShopId },
-    errors,
-  );
+  validateAddresses(billingAddress, shippingAddress, ecConfig, errors);
+  validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
 
-  return errors;
+  if (errors.length > 0) {
+    throw new MultiErrorx(errors);
+  }
+
+  const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
+  const paymentTypes = await getPaymentTypesAvailability(amount);
+
+  validatePaymentTypeAvailability(amount, paymentTypes[CHECKOUT_PAYMENT_TYPE], ecConfig, errors);
+
+  if (errors.length > 0) {
+    throw new MultiErrorx(errors);
+  }
+
+  return paymentTypes;
 };
 
 export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
-    const errors = validateCart(cart);
-
-    if (errors.length > 0) {
-      throw new MultiErrorx(errors);
-    }
+    const paymentTypes = await validateCart(cart);
 
     return {
       webShopId: readConfiguration().easyCredit.webShopId,
       amount: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
+      paymentTypes,
     };
   } catch (error: unknown) {
     log.error('Error in getting EasyCredit Payment Method', error);
@@ -85,15 +95,22 @@ export const handleCreatePayment = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
+  paymentType: ECTransactionPaymentType = CHECKOUT_PAYMENT_TYPE,
 ): Promise<PaymentResponse> => {
+  // Bill checkout is deferred to TEBA-248/249. Reject it before any cart or payment side effects.
+  if (paymentType !== CHECKOUT_PAYMENT_TYPE) {
+    throw new Errorx({
+      code: 'PaymentTypeNotAvailable',
+      httpErrorStatus: 400,
+      message: 'Die gewählte easyCredit-Zahlungsart wird von diesem Checkout noch nicht unterstützt.',
+      fields: { webShopId: readConfiguration().easyCredit.webShopId },
+    });
+  }
+
   let cart: Cart | null = null;
   try {
     cart = await getCartById(cartId);
-    const errors = validateCart(cart);
-
-    if (errors.length > 0) {
-      throw new MultiErrorx(errors);
-    }
+    await validateCart(cart);
 
     if (cart.cartState !== CTCartState.Frozen) {
       cart = await updateCart(cart, [{ action: 'freezeCart' }]);
@@ -103,7 +120,7 @@ export const handleCreatePayment = async (
     cart = await updateCart(cart, [{ action: 'addPayment', payment: { typeId: 'payment', id: ctPayment.id } }]);
 
     const ecPayment = await initEasyCreditClient().createPayment(
-      await mapCTCartToECPayment(cart, ctPayment, redirectLinks, customerRelationship),
+      await mapCTCartToECPayment(cart, ctPayment, redirectLinks, customerRelationship, CHECKOUT_PAYMENT_TYPE),
     );
 
     const transactionState =

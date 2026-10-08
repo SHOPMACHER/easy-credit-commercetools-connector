@@ -9,14 +9,17 @@ To merge your changes, your commits must be [signed](https://docs.github.com/en/
 
 Minimum requirements are:
 
-* **Node.js** version 18
+* **Node.js** version 20 (shared version in the repository root `.nvmrc`)
 * **Npm** npm v10.7.0
 * **Bash** shell
 * **Signed** git commits
 
-You can install all dependencies using `npm` with following command:
+Run `nvm use` from the repository root, then install dependencies in each application:
 
 ```CMD
+cd processor
+npm install
+cd ../assets
 npm install
 ```
 
