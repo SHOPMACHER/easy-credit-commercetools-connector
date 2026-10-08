@@ -51,6 +51,7 @@ export const mapCTCartToECPayment = async (
   payment: Payment,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
 ): Promise<ECTransaction> => {
   const connectorUrl = await getCustomObjectByKey(EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL);
 
@@ -91,7 +92,7 @@ export const mapCTCartToECPayment = async (
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
-    paymentType: ECTransactionPaymentType.ECTransactionInstallmentPayment,
+    paymentType,
     paymentSwitchPossible: false,
   };
 };

@@ -124,6 +124,26 @@ export enum ECTransactionPaymentType {
   ECTransactionBillPayment = 'BILL_PAYMENT',
 }
 
+export type ECWebshopInfo = {
+  availability: boolean;
+  installmentPaymentActive: boolean;
+  minInstallmentValue: number;
+  maxInstallmentValue: number;
+  billPaymentActive?: boolean;
+  minBillingValue?: number;
+  maxBillingValue?: number;
+};
+
+export type PaymentTypeAvailability = {
+  // Activated for the webshop regardless of the cart amount; not exposed by the API.
+  enabled: boolean;
+  available: boolean;
+  minAmount?: number;
+  maxAmount?: number;
+};
+
+export type PaymentTypesAvailability = Record<ECTransactionPaymentType, PaymentTypeAvailability>;
+
 type ECTransactionConsent = {
   sepaMandate: boolean;
   advertisement: boolean;

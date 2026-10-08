@@ -304,6 +304,69 @@ describe('initEasyCreditClient', () => {
     });
   });
 
+  describe('getWebshopInfo', () => {
+    it('should fetch the webshop info with a timeout', async () => {
+      const mockResponse = { billPaymentActive: true, minBillingValue: 50, maxBillingValue: 5000 };
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        // @ts-expect-error mocked
+        json: jest.fn().mockResolvedValueOnce(mockResponse),
+      });
+
+      const result = await easyCreditClient.getWebshopInfo();
+
+      expect(fetch).toHaveBeenCalledWith(`${EASYCREDIT_BASE_API_URL}/payment/v3/webshop/mock-webshop-id`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+        },
+        signal: expect.any(AbortSignal),
+      });
+      expect(timeoutSpy).toHaveBeenCalledWith(10000);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should throw an Errorx if the response is not ok', async () => {
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        // @ts-expect-error mocked
+        json: jest.fn().mockResolvedValueOnce({ title: 'Not Found' }),
+      });
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toThrow(Errorx);
+    });
+
+    it('should keep the status code if the error body is not JSON', async () => {
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        // @ts-expect-error mocked
+        json: jest.fn().mockRejectedValueOnce(new SyntaxError('Unexpected token <')),
+      });
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+        code: 'Unknown Error',
+        httpErrorStatus: 401,
+      });
+    });
+
+    it.each([401, 403, 404])('should keep status %s if the error body is null', async (status) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('null', { status }));
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+        code: 'Unknown Error',
+        httpErrorStatus: status,
+      });
+    });
+  });
+
   describe('getMerchantTransaction', () => {
     it('should make a GET request and return the transaction details response', async () => {
       const transactionId = '12345';
