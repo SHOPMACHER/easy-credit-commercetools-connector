@@ -365,6 +365,41 @@ describe('initEasyCreditClient', () => {
         httpErrorStatus: status,
       });
     });
+
+    it.each([401, false, { message: 'Unauthorized' }, ['Unauthorized']])(
+      'should keep an authentication error status when its title is %j',
+      async (title) => {
+        jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ title }), { status: 401 }));
+
+        await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+          code: 'Unknown Error',
+          message: 'An error occurred',
+          httpErrorStatus: 401,
+        });
+      },
+    );
+  });
+
+  describe('error responses of other endpoints', () => {
+    it('should keep the upstream status of a non-JSON health check error', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('<html>Bad Gateway</html>', { status: 502 }));
+
+      await expect(easyCreditClient.integrationCheck({ message: 'test' })).rejects.toMatchObject({
+        code: 'Unknown Error',
+        message: 'An error occurred',
+        httpErrorStatus: 502,
+      });
+    });
+
+    it.each(['', '   '])('should fall back to a generic code if the error title is %j', async (title) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ title }), { status: 400 }));
+
+      await expect(easyCreditClient.getPayment('tech123')).rejects.toMatchObject({
+        code: 'Unknown Error',
+        message: 'An error occurred',
+        httpErrorStatus: 400,
+      });
+    });
   });
 
   describe('getMerchantTransaction', () => {

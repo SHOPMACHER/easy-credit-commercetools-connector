@@ -289,6 +289,7 @@ describe('Payment handlers', () => {
 
     it('should handle failure of decisionOutcome and unfreeze the cart', async () => {
       const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const frozenCart = { ...mockCart, cartState: 'Frozen' };
       const mockPayment = { id: 'payment123' };
       const mockECPayment = {
         transactionInformation: { decision: { decisionOutcome: 'NEGATIVE', decisionOutcomeText: 'NEGATIVE' } },
@@ -299,7 +300,7 @@ describe('Payment handlers', () => {
       // @ts-expect-error mocked
       (createPayment as jest.Mock).mockResolvedValue(mockPayment);
       // @ts-expect-error mocked
-      (updateCart as jest.Mock).mockResolvedValue(mockCart);
+      (updateCart as jest.Mock).mockResolvedValue(frozenCart);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
@@ -328,15 +329,16 @@ describe('Payment handlers', () => {
           }),
         ]),
       );
-      expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
+      expect(updateCart).toHaveBeenCalledWith(frozenCart, [{ action: 'unfreezeCart' }]);
     });
 
     it('should unfreeze the cart if payment creation fails', async () => {
       const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const frozenCart = { ...mockCart, cartState: 'Frozen' };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       // @ts-expect-error mocked
-      (updateCart as jest.Mock).mockResolvedValue(mockCart);
+      (updateCart as jest.Mock).mockResolvedValue(frozenCart);
       // @ts-expect-error mocked
       (createPayment as jest.Mock).mockRejectedValue(new Error('Payment creation failed'));
 
@@ -355,7 +357,33 @@ describe('Payment handlers', () => {
           },
         ),
       ).rejects.toThrow('Payment creation failed');
-      expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'unfreezeCart' }]);
+      expect(updateCart).toHaveBeenCalledWith(frozenCart, [{ action: 'unfreezeCart' }]);
+    });
+
+    it('should keep the original error if unfreezing the cart fails', async () => {
+      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      (updateCart as jest.Mock)
+        // @ts-expect-error mocked
+        .mockResolvedValueOnce({ ...mockCart, cartState: 'Frozen' })
+        // @ts-expect-error mocked
+        .mockRejectedValueOnce(new Error('Unfreeze failed'));
+      // @ts-expect-error mocked
+      (createPayment as jest.Mock).mockRejectedValue(new Error('Payment creation failed'));
+
+      await expect(
+        handleCreatePayment(
+          'cart123',
+          {
+            urlSuccess: 'https://example.com/success',
+            urlCancellation: 'https://example.com/cancel',
+            urlDenial: 'https://example.com/cancel',
+          },
+          { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+        ),
+      ).rejects.toThrow('Payment creation failed');
+      expect(updateCart).toHaveBeenLastCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
     });
 
     it('should validate the installment payment type and pass it to the easyCredit transaction', async () => {

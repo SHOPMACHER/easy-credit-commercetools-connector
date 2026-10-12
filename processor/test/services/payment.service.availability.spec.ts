@@ -50,6 +50,21 @@ const getErrorCodes = async (promise: Promise<unknown>) => {
   throw new Error(`Expected an Errorx or MultiErrorx, got ${String(error)}`);
 };
 
+const buildApp = async () => {
+  const app = fastify();
+  app.setErrorHandler(errorHandler);
+  const authHook = { authenticate: () => async () => {} };
+  await app.register(paymentsRoute, {
+    prefix: '/payments',
+    sessionHeaderAuthHook: authHook,
+    oauth2AuthHook: authHook,
+  } as unknown as Parameters<typeof paymentsRoute>[1]);
+
+  return app;
+};
+
+const unauthorized = () => new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: 401 });
+
 describe('payment type availability', () => {
   let getWebshopInfoMock: jest.Mock<() => Promise<unknown>>;
   let createECPaymentMock: jest.Mock;
@@ -97,7 +112,7 @@ describe('payment type availability', () => {
     });
 
     it.each([
-      ['the webshop endpoint fails', () => getWebshopInfoMock.mockRejectedValue(new Error('Service unavailable'))],
+      ['the webshop endpoint rejects the credentials', () => getWebshopInfoMock.mockRejectedValue(unauthorized())],
       ['the webshop endpoint returns null', () => getWebshopInfoMock.mockResolvedValue(null)],
     ])('should return EasyCreditUnavailable if %s', async (_, setup) => {
       setup();
@@ -110,7 +125,7 @@ describe('payment type availability', () => {
     });
 
     it('should return the webShopId with EasyCreditUnavailable so the enabler can render the alert', async () => {
-      getWebshopInfoMock.mockRejectedValue(new Error('Service unavailable'));
+      getWebshopInfoMock.mockRejectedValue(unauthorized());
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
 
@@ -118,6 +133,54 @@ describe('payment type availability', () => {
         code: 'EasyCreditUnavailable',
         fields: { webShopId: '1.de.123123' },
       });
+    });
+
+    it('should send Retry-After with EasyCreditUnavailable', async () => {
+      getWebshopInfoMock.mockRejectedValue(unauthorized());
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
+      const app = await buildApp();
+
+      try {
+        const response = await app.inject({ method: 'GET', url: '/payments/payment-method/cart123' });
+
+        expect(response.statusCode).toBe(503);
+        expect(response.headers['retry-after']).toBe('30');
+      } finally {
+        await app.close();
+      }
+    });
+
+    it.each([
+      ['a network error', () => new TypeError('fetch failed')],
+      ['a 500 response', () => new Errorx({ code: 'Server Error', message: 'Server Error', httpErrorStatus: 500 })],
+    ])('should offer installment with the default limits on %s', async (_, error) => {
+      getWebshopInfoMock.mockRejectedValue(error());
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
+
+      const result = await handlePaymentMethod('cart123');
+
+      expect(result.paymentTypes).toEqual({
+        INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: false, available: false },
+      });
+    });
+
+    it('should keep installment available if easyCredit sends null bill payment fields', async () => {
+      getWebshopInfoMock.mockResolvedValue({
+        ...webshopInfo,
+        billPaymentActive: null,
+        minBillingValue: null,
+        maxBillingValue: null,
+      });
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
+
+      const result = await handlePaymentMethod('cart123');
+
+      expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
     });
   });
 
@@ -127,6 +190,38 @@ describe('payment type availability', () => {
       urlCancellation: 'https://example.com',
       urlDenial: 'https://example.com',
     };
+
+    it.each(['Active', 'Frozen'] as const)(
+      'should leave a previously %s cart untouched when webshop validation fails',
+      async (cartState) => {
+        jest.mocked(getCartById).mockResolvedValue({ ...mockCart(500), cartState });
+        getWebshopInfoMock.mockRejectedValue(unauthorized());
+        const app = await buildApp();
+
+        try {
+          const response = await app.inject({
+            method: 'POST',
+            url: '/payments',
+            payload: {
+              cartId: 'cart123',
+              redirectLinks,
+              customerRelationship: { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0 },
+            },
+          });
+
+          expect(response.statusCode).toBe(503);
+          expect(response.headers['retry-after']).toBe('30');
+          expect(response.json().errors).toEqual([
+            expect.objectContaining({ code: 'EasyCreditUnavailable', fields: { webShopId: '1.de.123123' } }),
+          ]);
+          expect(updateCart).not.toHaveBeenCalled();
+          expect(createPayment).not.toHaveBeenCalled();
+          expect(createECPaymentMock).not.toHaveBeenCalled();
+        } finally {
+          await app.close();
+        }
+      },
+    );
 
     it('should reject an explicit BILL_PAYMENT over HTTP before touching the cart or creating a payment', async () => {
       // A cart that is valid for both payment types must still not allow bill creation.
@@ -147,14 +242,7 @@ describe('payment type availability', () => {
         transactionInformation: { status: 'OPEN', decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: '' } },
       }));
 
-      const app = fastify();
-      app.setErrorHandler(errorHandler);
-      const authHook = { authenticate: () => async () => {} };
-      await app.register(paymentsRoute, {
-        prefix: '/payments',
-        sessionHeaderAuthHook: authHook,
-        oauth2AuthHook: authHook,
-      } as unknown as Parameters<typeof paymentsRoute>[1]);
+      const app = await buildApp();
 
       try {
         const response = await app.inject({
@@ -232,6 +320,8 @@ describe('payment type availability', () => {
           ),
         ),
       ).resolves.toEqual([{ code: 'InvalidAmount', httpErrorStatus: 400 }]);
+      // The cart was never frozen, so no unfreeze write either.
+      expect(updateCart).not.toHaveBeenCalled();
       expect(createPayment).not.toHaveBeenCalled();
       expect(createECPaymentMock).not.toHaveBeenCalled();
     });

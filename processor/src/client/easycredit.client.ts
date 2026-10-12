@@ -64,9 +64,11 @@ class EasyCreditApiClient implements EasyCreditClient {
       // Gateways can answer with null or a non-JSON body, which must not hide the status code.
       const errorData: Partial<ECTransactionError> = (await response.json().catch(() => ({}))) ?? {};
       log.error('EasyCredit API error', errorData);
+      // An empty title must still produce a usable code and message.
+      const title = typeof errorData.title === 'string' ? errorData.title.trim() : undefined;
       throw new Errorx({
-        code: errorData.title ?? 'Unknown Error',
-        message: errorData.title ?? 'An error occurred',
+        code: title?.length ? title : 'Unknown Error',
+        message: title?.length ? title : 'An error occurred',
         httpErrorStatus: response.status,
         fields: errorData.violations,
       });

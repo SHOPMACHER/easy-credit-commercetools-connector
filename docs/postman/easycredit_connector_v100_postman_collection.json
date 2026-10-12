@@ -74,7 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
-						"description": "Checkout supports installment only. BILL_PAYMENT availability is informational; the success example with BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and an active bill configuration from easyCredit.",
+						"description": "Checkout supports installment only. BILL_PAYMENT availability is informational; the success example with BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data.",
 						"method": "GET",
 						"header": [
 							{
@@ -161,6 +161,10 @@
 								{
 									"key": "Content-Type",
 									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Retry-After",
+									"value": "30"
 								}
 							],
 							"cookie": [],
@@ -272,6 +276,15 @@
 								"type": "text"
 							}
 						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cartId\": \"{{cart_id}}\",\n    \"paymentType\": \"INSTALLMENT_PAYMENT\",\n    \"redirectLinks\": {\n        \"urlSuccess\": \"https://example.com/success\",\n        \"urlCancellation\": \"https://example.com/cancellation\",\n        \"urlDenial\": \"https://example.com/denial\"\n    },\n    \"customerRelationship\": {\n        \"customerStatus\": \"NEW_CUSTOMER\",\n        \"customerSince\": \"2024-01-01\",\n        \"numberOfOrders\": 0\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
 							"raw": "{{connector_url}}/payments",
 							"host": [

@@ -108,6 +108,7 @@ export const handleCreatePayment = async (
   }
 
   let cart: Cart | null = null;
+  let shouldUnfreezeCart = false;
   try {
     cart = await getCartById(cartId);
     await validateCart(cart);
@@ -115,6 +116,7 @@ export const handleCreatePayment = async (
     if (cart.cartState !== CTCartState.Frozen) {
       cart = await updateCart(cart, [{ action: 'freezeCart' }]);
     }
+    shouldUnfreezeCart = true;
 
     const ctPayment = await createPayment(mapCTCartToCTPayment(cart));
     cart = await updateCart(cart, [{ action: 'addPayment', payment: { typeId: 'payment', id: ctPayment.id } }]);
@@ -164,11 +166,14 @@ export const handleCreatePayment = async (
   } catch (error: unknown) {
     log.error('Error in handleCreatePayment', error);
 
-    if (!cart) {
-      cart = await getCartById(cartId);
+    // Validation failures must leave even an already frozen cart untouched.
+    if (shouldUnfreezeCart && cart?.cartState === CTCartState.Frozen) {
+      try {
+        await updateCart(cart, [{ action: 'unfreezeCart' }]);
+      } catch (unfreezeError: unknown) {
+        log.error('Failed to unfreeze the cart after a failed payment creation', unfreezeError);
+      }
     }
-
-    await updateCart(cart, [{ action: 'unfreezeCart' }]);
 
     throw error;
   }

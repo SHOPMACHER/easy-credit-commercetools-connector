@@ -34,9 +34,9 @@ To use this functionality, the following conditions must be met:
 | Payment type | Offered if |
 | --- | --- |
 | `INSTALLMENT_PAYMENT` | `availability` and `installmentPaymentActive` are `true`, and `minInstallmentValue <= amount <= maxInstallmentValue` |
-| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`, `availability` and `billPaymentActive` are `true`, `minBillingValue <= amount <= maxBillingValue`, and the webshop configuration is not stale (see below) |
+| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`, `availability` and `billPaymentActive` are `true`, `minBillingValue <= amount <= maxBillingValue`, and the webshop configuration is a fresh easyCredit response (see below) |
 
-The limits are defined by easyCredit per webshop in EUR and cannot be configured in the connector.
+The limits are defined by easyCredit per webshop in EUR and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data (see below).
 
 <br />
 
@@ -45,10 +45,17 @@ The limits are defined by easyCredit per webshop in EUR and cannot be configured
 - The response, retry window and in-flight request are isolated per `webShopId`. The response is cached for `WEBSHOP_CACHE_TTL` seconds (default 300, max 3600).
 - `installmentPaymentActive`, `minInstallmentValue` and `maxInstallmentValue` must be present with the correct type (boolean or number). Limits must not be negative and a minimum must not exceed its maximum. Otherwise the response is treated as invalid.
 - If `availability` is missing, the webshop is treated as available and a warning is logged.
-- The bill payment fields are optional; if any of them is missing, bill payment is not offered.
-- If a refresh fails temporarily (network error, timeout after 10 seconds, `5xx`, `408` or `429`), the connector keeps using the last valid response for at most 1 hour after it expired and retries after 30 seconds. While this stale response is used, only installment payment can be offered; bill payment is not offered.
-- If easyCredit answers with any other `4xx` (for example revoked credentials) or an invalid response, the last valid response is discarded.
-- Without a usable response, the API returns `503 EasyCreditUnavailable` (fail closed) and retries easyCredit after 30 seconds at the earliest, so an outage does not slow down every checkout.
+- The bill payment fields `billPaymentActive`, `minBillingValue` and `maxBillingValue` are validated separately. If any of them is missing, `null` or invalid (wrong type, negative, minimum above maximum), bill payment is not offered. Installment is not affected.
+- If a request fails temporarily (network error, timeout after 10 seconds, `5xx`, `408` or `429`):
+  - with a valid response that expired less than 1 hour ago, the connector keeps using it,
+  - otherwise installment is offered with the default limits 200 € to 10.000 €, unless a previous response disabled installment/the webshop or a previous request failed permanently (see below).
+
+  In both cases bill payment is not offered.
+- If easyCredit answers with any other `4xx` (for example revoked credentials) or an invalid installment configuration, the last valid response is discarded and the API returns `503 EasyCreditUnavailable` with a `Retry-After` header.
+- A known deactivation or permanent failure blocks default installment fallback until a valid webshop response replaces it. This block is kept per `webShopId` in memory even after cached limits expire and across later network errors. Once disabled data exceeds the 1-hour stale limit, the connector returns `503 EasyCreditUnavailable` instead of enabling installment with defaults. A fresh response that still reports deactivation returns `400 PaymentTypeNotAvailable` as usual.
+- A failed request normally sets a 30-second window before the next background retry; the window ends sooner if the stale-data deadline is reached. Checkouts in the meantime are answered from the last result and do not wait for easyCredit.
+
+See the [TEBA-254 release note](releases/TEBA-254.md) for compatibility changes and the outstanding production verification.
 
 <br />
 
@@ -98,16 +105,16 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 | `webShopId` | easyCredit webshop ID from the connector configuration. |
 | `amount` | Cart total in EUR. |
 | `paymentTypes.<type>.available` | Whether the payment type can be offered for this cart. |
-| `paymentTypes.<type>.minAmount` / `maxAmount` | Limits of the payment type in EUR as returned by easyCredit. Not set for `BILL_PAYMENT` if easyCredit does not return them. |
+| `paymentTypes.<type>.minAmount` / `maxAmount` | Effective limits in EUR from fresh or usable stale webshop data, or the installment defaults. Omitted for `BILL_PAYMENT` if any bill configuration field is absent or invalid, including `null`. |
 
 #### Error Responses
 
 | Status | Code | Reason |
 | --- | --- | --- |
 | 400 | `InvalidBillingAddress`, `InvalidShippingAddress`, `AddressesUnmatched`, `InvalidCurrency` | The cart addresses or currency are invalid. |
-| 400 | `InvalidAmount` | The cart total is outside the installment limits. The message contains the limits returned by easyCredit. |
+| 400 | `InvalidAmount` | The cart total is outside the effective installment limits. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
 | 400 | `PaymentTypeNotAvailable` | easyCredit reports `availability: false` or `installmentPaymentActive: false` for the webshop. |
-| 503 | `EasyCreditUnavailable` | No usable webshop configuration, see [Webshop configuration](#webshop-configuration). `fields.webShopId` is set so the checkout component can show the error. |
+| 503 | `EasyCreditUnavailable` | easyCredit rejected the request (`4xx` other than `408`/`429`), sent an invalid installment configuration, or a previous deactivation/permanent failure still blocks fallback without usable cached data; see [Webshop configuration](#webshop-configuration). `fields.webShopId` is set so the checkout component can show the error. The `Retry-After` header contains the seconds until the next retry. |
 
 The cart amount is only checked if the addresses and the currency are valid, so `InvalidAmount` is never returned together with an address or currency error.
 
