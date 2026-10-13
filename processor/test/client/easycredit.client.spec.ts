@@ -181,6 +181,121 @@ describe('initEasyCreditClient', () => {
     });
   });
 
+  describe('authorizePayment errors and signal', () => {
+    it('should resolve true only on 202', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
+
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).resolves.toBe(true);
+    });
+
+    it('should throw an Errorx keeping status and title on a 400', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ title: 'Transaction not authorizable', violations: [{ field: 'a' }] }), {
+          status: 400,
+        }),
+      );
+
+      const promise = easyCreditClient.authorizePayment('tech123', 'pay1');
+      await expect(promise).rejects.toBeInstanceOf(Errorx);
+      jest
+        .mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ title: 'Transaction not authorizable' }), { status: 400 }),
+        );
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).rejects.toMatchObject({
+        code: 'Transaction not authorizable',
+        message: 'Transaction not authorizable',
+        httpErrorStatus: 400,
+      });
+    });
+
+    it.each([
+      ['empty title', { title: '' }],
+      ['missing title', {}],
+      ['whitespace title', { title: '  ' }],
+    ])('should use AuthorizationFailed on a 4xx with %s', async (_name, body) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 409 }));
+
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).rejects.toMatchObject({
+        code: 'AuthorizationFailed',
+        message: 'Authorization failed',
+        httpErrorStatus: 409,
+      });
+    });
+
+    it('should use AuthorizationFailed on a non-JSON 4xx body', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('<html></html>', { status: 403 }));
+
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).rejects.toMatchObject({
+        code: 'AuthorizationFailed',
+        httpErrorStatus: 403,
+      });
+    });
+
+    it('should keep the status on a 5xx', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ title: 'Boom' }), { status: 503 }));
+
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).rejects.toMatchObject({
+        code: 'Boom',
+        httpErrorStatus: 503,
+      });
+    });
+
+    it.each([200, 204])(
+      'should map a %s response to AuthorizationFailed with 502, never a 2xx error',
+      async (status) => {
+        jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status }));
+
+        const promise = easyCreditClient.authorizePayment('tech123', 'pay1');
+        await expect(promise).rejects.toBeInstanceOf(Errorx);
+        await expect(promise).rejects.toMatchObject({ code: 'AuthorizationFailed', httpErrorStatus: 502 });
+      },
+    );
+
+    it('should map a network error to AuthorizationFailed with 502', async () => {
+      jest.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));
+
+      const promise = easyCreditClient.authorizePayment('tech123', 'pay1');
+      await expect(promise).rejects.toBeInstanceOf(Errorx);
+      await expect(promise).rejects.toMatchObject({ code: 'AuthorizationFailed', httpErrorStatus: 502 });
+    });
+
+    it.each(['AbortError', 'TimeoutError'])('should map a %s to AuthorizationFailed with 504', async (name) => {
+      jest.mocked(fetch).mockRejectedValueOnce(new DOMException('aborted', name));
+
+      await expect(easyCreditClient.authorizePayment('tech123', 'pay1')).rejects.toMatchObject({
+        code: 'AuthorizationFailed',
+        httpErrorStatus: 504,
+      });
+    });
+
+    it('should forward the signal to fetch', async () => {
+      const signal = new AbortController().signal;
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
+
+      await easyCreditClient.authorizePayment('tech123', 'pay1', signal);
+
+      expect(fetch).toHaveBeenCalledWith(
+        `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/tech123/authorization`,
+        expect.objectContaining({ signal }),
+      );
+    });
+  });
+
+  describe('getPayment signal', () => {
+    it('should forward the signal to fetch', async () => {
+      const signal = new AbortController().signal;
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+
+      await easyCreditClient.getPayment('tech123', signal);
+
+      expect(fetch).toHaveBeenCalledWith(
+        `${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/tech123`,
+        expect.objectContaining({ method: 'GET', signal }),
+      );
+    });
+  });
+
   describe('getPayment', () => {
     it('should make a GET request and return the payment response', async () => {
       const mockResponse = { paymentStatus: 'SUCCESS' };

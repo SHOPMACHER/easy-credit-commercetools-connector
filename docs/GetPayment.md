@@ -6,7 +6,7 @@
 * [Error Handling](#error-handling)
 
 ## Overview
-This API is designed to fetch payment details from CommerceTools using the provided `paymentId`. It also retrieves additional payment data from Easy Credit using the `interactionId` from the payment's transaction. The response includes detailed information about the payment amount, web shop ID, status, and decision details, which are gathered from both CommerceTools and Easy Credit systems.
+This API is designed to fetch payment details from CommerceTools using the provided `paymentId`. It also retrieves additional payment data from Easy Credit using the `interactionId` from the payment's transaction. The response includes detailed information about the payment type, amount, web shop ID, status, and decision details, which are gathered from both CommerceTools and Easy Credit systems.
 
 <br />
 
@@ -51,13 +51,20 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 ### Response Format
 
 #### Success Response (200):
-On successful retrieval of the payment information, the API returns a `200 OK` response along with the following structure:
+On successful retrieval of the payment information, the API returns a `200 OK` response.
+
+`paymentType` is `INSTALLMENT_PAYMENT` or `BILL_PAYMENT`. It is read from `paymentMethodInfo.method` of the CT payment; payments with the legacy method `easycredit` are reported as `INSTALLMENT_PAYMENT`.
+
+The installment specific `decision` fields `interest`, `totalValue`, `numberOfInstallments`, `installment`, `lastInstallment`, `mtan` and `bankAccountCheck` are optional. They are omitted if easyCredit does not send them, which is expected for `BILL_PAYMENT`. `orderValue` and `decisionOutcome` are always present.
+
+Example for an installment payment:
 
 ```json
 {
   "webShopId": "2.de.7607.2",
   "amount": 10,
   "status": "OPEN",
+  "paymentType": "INSTALLMENT_PAYMENT",
   "decision": {
     "interest": 90.93,
     "totalValue": 2705.72,
@@ -73,6 +80,21 @@ On successful retrieval of the payment information, the API returns a `200 OK` r
     "bankAccountCheck": {
       "required": false
     }
+  }
+}
+```
+
+Example for a bill payment (the installment fields are absent):
+
+```json
+{
+  "webShopId": "2.de.7607.2",
+  "amount": 150,
+  "status": "OPEN",
+  "paymentType": "BILL_PAYMENT",
+  "decision": {
+    "orderValue": 150,
+    "decisionOutcome": ""
   }
 }
 ```

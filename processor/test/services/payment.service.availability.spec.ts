@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fastify from 'fastify';
 import { Cart, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
 import { handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
@@ -7,7 +7,7 @@ import { getCartById, updateCart } from '../../src/commercetools/cart.commerceto
 import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
-import { ECTransactionCustomerRelationship } from '../../src/types/payment.types';
+import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
 import { paymentsRoute } from '../../src/routes/payment.route';
 import { errorHandler } from '../../src/libs/fastify/error-handler';
 
@@ -17,7 +17,14 @@ jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/commercetools/customObject.commercetools');
 
-const address = { country: 'DE', firstName: 'Max', lastName: 'Mustermann', streetName: 'Hauptstr.', city: 'Berlin' };
+const address = {
+  country: 'DE',
+  firstName: 'Max',
+  lastName: 'Mustermann',
+  streetName: 'Hauptstr.',
+  city: 'Berlin',
+  postalCode: '10115',
+};
 
 const webshopInfo = {
   availability: true,
@@ -62,6 +69,8 @@ const buildApp = async () => {
 
   return app;
 };
+
+const BILL = ECTransactionPaymentType.ECTransactionBillPayment;
 
 const unauthorized = () => new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: 401 });
 
@@ -223,11 +232,9 @@ describe('payment type availability', () => {
       },
     );
 
-    it('should reject an explicit BILL_PAYMENT over HTTP before touching the cart or creating a payment', async () => {
-      // A cart that is valid for both payment types must still not allow bill creation.
-      const cart = { ...mockCart(500), lineItems: [] };
+    const mockCreateFlow = (cart: Cart) => {
       jest.mocked(getCartById).mockResolvedValue(cart);
-      jest.mocked(updateCart).mockResolvedValue(cart);
+      jest.mocked(updateCart).mockResolvedValue({ ...cart, lineItems: [], cartState: 'Frozen' } as Cart);
       jest.mocked(createPayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof createPayment>>);
       jest.mocked(updatePayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof updatePayment>>);
       jest
@@ -241,7 +248,10 @@ describe('payment type availability', () => {
         redirectUrl: 'https://easycredit.example.com',
         transactionInformation: { status: 'OPEN', decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: '' } },
       }));
+    };
 
+    it('should create a BILL_PAYMENT transaction over HTTP', async () => {
+      mockCreateFlow(mockCart(500));
       const app = await buildApp();
 
       try {
@@ -256,39 +266,24 @@ describe('payment type availability', () => {
           },
         });
 
-        expect(response.statusCode).toBe(400);
-        expect(response.json().errors).toEqual([
-          expect.objectContaining({ code: 'PaymentTypeNotAvailable', fields: { webShopId: '1.de.123123' } }),
-        ]);
-        expect(getCartById).not.toHaveBeenCalled();
-        expect(updateCart).not.toHaveBeenCalled();
-        expect(createPayment).not.toHaveBeenCalled();
-        expect(getWebshopInfoMock).not.toHaveBeenCalled();
-        expect(createECPaymentMock).not.toHaveBeenCalled();
+        expect(response.statusCode).toBe(201);
+        expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
+        expect(createPayment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            paymentMethodInfo: expect.objectContaining({
+              paymentInterface: 'easycredit',
+              method: 'BILL_PAYMENT',
+              name: { de: 'easyCredit Rechnung' },
+            }),
+          }),
+        );
       } finally {
         await app.close();
       }
     });
 
-    it('should only create installment transactions even if bill payment is available', async () => {
-      const cart = mockCart(500);
-      // @ts-expect-error mocked
-      (getCartById as jest.Mock).mockResolvedValue(cart);
-      // @ts-expect-error mocked
-      (updateCart as jest.Mock).mockResolvedValue({ ...cart, lineItems: [] });
-      // @ts-expect-error mocked
-      (createPayment as jest.Mock).mockResolvedValue({ id: 'payment123' });
-      // @ts-expect-error mocked
-      (updatePayment as jest.Mock).mockResolvedValue({ id: 'payment123' });
-      // @ts-expect-error mocked
-      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://connector.example.com' });
-      // @ts-expect-error mocked
-      createECPaymentMock.mockResolvedValue({
-        technicalTransactionId: 'tech123',
-        transactionId: 'tx123',
-        redirectUrl: 'https://easycredit.example.com',
-        transactionInformation: { status: 'OPEN', decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: '' } },
-      });
+    it('should create an INSTALLMENT_PAYMENT transaction when the payment type is omitted', async () => {
+      mockCreateFlow(mockCart(500));
 
       const result = await handlePaymentMethod('cart123');
       expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
@@ -298,6 +293,79 @@ describe('payment type availability', () => {
       expect(createECPaymentMock).toHaveBeenCalledWith(
         expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: false }),
       );
+      expect(createPayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentMethodInfo: expect.objectContaining({
+            method: 'INSTALLMENT_PAYMENT',
+            name: { de: 'easyCredit Ratenkauf' },
+          }),
+        }),
+      );
+    });
+
+    it('should create a BILL_PAYMENT for a cart that only bill payment could pay', async () => {
+      mockCreateFlow(mockCart(100));
+
+      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
+      expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [
+        { action: 'freezeCart', strategy: 'HardFreeze' },
+      ]);
+    });
+
+    describe.each([
+      [
+        'BILL_PAYMENT_ENABLED is 0',
+        500,
+        () => {
+          process.env.BILL_PAYMENT_ENABLED = '0';
+        },
+        'PaymentTypeNotAvailable',
+      ],
+      [
+        'the webshop has bill payment inactive',
+        500,
+        () => getWebshopInfoMock.mockResolvedValue({ ...webshopInfo, billPaymentActive: false }),
+        'PaymentTypeNotAvailable',
+      ],
+      ['the amount is below the bill limits', 40, () => {}, 'InvalidAmount'],
+      ['the amount is above the bill limits', 6000, () => {}, 'InvalidAmount'],
+    ])('when %s', (_, amount, setup, code) => {
+      const originalBillEnabled = process.env.BILL_PAYMENT_ENABLED;
+
+      afterEach(() => {
+        process.env.BILL_PAYMENT_ENABLED = originalBillEnabled;
+      });
+
+      it.each(['Active', 'Frozen'] as const)(
+        'should reject BILL_PAYMENT and leave a %s cart untouched',
+        async (cartState) => {
+          setup();
+          jest.mocked(getCartById).mockResolvedValue({ ...mockCart(amount), cartState });
+
+          await expect(
+            getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+          ).resolves.toEqual([{ code, httpErrorStatus: 400 }]);
+          expect(updateCart).not.toHaveBeenCalled();
+          expect(createPayment).not.toHaveBeenCalled();
+          expect(createECPaymentMock).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    it('should keep installment creation working when bill payment is disabled', async () => {
+      const original = process.env.BILL_PAYMENT_ENABLED;
+      process.env.BILL_PAYMENT_ENABLED = '0';
+      mockCreateFlow(mockCart(500));
+
+      try {
+        await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+      } finally {
+        process.env.BILL_PAYMENT_ENABLED = original;
+      }
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
     });
 
     it('should not create an easyCredit transaction for a cart that only bill payment could pay', async () => {

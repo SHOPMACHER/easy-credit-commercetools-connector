@@ -19,7 +19,7 @@ import {
   PaymentResponse,
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetools/connect-payments-sdk';
-import { convertCentsToEur } from './app.utils';
+import { convertCentsToEur, eurToCents } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
@@ -97,14 +97,23 @@ export const mapCTCartToECPayment = async (
   };
 };
 
-export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
+const PAYMENT_TYPE_LABELS: Record<ECTransactionPaymentType, string> = {
+  [ECTransactionPaymentType.ECTransactionInstallmentPayment]: 'easyCredit Ratenkauf',
+  [ECTransactionPaymentType.ECTransactionBillPayment]: 'easyCredit Rechnung',
+};
+
+export const mapCTCartToCTPayment = (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
+): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
     centAmount: cart.totalPrice.centAmount,
   },
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-    method: EASYCREDIT_PAYMENT_METHOD,
+    method: paymentType,
+    name: { de: PAYMENT_TYPE_LABELS[paymentType] },
   },
 });
 
@@ -122,7 +131,7 @@ export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, pay
 });
 
 export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
-  centAmount: Math.floor(amount * 100),
+  centAmount: eurToCents(amount),
   currencyCode: 'EUR',
 });
 

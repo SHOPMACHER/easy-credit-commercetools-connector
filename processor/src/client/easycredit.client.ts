@@ -23,14 +23,23 @@ interface EasyCreditConfig {
 interface EasyCreditClient {
   integrationCheck(payload: object, customHeaders?: HeadersInit): Promise<boolean>;
   createPayment(payload: ECTransaction, customHeaders?: HeadersInit): Promise<ECCreatePaymentResponse>;
-  authorizePayment(technicalTransactionId: string, orderId: string, customHeaders?: HeadersInit): Promise<boolean>;
+  authorizePayment(
+    technicalTransactionId: string,
+    orderId: string,
+    signal?: AbortSignal,
+    customHeaders?: HeadersInit,
+  ): Promise<boolean>;
   capturePayment(
     transactionId: string,
     orderId: string,
     trackingNumber?: string,
     customHeaders?: HeadersInit,
   ): Promise<boolean>;
-  getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse>;
+  getPayment(
+    technicalTransactionId: string,
+    signal?: AbortSignal,
+    customHeaders?: HeadersInit,
+  ): Promise<ECGetPaymentResponse>;
   refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<boolean>;
   getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse>;
   getWebshopInfo(): Promise<unknown>;
@@ -59,7 +68,11 @@ class EasyCreditApiClient implements EasyCreditClient {
     };
   }
 
-  private async handleResponse<T>(response: Response): Promise<T> {
+  private async handleResponse<T>(
+    response: Response,
+    fallbackCode = 'Unknown Error',
+    fallbackMessage = 'An error occurred',
+  ): Promise<T> {
     if (!response.ok) {
       // Gateways can answer with null or a non-JSON body, which must not hide the status code.
       const errorData: Partial<ECTransactionError> = (await response.json().catch(() => ({}))) ?? {};
@@ -67,8 +80,8 @@ class EasyCreditApiClient implements EasyCreditClient {
       // An empty title must still produce a usable code and message.
       const title = typeof errorData.title === 'string' ? errorData.title.trim() : undefined;
       throw new Errorx({
-        code: title?.length ? title : 'Unknown Error',
-        message: title?.length ? title : 'An error occurred',
+        code: title?.length ? title : fallbackCode,
+        message: title?.length ? title : fallbackMessage,
         httpErrorStatus: response.status,
         fields: errorData.violations,
       });
@@ -101,32 +114,43 @@ class EasyCreditApiClient implements EasyCreditClient {
   public async authorizePayment(
     technicalTransactionId: string,
     orderId: string,
+    signal?: AbortSignal,
     customHeaders?: HeadersInit,
   ): Promise<boolean> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    let response: Response;
     try {
-      const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-      const response = await fetch(
-        `${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(orderId ? { orderId } : {}),
-        },
-      );
-
-      if (response.status !== 202) {
-        const errorData = await response.json();
-        throw new Error(
-          `Authorize request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
-        );
-      }
-
-      return true;
+      response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(orderId ? { orderId } : {}),
+        ...(signal && { signal }),
+      });
     } catch (error: unknown) {
       log.error('Failed to authorize the payment', error);
-
-      return false;
+      // DOMException is not always an Error instance across realms, so match on the name only.
+      const name = (error as { name?: string } | null)?.name;
+      const aborted = name === 'AbortError' || name === 'TimeoutError';
+      throw new Errorx({
+        code: 'AuthorizationFailed',
+        message: 'Authorization failed',
+        httpErrorStatus: aborted ? 504 : 502,
+      });
     }
+
+    if (response.status !== 202) {
+      if (!response.ok) {
+        await this.handleResponse(response, 'AuthorizationFailed', 'Authorization failed');
+      }
+      // A 2xx other than 202 is no accepted authorization either. Answer 502, a 2xx error reply could be read as success.
+      throw new Errorx({
+        code: 'AuthorizationFailed',
+        message: 'Authorization failed',
+        httpErrorStatus: 502,
+      });
+    }
+
+    return true;
   }
 
   public async capturePayment(
@@ -159,11 +183,16 @@ class EasyCreditApiClient implements EasyCreditClient {
     }
   }
 
-  public async getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse> {
+  public async getPayment(
+    technicalTransactionId: string,
+    signal?: AbortSignal,
+    customHeaders?: HeadersInit,
+  ): Promise<ECGetPaymentResponse> {
     const headers = { ...this.getDefaultHeaders(), ...customHeaders };
     const response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}`, {
       method: 'GET',
       headers,
+      ...(signal && { signal }),
     });
     return this.handleResponse(response);
   }

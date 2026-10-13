@@ -25,7 +25,7 @@ To use this functionality, the following conditions must be met:
 2. **Validate Cart**: The billing and shipping addresses and the currency are validated. If they are invalid, the API returns `400` without calling easyCredit.
 3. **Fetch webshop configuration**: The activation status and limits of each payment type are read from the easyCredit webshop endpoint (`GET /payment/v3/webshop/{webShopId}`), see [Webshop configuration](#webshop-configuration).
 4. **Resolve payment types**: For each payment type the connector decides whether it can be offered for the cart total, see [Payment type availability](#payment-type-availability).
-5. **Return Result**: The checkout component currently only supports installment payment. The API returns `200` if `INSTALLMENT_PAYMENT` is available, otherwise `400` with the reason. `BILL_PAYMENT` is reported for information only and does not affect the result.
+5. **Return Result**: The API returns `200` if `INSTALLMENT_PAYMENT` is available, otherwise `400` with the reason. `BILL_PAYMENT` is reported in the response but does not affect the status of this call. The same check decides whether `POST /payments` accepts `BILL_PAYMENT`: a payment type reported as available here is accepted there, and a type reported as unavailable is rejected there with `InvalidAmount` or `PaymentTypeNotAvailable`.
 
 <br />
 
@@ -79,7 +79,7 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 
 #### Success Response (200):
 
-`BILL_PAYMENT.available` is only `true` if `BILL_PAYMENT_ENABLED=1`.
+`BILL_PAYMENT.available` is only `true` if `BILL_PAYMENT_ENABLED=1`. Whether the checkout component offers it also depends on the enabler.
 
 ```json
 {
@@ -112,6 +112,7 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 | Status | Code | Reason |
 | --- | --- | --- |
 | 400 | `InvalidBillingAddress`, `InvalidShippingAddress`, `AddressesUnmatched`, `InvalidCurrency` | The cart addresses or currency are invalid. |
+| 400 | `InvalidAddress` | The billing address is incomplete or invalid: `firstName`, `lastName`, `streetName` and `city` must not be blank and `postalCode` must be 5 digits. Reported in addition to the codes above if both addresses exist. |
 | 400 | `InvalidAmount` | The cart total is outside the effective installment limits. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
 | 400 | `PaymentTypeNotAvailable` | easyCredit reports `availability: false` or `installmentPaymentActive: false` for the webshop. |
 | 503 | `EasyCreditUnavailable` | easyCredit rejected the request (`4xx` other than `408`/`429`), sent an invalid installment configuration, or a previous deactivation/permanent failure still blocks fallback without usable cached data; see [Webshop configuration](#webshop-configuration). `fields.webShopId` is set so the checkout component can show the error. The `Retry-After` header contains the seconds until the next retry. |

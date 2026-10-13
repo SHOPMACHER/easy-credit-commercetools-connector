@@ -42,6 +42,15 @@ describe('Validation Functions', () => {
   });
 
   describe('validateAddresses', () => {
+    const validAddress = {
+      firstName: 'Max',
+      lastName: 'Mustermann',
+      streetName: 'Musterstrasse',
+      city: 'Berlin',
+      postalCode: '10115',
+      country: 'DE',
+    } as Address;
+
     it('should push error if billing address is undefined', () => {
       validateAddresses(undefined, { country: 'DE' } as Address, ecConfig, errors);
       expect(errors).toHaveLength(2);
@@ -68,7 +77,7 @@ describe('Validation Functions', () => {
 
     it('should push error if addresses are unmatched or not in Germany', () => {
       (compareAddress as jest.Mock).mockReturnValue(false);
-      validateAddresses({ country: 'US' } as Address, { country: 'DE' } as Address, ecConfig, errors);
+      validateAddresses({ ...validAddress, country: 'US' } as Address, validAddress, ecConfig, errors);
       expect(errors).toHaveLength(1);
       expect(errors[0]).toEqual(
         expect.objectContaining({
@@ -81,8 +90,98 @@ describe('Validation Functions', () => {
 
     it('should not push errors for valid addresses', () => {
       (compareAddress as jest.Mock).mockReturnValue(true);
-      validateAddresses({ country: 'DE' } as Address, { country: 'DE' } as Address, ecConfig, errors);
+      validateAddresses(validAddress, validAddress, ecConfig, errors);
       expect(errors).toHaveLength(0);
+    });
+
+    describe('InvalidAddress', () => {
+      beforeEach(() => {
+        (compareAddress as jest.Mock).mockReturnValue(true);
+      });
+
+      it.each([
+        ['firstName', undefined],
+        ['firstName', ''],
+        ['firstName', '   '],
+        ['lastName', undefined],
+        ['lastName', ''],
+        ['lastName', ' \t '],
+        ['streetName', undefined],
+        ['streetName', ''],
+        ['streetName', '  '],
+        ['city', undefined],
+        ['city', ''],
+        ['city', '  '],
+        ['postalCode', undefined],
+        ['postalCode', ''],
+        ['postalCode', '1234'],
+        ['postalCode', '123456'],
+        ['postalCode', 'ABCDE'],
+        ['postalCode', '1234 '],
+        ['postalCode', ' 12345'],
+        ['postalCode', '12345\n'],
+      ])('should push InvalidAddress once if billing %s is %j', (field, value) => {
+        const billing = { ...validAddress, [field]: value } as Address;
+        validateAddresses(billing, billing, ecConfig, errors);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toEqual(
+          expect.objectContaining({
+            code: 'InvalidAddress',
+            httpErrorStatus: 400,
+            message: 'Die Adresse ist unvollständig oder ungültig.',
+            fields: ecConfig,
+          }),
+        );
+      });
+
+      it('should push InvalidAddress only once if several billing fields are invalid', () => {
+        const billing = { country: 'DE' } as Address;
+        validateAddresses(billing, billing, ecConfig, errors);
+        expect(errors.filter((e) => e.code === 'InvalidAddress')).toHaveLength(1);
+        expect(errors).toHaveLength(1);
+      });
+
+      it('should accept a valid 5 digit postal code', () => {
+        const billing = { ...validAddress, postalCode: '01067' };
+        validateAddresses(billing, billing, ecConfig, errors);
+        expect(errors).toHaveLength(0);
+      });
+
+      it('should report both InvalidAddress and AddressesUnmatched when addresses differ and billing is invalid', () => {
+        (compareAddress as jest.Mock).mockReturnValue(false);
+        validateAddresses({ ...validAddress, city: '' }, validAddress, ecConfig, errors);
+        expect(errors.map((e) => e.code)).toEqual(['AddressesUnmatched', 'InvalidAddress']);
+      });
+
+      it('should only report AddressesUnmatched when addresses differ and billing is valid', () => {
+        (compareAddress as jest.Mock).mockReturnValue(false);
+        validateAddresses(validAddress, { ...validAddress, city: 'Other' }, ecConfig, errors);
+        expect(errors.map((e) => e.code)).toEqual(['AddressesUnmatched']);
+      });
+
+      it('should not validate shipping fields on their own', () => {
+        validateAddresses(validAddress, { ...validAddress, city: '' }, ecConfig, errors);
+        expect(errors).toHaveLength(0);
+      });
+
+      it('should not push InvalidAddress if billing address is missing', () => {
+        validateAddresses(undefined, { country: 'DE' } as Address, ecConfig, errors);
+        expect(errors.map((e) => e.code)).toEqual(['InvalidBillingAddress', 'AddressesUnmatched']);
+      });
+
+      it('should not push InvalidAddress if shipping address is missing', () => {
+        validateAddresses({ country: 'DE' } as Address, undefined, ecConfig, errors);
+        expect(errors.map((e) => e.code)).toEqual(['InvalidShippingAddress', 'AddressesUnmatched']);
+      });
+
+      it('should not push InvalidAddress if both addresses are missing', () => {
+        validateAddresses(undefined, undefined, ecConfig, errors);
+        expect(errors.map((e) => e.code)).toEqual([
+          'InvalidBillingAddress',
+          'InvalidShippingAddress',
+          'AddressesUnmatched',
+        ]);
+      });
     });
   });
 
