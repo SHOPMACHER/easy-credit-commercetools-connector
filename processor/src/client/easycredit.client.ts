@@ -1,5 +1,9 @@
 import { readConfiguration } from '../utils/config.utils';
-import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../utils/constant.utils';
+import {
+  EASYCREDIT_BASE_API_URL,
+  EASYCREDIT_PARTNER_BASE_API_URL,
+  EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS,
+} from '../utils/constant.utils';
 import {
   ECCreatePaymentResponse,
   ECGetMerchantTransactionResponse,
@@ -29,6 +33,7 @@ interface EasyCreditClient {
   getPayment(technicalTransactionId: string, customHeaders?: HeadersInit): Promise<ECGetPaymentResponse>;
   refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<boolean>;
   getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse>;
+  getWebshopInfo(): Promise<unknown>;
 }
 
 class EasyCreditApiClient implements EasyCreditClient {
@@ -56,11 +61,14 @@ class EasyCreditApiClient implements EasyCreditClient {
 
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
-      const errorData: ECTransactionError = await response.json();
+      // Gateways can answer with null or a non-JSON body, which must not hide the status code.
+      const errorData: Partial<ECTransactionError> = (await response.json().catch(() => ({}))) ?? {};
       log.error('EasyCredit API error', errorData);
+      // An empty title must still produce a usable code and message.
+      const title = typeof errorData.title === 'string' ? errorData.title.trim() : undefined;
       throw new Errorx({
-        code: errorData.title || 'Unknown Error',
-        message: errorData.title || 'An error occurred',
+        code: title?.length ? title : 'Unknown Error',
+        message: title?.length ? title : 'An error occurred',
         httpErrorStatus: response.status,
         fields: errorData.violations,
       });
@@ -195,6 +203,17 @@ class EasyCreditApiClient implements EasyCreditClient {
     const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}`, {
       method: 'GET',
       headers,
+    });
+
+    return await this.handleResponse(response);
+  }
+
+  public async getWebshopInfo(): Promise<unknown> {
+    const response = await fetch(`${this.baseApiUrl}/payment/v3/webshop/${this.config.webShopId}`, {
+      method: 'GET',
+      headers: this.getDefaultHeaders(),
+      // Checkout requests wait on this call, so don't let a hanging easyCredit API block them.
+      signal: AbortSignal.timeout(EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS),
     });
 
     return await this.handleResponse(response);

@@ -22,6 +22,7 @@ import {
   ECBooking,
   ECTransaction,
   ECTransactionCustomerRelationship,
+  ECTransactionPaymentType,
 } from '../../src/types/payment.types';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
@@ -175,6 +176,28 @@ describe('Payment Mapping', () => {
         paymentType: 'INSTALLMENT_PAYMENT',
         paymentSwitchPossible: false,
       });
+    });
+
+    it('should use the given payment type', async () => {
+      const mockCart = {
+        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+        lineItems: [],
+        billingAddress: {},
+        shippingAddress: {},
+      } as unknown as Cart;
+
+      // @ts-expect-error mocked
+      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+
+      const result = await mapCTCartToECPayment(
+        mockCart,
+        { id: 'payment123' } as Payment,
+        { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+        { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+        ECTransactionPaymentType.ECTransactionBillPayment,
+      );
+
+      expect(result.paymentType).toBe('BILL_PAYMENT');
     });
   });
 

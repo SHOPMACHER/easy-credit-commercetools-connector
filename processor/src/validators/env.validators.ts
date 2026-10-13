@@ -1,4 +1,13 @@
-import { optional, region, standardKey, standardString, standardUrl } from './helpers.validators';
+import {
+  optional,
+  region,
+  standardInteger,
+  standardKey,
+  standardOneOf,
+  standardString,
+  standardUrl,
+} from './helpers.validators';
+import { MAX_WEBSHOP_CACHE_TTL_SECONDS } from '../utils/constant.utils';
 
 /**
  * Create here your own validators
@@ -102,6 +111,26 @@ const envValidators = [
       min: 1,
       max: 1,
     },
+  ),
+
+  standardOneOf(
+    ['easyCredit', 'billPaymentEnabled'],
+    {
+      code: 'InvalidBillPaymentEnabled',
+      message: 'Bill payment enabled should be either "0" or "1".',
+      referencedBy: 'environmentVariables',
+    },
+    ['0', '1'],
+  ),
+
+  standardInteger(
+    ['easyCredit', 'webshopCacheTtl'],
+    {
+      code: 'InvalidWebshopCacheTtl',
+      message: `Webshop cache TTL should be a whole number of seconds between 0 and ${MAX_WEBSHOP_CACHE_TTL_SECONDS}.`,
+      referencedBy: 'environmentVariables',
+    },
+    { min: 0, max: MAX_WEBSHOP_CACHE_TTL_SECONDS },
   ),
 ];
 

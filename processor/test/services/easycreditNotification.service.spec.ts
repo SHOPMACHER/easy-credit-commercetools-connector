@@ -24,7 +24,7 @@ jest.mock('../../src/libs/logger');
 jest.mock('../../src/validators/payment.validators', () => ({
   validateAddresses: jest.fn(),
   validateCurrency: jest.fn(),
-  validateCartAmount: jest.fn(),
+  validatePaymentTypeAvailability: jest.fn(),
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
   validateSuccessTransaction: jest.fn(),

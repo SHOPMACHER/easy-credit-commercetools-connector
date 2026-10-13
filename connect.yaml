@@ -51,6 +51,14 @@ deployAs:
           description: Toggle display the EasyCredit Widget (0 or 1)
           required: true
           default: "1"
+        - key: BILL_PAYMENT_ENABLED
+          description: Report easyCredit pay by invoice as available (0 or 1) if it is also activated for the webshop by easyCredit. Not offered in the checkout yet.
+          required: false
+          default: "0"
+        - key: WEBSHOP_CACHE_TTL
+          description: Cache duration in seconds (0 to 3600) for the easyCredit webshop configuration (activation status and order value limits)
+          required: false
+          default: "300"
         - key: TRANSACTION_CUSTOM_TYPE_KEY
           description: Key of the custom type for transaction resources. Use an existing key to share a custom type with other connectors.
           required: false

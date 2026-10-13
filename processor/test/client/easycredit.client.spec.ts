@@ -304,6 +304,104 @@ describe('initEasyCreditClient', () => {
     });
   });
 
+  describe('getWebshopInfo', () => {
+    it('should fetch the webshop info with a timeout', async () => {
+      const mockResponse = { billPaymentActive: true, minBillingValue: 50, maxBillingValue: 5000 };
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        // @ts-expect-error mocked
+        json: jest.fn().mockResolvedValueOnce(mockResponse),
+      });
+
+      const result = await easyCreditClient.getWebshopInfo();
+
+      expect(fetch).toHaveBeenCalledWith(`${EASYCREDIT_BASE_API_URL}/payment/v3/webshop/mock-webshop-id`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+        },
+        signal: expect.any(AbortSignal),
+      });
+      expect(timeoutSpy).toHaveBeenCalledWith(10000);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should throw an Errorx if the response is not ok', async () => {
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        // @ts-expect-error mocked
+        json: jest.fn().mockResolvedValueOnce({ title: 'Not Found' }),
+      });
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toThrow(Errorx);
+    });
+
+    it('should keep the status code if the error body is not JSON', async () => {
+      // @ts-expect-error mocked
+      (fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        // @ts-expect-error mocked
+        json: jest.fn().mockRejectedValueOnce(new SyntaxError('Unexpected token <')),
+      });
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+        code: 'Unknown Error',
+        httpErrorStatus: 401,
+      });
+    });
+
+    it.each([401, 403, 404])('should keep status %s if the error body is null', async (status) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('null', { status }));
+
+      await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+        code: 'Unknown Error',
+        httpErrorStatus: status,
+      });
+    });
+
+    it.each([401, false, { message: 'Unauthorized' }, ['Unauthorized']])(
+      'should keep an authentication error status when its title is %j',
+      async (title) => {
+        jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ title }), { status: 401 }));
+
+        await expect(easyCreditClient.getWebshopInfo()).rejects.toMatchObject({
+          code: 'Unknown Error',
+          message: 'An error occurred',
+          httpErrorStatus: 401,
+        });
+      },
+    );
+  });
+
+  describe('error responses of other endpoints', () => {
+    it('should keep the upstream status of a non-JSON health check error', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('<html>Bad Gateway</html>', { status: 502 }));
+
+      await expect(easyCreditClient.integrationCheck({ message: 'test' })).rejects.toMatchObject({
+        code: 'Unknown Error',
+        message: 'An error occurred',
+        httpErrorStatus: 502,
+      });
+    });
+
+    it.each(['', '   '])('should fall back to a generic code if the error title is %j', async (title) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ title }), { status: 400 }));
+
+      await expect(easyCreditClient.getPayment('tech123')).rejects.toMatchObject({
+        code: 'Unknown Error',
+        message: 'An error occurred',
+        httpErrorStatus: 400,
+      });
+    });
+  });
+
   describe('getMerchantTransaction', () => {
     it('should make a GET request and return the transaction details response', async () => {
       const transactionId = '12345';

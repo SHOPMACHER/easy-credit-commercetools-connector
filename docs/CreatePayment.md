@@ -19,13 +19,29 @@ To use this functionality, the following conditions must be met:
 
 ## Workflow
 
-1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId`.
-2. **Create CT Payment**: Create using the above `cart`.
-3. **Create EC transaction**: Convert CT data into EC data and create the transaction.
-4. **Retrieve Payment from Easy Credit**: The `interactionId` from the CommerceTools transaction is used to fetch additional payment details from Easy Credit.
-5. **Update CT payment with final status**: Retrieve EC transaction status and update the CT payment transaction.
+1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency.
+2. **Check payment type availability**: The cart total must be within the effective limits of the payment type, and the payment type must be activated for the webshop. Activation status and limits come from the easyCredit webshop endpoint (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability).
+3. **Create CT Payment**: Create using the above `cart`.
+4. **Create EC transaction**: Convert CT data into EC data and create the transaction.
+5. **Retrieve Payment from Easy Credit**: The `interactionId` from the CommerceTools transaction is used to fetch additional payment details from Easy Credit.
+6. **Update CT payment with final status**: Retrieve EC transaction status and update the CT payment transaction.
 
 ![Create payment flow](./assets/easycredit-create-payment-flow.png)
+<br />
+
+## Payment type availability
+
+The transaction is currently always initialized with `INSTALLMENT_PAYMENT`, since the checkout component only supports installment payment. It is rejected before any CT payment is created if:
+
+- easyCredit rejected the webshop request with a permanent error or sent an invalid installment configuration, or a known deactivation/permanent failure blocks fallback without usable cached data, see [Webshop configuration](GetPaymentMethod.md#webshop-configuration) (`503 EasyCreditUnavailable`),
+- easyCredit reports `availability: false` or `installmentPaymentActive: false` for the webshop (`400 PaymentTypeNotAvailable`),
+- the cart total is outside the effective installment limits (`400 InvalidAmount`).
+
+The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. Explicit `BILL_PAYMENT` requests return `400 PaymentTypeNotAvailable` before any cart mutation, webshop lookup or payment creation. Bill checkout remains deferred to TEBA-248/249; a GET response with `BILL_PAYMENT.available: true` does not enable it.
+
+Limits are defined by easyCredit per webshop and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data. See [Get Payment Method](./GetPaymentMethod.md#webshop-configuration) for caching and retries.
+
+Validation failures leave the cart unchanged, including a cart that was already frozen. After validation and freezing succeed, a payment creation failure unfreezes the cart; if that cleanup fails, the original payment error is returned.
 <br />
 
 ## Example URL Call
@@ -49,10 +65,12 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 ```json
 {
     // cartId of a valid cart
-    // a valid cart must has 
-    //     200 < {cart total amount} < 10000
+    // a valid cart must have
+    //     a total amount within the effective installment limits (webshop limits or outage defaults)
     //     a valid shipping address
     "cartId": "YOUR_CART_ID", 
+    // optional, defaults to INSTALLMENT_PAYMENT. BILL_PAYMENT is not supported yet and returns 400 PaymentTypeNotAvailable
+    "paymentType": "INSTALLMENT_PAYMENT",
     "redirectLinks": {
         "urlSuccess": "https://example.com/success",
         "urlCancellation": "https://example.com/cancellation",
@@ -70,7 +88,7 @@ To obtain the `X-Session-Id`, refer to the [CommerceTools Sessions API documenta
 
 #### Success Response:
 
-On successful create a payment, the API returns a `200 OK` response along with the following structure:
+On successful creation of a payment, the API returns a `201 Created` response along with the following structure:
 
 ```json
 {
@@ -110,4 +128,29 @@ If the provided `cartId` is invalid, or if there is an issue with the session to
 }
 ```
 
+#### Error Response 400:
 
+If the cart fails validation, the API returns a `400 Bad Request` error. The payment type checks produce these error codes:
+
+| Code | Reason |
+| --- | --- |
+| `InvalidAmount` | The cart total is outside the effective installment limits. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
+| `PaymentTypeNotAvailable` | The payment type is not activated for the webshop. |
+
+Example for a webshop whose installment limits are 200 € to 10.000 €:
+
+```json
+{
+    "message": "Die Summe des Warenkorbs muss zwischen 200€ und 10.000€ liegen.",
+    "statusCode": 400,
+    "errors": [
+        {
+            "code": "InvalidAmount",
+            "message": "Die Summe des Warenkorbs muss zwischen 200€ und 10.000€ liegen.",
+            "fields": {
+                "webShopId": "2.de.7607.2"
+            }
+        }
+    ]
+}
+```

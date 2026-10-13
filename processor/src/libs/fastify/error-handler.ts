@@ -56,6 +56,11 @@ const handleErrors = (errorxList: Errorx[], reply: FastifyReply) => {
     errors: transformedErrors,
   };
 
+  const { retryAfterSeconds } = (errorxList[0].privateFields ?? {}) as { retryAfterSeconds?: number };
+  if (retryAfterSeconds !== undefined) {
+    reply.header('Retry-After', String(retryAfterSeconds));
+  }
+
   return reply.code(errorxList[0].httpErrorStatus).send(response);
 };
 

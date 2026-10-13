@@ -1,14 +1,14 @@
 import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
-import { EASYCREDIT_PAYMENT_METHOD, MAX_CART_AMOUNT, MIN_CART_AMOUNT } from '../utils/constant.utils';
+import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
 import {
   getInitialRefundTransaction,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
 } from '../utils/payment.utils';
-import { CTTransactionState, CTTransactionType } from '../types/payment.types';
+import { CTTransactionState, CTTransactionType, PaymentTypeAvailability } from '../types/payment.types';
 
 export const validateAddresses = (
   billingAddress: Address | undefined,
@@ -68,24 +68,45 @@ export const validateCurrency = (currencyCode: string, ecConfig: { webShopId: st
   }
 };
 
-export const validateCartAmount = (
-  centAmount: number,
-  fractionDigits: number,
+export const validatePaymentTypeAvailability = (
+  amountInEur: number,
+  availability: PaymentTypeAvailability,
   ecConfig: { webShopId: string },
   errors: Errorx[],
 ) => {
-  const amountInEur = convertCentsToEur(centAmount, fractionDigits);
+  if (availability.available) {
+    return;
+  }
 
-  if (amountInEur < MIN_CART_AMOUNT || amountInEur > MAX_CART_AMOUNT) {
+  const { enabled, minAmount, maxAmount } = availability;
+
+  // A disabled type stays unavailable at any amount, so its limits would only mislead the customer.
+  if (
+    enabled &&
+    minAmount !== undefined &&
+    maxAmount !== undefined &&
+    (amountInEur < minAmount || amountInEur > maxAmount)
+  ) {
     errors.push(
       new Errorx({
         code: 'InvalidAmount',
         httpErrorStatus: 400,
-        message: `Die Summe des Warenkorbs muss zwischen ${MIN_CART_AMOUNT.toLocaleString()}€ und ${MAX_CART_AMOUNT.toLocaleString()}€ liegen.`,
+        message: `Die Summe des Warenkorbs muss zwischen ${minAmount.toLocaleString('de-DE')}€ und ${maxAmount.toLocaleString('de-DE')}€ liegen.`,
         fields: ecConfig,
       }),
     );
+
+    return;
   }
+
+  errors.push(
+    new Errorx({
+      code: 'PaymentTypeNotAvailable',
+      httpErrorStatus: 400,
+      message: 'Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.',
+      fields: ecConfig,
+    }),
+  );
 };
 
 export const validatePayment = (payment: Payment) => {

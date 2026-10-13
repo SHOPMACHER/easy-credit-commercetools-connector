@@ -34,7 +34,7 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ## Product details
 
-- **Purchase amounts**: 200 euros to 10,000 euros
+- **Purchase amounts**: Defined by easyCredit per webshop and not configurable in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10,000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data.
 
 - **Terms**: 2 to 60 months freely selectable
 

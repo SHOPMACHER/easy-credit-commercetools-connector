@@ -74,6 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
+						"description": "Checkout supports installment only. BILL_PAYMENT availability is informational; the success example with BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data.",
 						"method": "GET",
 						"header": [
 							{
@@ -94,7 +95,82 @@
 							]
 						}
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Installment available",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+						},
+						{
+							"name": "easyCredit unavailable",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									]
+								}
+							},
+							"status": "Service Unavailable",
+							"code": 503,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								},
+								{
+									"key": "Retry-After",
+									"value": "30"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						}
+					]
 				},
 				{
 					"name": "Get Config",
@@ -186,6 +262,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
+						"description": "Creates installment payments. Optional paymentType defaults to INSTALLMENT_PAYMENT. Explicit BILL_PAYMENT is rejected with 400 PaymentTypeNotAvailable before cart or payment changes; bill checkout remains deferred to TEBA-248/249. See docs/CreatePayment.md for the request body.",
 						"method": "POST",
 						"header": [
 							{
@@ -199,6 +276,15 @@
 								"type": "text"
 							}
 						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cartId\": \"{{cart_id}}\",\n    \"paymentType\": \"INSTALLMENT_PAYMENT\",\n    \"redirectLinks\": {\n        \"urlSuccess\": \"https://example.com/success\",\n        \"urlCancellation\": \"https://example.com/cancellation\",\n        \"urlDenial\": \"https://example.com/denial\"\n    },\n    \"customerRelationship\": {\n        \"customerStatus\": \"NEW_CUSTOMER\",\n        \"customerSince\": \"2024-01-01\",\n        \"numberOfOrders\": 0\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
 							"raw": "{{connector_url}}/payments",
 							"host": [

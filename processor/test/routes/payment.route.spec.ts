@@ -16,6 +16,7 @@ import {
   SessionHeaderAuthenticationHook,
 } from '@commercetools/connect-payments-sdk';
 import { IncomingHttpHeaders } from 'node:http';
+import { GetPaymentMethodParamsSchema } from '../../src/dtos/payments/getPaymentMethod.dto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 
 // Mocks for imported service functions
@@ -61,9 +62,20 @@ describe('paymentsRoute', () => {
   });
 
   describe('GET /payments/payment-method/:cartId', () => {
+    it('should declare the cartId path param in the schema', () => {
+      expect(GetPaymentMethodParamsSchema.properties).toEqual({ cartId: expect.objectContaining({ type: 'string' }) });
+    });
+
     it('should return payment method config', async () => {
       const cartId = '12345';
-      const mockResponse = { webShopId: 'mock-webshop-id', amount: 100 };
+      const mockResponse = {
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { available: false, minAmount: 200, maxAmount: 10000 },
+          BILL_PAYMENT: { available: true, minAmount: 50, maxAmount: 5000 },
+        },
+      };
       // @ts-expect-error mocked
       (handlePaymentMethod as jest.Mock).mockResolvedValue(mockResponse);
 
@@ -80,12 +92,39 @@ describe('paymentsRoute', () => {
       expect(response.json()).toEqual(mockResponse);
       expect(handlePaymentMethod).toHaveBeenCalledWith(cartId);
     });
+
+    it('should not expose the internal enabled flag', async () => {
+      // @ts-expect-error mocked
+      (handlePaymentMethod as jest.Mock).mockResolvedValue({
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+          BILL_PAYMENT: { enabled: true, available: true, minAmount: 50, maxAmount: 5000 },
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345',
+        headers: {
+          'x-session-id': sessionId,
+          'content-type': 'application/json',
+        },
+      });
+
+      expect(response.json().paymentTypes).toEqual({
+        INSTALLMENT_PAYMENT: { available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { available: true, minAmount: 50, maxAmount: 5000 },
+      });
+    });
   });
 
   describe('POST /payments', () => {
-    it('should create payment', async () => {
+    it.each([undefined, 'INSTALLMENT_PAYMENT'])('should create payment with paymentType=%s', async (paymentType) => {
       const mockRequest = {
         cartId: '12345',
+        paymentType,
         redirectLinks: {
           urlSuccess: 'https://urlSuccess.com',
           urlCancellation: 'https://urlCancellation.com',
@@ -128,6 +167,7 @@ describe('paymentsRoute', () => {
         mockRequest.cartId,
         mockRequest.redirectLinks,
         mockRequest.customerRelationship,
+        paymentType,
       );
     });
   });

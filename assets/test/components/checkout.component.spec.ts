@@ -122,6 +122,36 @@ describe('ECCheckoutComponent', () => {
     expect(mockWidget.innerHTML).toContain('easycredit-checkout'); // Check if the template is inserted
   });
 
+  it('should render the alert if easyCredit is unavailable', async () => {
+    const insertAdjacentHTML = jest.fn();
+    (fetch as jest.Mock).mockImplementation(async () =>
+      Promise.resolve({
+        ok: false,
+        // @ts-expect-error test
+        json: jest.fn().mockResolvedValueOnce({
+          message: 'easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.',
+          statusCode: 503,
+          errors: [
+            {
+              code: 'EasyCreditUnavailable',
+              message: 'easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.',
+              fields: { webShopId: 'shop-id' },
+            },
+          ],
+        }),
+      }),
+    );
+    (findElement as jest.Mock).mockReturnValue({ insertAdjacentHTML });
+
+    await component.mount('div');
+
+    const template = insertAdjacentHTML.mock.calls[0][1] as string;
+    expect(template).toContain('webshop-id="shop-id"');
+    expect(template).toContain(
+      'alert="easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut."',
+    );
+  });
+
   it('should handle errors during payment method retrieval', async () => {
     (fetch as jest.Mock).mockImplementation(async () =>
       Promise.resolve({
