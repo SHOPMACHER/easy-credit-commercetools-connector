@@ -74,7 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
-						"description": "Checkout supports installment only. BILL_PAYMENT availability is informational; the success example with BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data.",
+						"description": "Returns the availability of each payment type for the cart. The status is 200 if INSTALLMENT_PAYMENT is available. BILL_PAYMENT is reported in the response without affecting the status, and the same check decides whether POST /payments accepts BILL_PAYMENT. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data.",
 						"method": "GET",
 						"header": [
 							{
@@ -262,7 +262,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
-						"description": "Creates installment payments. Optional paymentType defaults to INSTALLMENT_PAYMENT. Explicit BILL_PAYMENT is rejected with 400 PaymentTypeNotAvailable before cart or payment changes; bill checkout remains deferred to TEBA-248/249. See docs/CreatePayment.md for the request body.",
+						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), InvalidAddress (incomplete billing address), plus the address and currency codes. See docs/CreatePayment.md.",
 						"method": "POST",
 						"header": [
 							{
@@ -295,7 +295,102 @@
 							]
 						}
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Created (BILL_PAYMENT)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"cartId\": \"{{cart_id}}\",\n    \"paymentType\": \"BILL_PAYMENT\",\n    \"redirectLinks\": {\n        \"urlSuccess\": \"https://example.com/success\",\n        \"urlCancellation\": \"https://example.com/cancellation\",\n        \"urlDenial\": \"https://example.com/denial\"\n    },\n    \"customerRelationship\": {\n        \"customerStatus\": \"NEW_CUSTOMER\",\n        \"customerSince\": \"2024-01-01\",\n        \"numberOfOrders\": 0\n    }\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"technicalTransactionId\": \"c2b818bb.1120065723LwY1rRZcggpX9az7qUgAvdEh\",\n    \"paymentId\": \"25559370-d4a0-4291-b84e-b0f7e46d6972\",\n    \"redirectUrl\": \"https://ratenkauf.easycredit.de/app/payment/c2b818bb.1120065723LwY1rRZcggpX9az7qUgAvdEh/finanzierungsvorgaben\",\n    \"transactionInformation\": {\n        \"status\": \"OPEN\",\n        \"decision\": {\n            \"decisionOutcome\": \"\",\n            \"decisionOutcomeText\": null\n        }\n    }\n}"
+						},
+						{
+							"name": "BILL_PAYMENT not available",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"cartId\": \"{{cart_id}}\",\n    \"paymentType\": \"BILL_PAYMENT\",\n    \"redirectLinks\": {\n        \"urlSuccess\": \"https://example.com/success\",\n        \"urlCancellation\": \"https://example.com/cancellation\",\n        \"urlDenial\": \"https://example.com/denial\"\n    },\n    \"customerRelationship\": {\n        \"customerStatus\": \"NEW_CUSTOMER\",\n        \"customerSince\": \"2024-01-01\",\n        \"numberOfOrders\": 0\n    }\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"PaymentTypeNotAvailable\",\n            \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						}
+					]
 				},
 				{
 					"name": "Authorize EasyCredit Transaction",
@@ -323,9 +418,131 @@
 								"{{payment_id}}",
 								"authorize"
 							]
-						}
+						},
+						"description": "Authorizes the easyCredit transaction of the payment and waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. 204 means the CT transaction is Success and is the only signal to create the order. Errors: TransactionNotPreauthorized (400), TransactionNotAuthorized (400, DECLINED or EXPIRED, cart unfrozen), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). A permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Authorized",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"authorize"
+									]
+								}
+							},
+							"status": "No Content",
+							"code": 204,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": ""
+						},
+						{
+							"name": "Authorization timeout",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"authorize"
+									]
+								}
+							},
+							"status": "Gateway Timeout",
+							"code": 504,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Autorisierung bei easyCredit ist noch nicht abgeschlossen. Bitte spaeter erneut versuchen.\",\n    \"statusCode\": 504,\n    \"errors\": [\n        {\n            \"code\": \"AuthorizationTimeout\",\n            \"message\": \"Die Autorisierung bei easyCredit ist noch nicht abgeschlossen. Bitte spaeter erneut versuchen.\"\n        }\n    ]\n}"
+						},
+						{
+							"name": "Amount mismatch",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"authorize"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Der Warenkorb wurde nach der Zahlungsfreigabe geaendert. Die Zahlung wurde abgebrochen.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"AmountMismatch\",\n            \"message\": \"Der Warenkorb wurde nach der Zahlungsfreigabe geaendert. Die Zahlung wurde abgebrochen.\"\n        }\n    ]\n}"
+						}
+					]
 				},
 				{
 					"name": "Authorize EasyCredit Transaction Copy",

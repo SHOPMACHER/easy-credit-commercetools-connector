@@ -128,6 +128,7 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         response: {
           204: AuthorizePaymentResponseSchema,
           400: ErrorResponse,
+          504: ErrorResponse,
         },
       },
     },

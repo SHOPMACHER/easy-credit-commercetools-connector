@@ -53,7 +53,22 @@ export const validateAddresses = (
       }),
     );
   }
+
+  if (billingAddress && shippingAddress && !isBillingAddressComplete(billingAddress)) {
+    errors.push(
+      new Errorx({
+        code: 'InvalidAddress',
+        httpErrorStatus: 400,
+        message: 'Die Adresse ist unvollständig oder ungültig.',
+        fields: ecConfig,
+      }),
+    );
+  }
 };
+
+const isBillingAddressComplete = (address: Address) =>
+  [address.firstName, address.lastName, address.streetName, address.city].every((value) => !!value?.trim()) &&
+  /^\d{5}$/.test(address.postalCode ?? '');
 
 export const validateCurrency = (currencyCode: string, ecConfig: { webShopId: string }, errors: Errorx[]) => {
   if (currencyCode !== 'EUR') {

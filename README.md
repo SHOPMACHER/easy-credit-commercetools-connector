@@ -49,6 +49,10 @@ You can rely on our many years of experience in liquidity management and the pro
 - [Capture payments](/docs/CapturePayment.md)
 - [Refund payments](/docs/RefundPayment.md)
 
+### Pay by invoice (easyCredit-Rechnung)
+
+The backend supports transactions with `paymentType: BILL_PAYMENT` for create and authorize. Set `BILL_PAYMENT_ENABLED=1` and have easyCredit activate pay by invoice for the webshop. Showing pay by invoice in the checkout also needs the TEBA-248 enabler. See [Create payments](/docs/CreatePayment.md).
+
 ## Prerequisite
 
 1. Commercetools composable commerce account

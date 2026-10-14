@@ -193,18 +193,18 @@ export type ECGetPaymentResponse = {
   status: ECTransactionStatus;
   decision: {
     transactionId: string;
-    interest: number;
-    totalValue: number;
+    interest?: number;
+    totalValue?: number;
     orderValue: number;
     decisionOutcome: string;
-    numberOfInstallments: number;
-    installment: number;
-    lastInstallment: number;
-    mtan: {
+    numberOfInstallments?: number;
+    installment?: number;
+    lastInstallment?: number;
+    mtan?: {
       required: boolean;
       successful: boolean;
     };
-    bankAccountCheck: {
+    bankAccountCheck?: {
       required: boolean;
     };
   };
@@ -244,6 +244,7 @@ export type PaymentResponse = {
 export type GetPaymentResponse = ECGetPaymentResponse & {
   webShopId: string;
   amount: number;
+  paymentType?: ECTransactionPaymentType;
 };
 
 export type ECRefundPayload = {

@@ -1,6 +1,7 @@
 import {
   getShippingAddress,
   mapAddress,
+  mapAmountToCTTransactionAmount,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
   mapLineItem,
@@ -34,6 +35,8 @@ jest.mock('../../src/commercetools/customObject.commercetools', () => ({
 
 jest.mock('../../src/utils/app.utils', () => ({
   convertCentsToEur: jest.fn(),
+  eurToCents: (jest.requireActual('../../src/utils/app.utils') as typeof import('../../src/utils/app.utils'))
+    .eurToCents,
 }));
 
 describe('Payment Mapping', () => {
@@ -202,6 +205,11 @@ describe('Payment Mapping', () => {
   });
 
   describe('mapCTCartToCTPayment', () => {
+    const mockCartForPayment = {
+      id: 'cart123',
+      totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+    } as unknown as Cart;
+
     it('should map the cart to PaymentDraft correctly', () => {
       const mockCart: Cart = {
         id: 'cart123',
@@ -224,9 +232,39 @@ describe('Payment Mapping', () => {
         },
         paymentMethodInfo: {
           paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-          method: EASYCREDIT_PAYMENT_METHOD,
+          method: 'INSTALLMENT_PAYMENT',
+          name: { de: 'easyCredit Ratenkauf' },
         },
       });
+    });
+
+    it('should map explicit installment type', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionInstallmentPayment);
+
+      expect(result.paymentMethodInfo).toEqual({
+        paymentInterface: EASYCREDIT_PAYMENT_METHOD,
+        method: 'INSTALLMENT_PAYMENT',
+        name: { de: 'easyCredit Ratenkauf' },
+      });
+    });
+
+    it('should map bill payment type and keep the rest of the draft unchanged', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionBillPayment);
+
+      expect(result).toEqual({
+        amountPlanned: { currencyCode: 'EUR', centAmount: 10000 },
+        paymentMethodInfo: {
+          paymentInterface: EASYCREDIT_PAYMENT_METHOD,
+          method: 'BILL_PAYMENT',
+          name: { de: 'easyCredit Rechnung' },
+        },
+      });
+    });
+  });
+
+  describe('mapAmountToCTTransactionAmount', () => {
+    it('should round euros to cents instead of flooring', () => {
+      expect(mapAmountToCTTransactionAmount(19.99)).toEqual({ centAmount: 1999, currencyCode: 'EUR' });
     });
   });
 

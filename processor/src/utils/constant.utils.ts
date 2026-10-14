@@ -43,3 +43,9 @@ export function getTransactionCustomTypeKey(): string {
 }
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
+
+export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
+
+export const EASYCREDIT_AUTHORIZATION_TIMEOUT_MS = 30000;
+
+export const EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS = 5000;

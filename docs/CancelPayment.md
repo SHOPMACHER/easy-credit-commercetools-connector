@@ -16,6 +16,7 @@ To use this functionality, the customer must have a payment that is created but 
 2. A transaction of type `Authorization` should exist with a state of either `Pending` or `Initial`.
 3. The transaction should include an `interactionId`, which is the Easy Credit Payment ID.
 4. The status of the Easy Credit transaction should be verified through the Easy Credit API. If the transaction status is AUTHORIZED, the cancellation will be blocked, and an error will be returned to indicate that cancellations are not allowed for authorized Easy Credit payments.
+5. A `Pending` transaction means the authorization request was already sent to Easy Credit (see [Authorize Payment](./AuthorizePayment.md)). Cancelling it is still allowed, but Easy Credit can authorize between the status check and the `Failure` write. After the `Failure` write the connector therefore checks the Easy Credit status once more, with a 5 second limit. If it is `AUTHORIZED`, the connector logs `EASYCREDIT_AUTHORIZED_CT_NOT_SUCCESS` (reason: cancelled while the authorization was in flight). The cancellation itself still completes, and the cart is unfrozen. A failing re-check is logged as a warning and does not fail the cancellation. There is no automatic void at Easy Credit, so a logged event needs manual follow-up.
 
 <br />
 
