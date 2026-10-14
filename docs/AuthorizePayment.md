@@ -192,6 +192,8 @@ easyCredit calls `GET /webhook/{paymentId}/authorize` (the `urlAuthorizationCall
 | `Initial` or `Pending` | `AUTHORIZED` | Amount check, then `Success`. |
 | `Initial` or `Pending` | `DECLINED`, `EXPIRED` | `Failure`, cart unfrozen, `400 TransactionNotAuthorized`. |
 | `Initial` or `Pending` | any other | `400 TransactionNotAuthorized`, nothing is written. |
+
+The connector only writes allowed transitions: `Initial` to `Pending`, `Success` or `Failure`, and `Pending` to `Success` or `Failure`. A `Success` or `Failure` transaction is never overwritten, because overlapping callbacks and authorize calls can race. A `Success` transaction is returned as success without a cart check. If easyCredit is `AUTHORIZED` but the transaction is `Failure`, the response is `400 TransactionNotAuthorized` and the divergence is logged.
 | `Failure` | any | `400 TransactionNotAuthorized`. |
 
 A successful callback answers with a `302` redirect to the query parameter `redirectUrl` if it is set, otherwise with `200` and `{ "paymentId": "..." }`.

@@ -139,9 +139,15 @@ export const handleCreatePayment = async (
   try {
     cart = await getCartById(cartId);
     await validateCart(cart, paymentType);
+    const { centAmount, currencyCode } = cart.totalPrice;
 
     cart = await hardFreezeCart(cart);
     shouldUnfreezeCart = true;
+
+    // Freezing can reprice the cart, so the limits validated above may no longer hold.
+    if (cart.totalPrice.centAmount !== centAmount || cart.totalPrice.currencyCode !== currencyCode) {
+      await validateCart(cart, paymentType);
+    }
 
     const ctPayment = await createPayment(mapCTCartToCTPayment(cart, paymentType));
     cart = await updateCart(cart, [{ action: 'addPayment', payment: { typeId: 'payment', id: ctPayment.id } }]);
@@ -242,17 +248,32 @@ const notAuthorizedError = () =>
     httpErrorStatus: 400,
   });
 
+// commercetools does not enforce transitions on changeTransactionState, so the connector does.
+const ALLOWED_TRANSITIONS: Partial<Record<CTTransactionState, CTTransactionState[]>> = {
+  [CTTransactionState.Initial]: [CTTransactionState.Pending, CTTransactionState.Success, CTTransactionState.Failure],
+  [CTTransactionState.Pending]: [CTTransactionState.Success, CTTransactionState.Failure],
+};
+
 // Sets the authorization transaction state, retrying once on a 409 version conflict.
-const setTransactionState = async (paymentId: string, state: CTTransactionState): Promise<void> => {
+// Returns true when the transaction is in the requested state afterwards, false when the transition is not allowed.
+const setTransactionState = async (paymentId: string, state: CTTransactionState): Promise<boolean> => {
   for (let attempt = 0; ; attempt++) {
     const payment = await getPaymentById(paymentId);
     const transaction = getTransaction(payment) as Transaction;
     if (transaction.state === state) {
-      return;
+      return true;
+    }
+    if (!ALLOWED_TRANSITIONS[transaction.state as CTTransactionState]?.includes(state)) {
+      log.warn('Refused an invalid transaction state transition', {
+        paymentId,
+        currentState: transaction.state,
+        requestedState: state,
+      });
+      return false;
     }
     try {
       await updatePayment(payment, [{ action: 'changeTransactionState', transactionId: transaction.id, state }]);
-      return;
+      return true;
     } catch (error: unknown) {
       if (attempt > 0 || (error as Errorx).httpErrorStatus !== 409) {
         throw error;
@@ -261,8 +282,11 @@ const setTransactionState = async (paymentId: string, state: CTTransactionState)
   }
 };
 
+// A Success transaction is never failed and its cart stays frozen for the order.
 const failTransaction = async (paymentId: string): Promise<void> => {
-  await setTransactionState(paymentId, CTTransactionState.Failure);
+  if (!(await setTransactionState(paymentId, CTTransactionState.Failure))) {
+    return;
+  }
   try {
     const cart = await getCartByPaymentId(paymentId);
     if (cart.cartState === CTCartState.Frozen) {
@@ -328,8 +352,15 @@ const finalizeSuccess = async (
   ecPayment: ECGetPaymentResponse,
 ): Promise<void> => {
   try {
+    // An overlapping flow may have finished already; the cart can be Ordered by now.
+    const current = getTransaction(await getPaymentById(paymentId)) as Transaction;
+    if (current.state === CTTransactionState.Success) {
+      return;
+    }
     await assertAmountMatches(paymentId, ecPayment);
-    await setTransactionState(paymentId, CTTransactionState.Success);
+    if (!(await setTransactionState(paymentId, CTTransactionState.Success))) {
+      throw notAuthorizedError();
+    }
   } catch (error: unknown) {
     const reason = error instanceof Errorx && error.privateMessage ? error.privateMessage : (error as Error)?.message;
     logDivergence(paymentId, technicalTransactionId, reason ?? String(error));

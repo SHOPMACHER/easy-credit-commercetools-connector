@@ -46,6 +46,8 @@ Payments created before this change have `method: "easycredit"`. They are treate
 
 The cart is frozen with `HardFreeze`: prices, discounts and discount codes stay fixed and shipping methods cannot be set (commercetools Cart freeze documentation). A cart that is frozen with another strategy (for example `SoftFreeze`) is unfrozen and frozen again with `HardFreeze`; a cart that is already hard-frozen is left as it is. Merchants can therefore not change the shipping method after the payment was started.
 
+Freezing can reprice the cart (unfreezing documents it, freezing an active cart does not say either way). If the total or currency of the frozen cart differs from the cart that was validated, the limits and the payment type availability are validated again on the frozen cart. On failure no payment is created and the cart is unfrozen again.
+
 Validation failures (addresses, currency, payment type availability) leave the cart untouched, including a cart that was already frozen. Once the cart is frozen, every failure of the request unfreezes it again. Until the CT `Authorization` transaction is written, the CT payment is an orphan on the cart. If the easyCredit call or writing that transaction fails, the connector also removes the payment from the cart in the same update that unfreezes it. A negative decision writes a `Failure` transaction and only unfreezes the cart. If this cleanup fails, it is only logged and the original error is returned.
 <br />
 
