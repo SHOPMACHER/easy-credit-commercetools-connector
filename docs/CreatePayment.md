@@ -59,7 +59,7 @@ The request is rejected before any cart or payment change if:
 - the selected payment type is disabled or not activated for the webshop (error code below). For installment this means `availability: false` or `installmentPaymentActive: false`. For bill this means `BILL_PAYMENT_ENABLED` is not `1`, `availability: false`, `billPaymentActive: false`, absent or invalid bill configuration, or stale/default webshop data (bill fails closed). The error is `400 PaymentTypeNotAvailable`,
 - the payment type is enabled but the cart total is outside its effective limits (`400 InvalidAmount`). A disabled type never returns `InvalidAmount`, only `PaymentTypeNotAvailable`.
 
-The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop. A GET payment method response with `BILL_PAYMENT.available: true` and this endpoint use the same check.
+The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. The checkout component sends the payment type it was built with. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop and the customer is a private person. A GET payment method response for `BILL_PAYMENT` and this endpoint use the same check.
 
 Limits are defined by easyCredit per webshop and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data. See [Get Payment Method](./GetPaymentMethod.md#webshop-configuration) for caching and retries.
 
@@ -152,7 +152,7 @@ If the provided `cartId` is invalid, or if there is an issue with the session to
 
 #### Error Response 400:
 
-If the cart fails validation, the API returns a `400 Bad Request` error. The address and currency checks run first, the payment type checks only if they pass, so `InvalidAmount` and `PaymentTypeNotAvailable` are never returned together with an address or currency error.
+If the cart fails validation, the API returns a `400 Bad Request` error. The checks run in the same order as in [Get Payment Method](./GetPaymentMethod.md#workflow): for installment the address and currency checks run first, for pay by invoice the payment type checks run first. `InvalidAmount` and `PaymentTypeNotAvailable` are never returned together with an address, currency or customer error.
 
 | Code | Reason |
 | --- | --- |
@@ -160,6 +160,7 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The add
 | `AddressesUnmatched` | Billing and shipping address differ, or the country is not `DE`. |
 | `InvalidAddress` | The billing address is incomplete or invalid: `firstName`, `lastName`, `streetName` and `city` must not be blank and `postalCode` must be 5 digits. Only reported if both addresses exist, in addition to the codes above. |
 | `InvalidCurrency` | The cart currency is not `EUR`. |
+| `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or shipping address. |
 | `InvalidAmount` | The cart total is outside the effective limits of the selected payment type, which is enabled. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
 | `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop. |
 | `TransactionNotSuccess` | easyCredit answered the new transaction with a negative decision. The message is the `decisionOutcomeText`. The CT transaction is `Failure` and the cart is unfrozen. |

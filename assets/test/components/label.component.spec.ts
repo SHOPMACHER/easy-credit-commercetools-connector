@@ -73,7 +73,26 @@ describe('ECLabelComponent', () => {
     expect(findElement).toHaveBeenCalledWith('#widget-element');
     expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(
       'afterbegin',
-      '<easycredit-checkout-label />',
+      '<easycredit-checkout-label payment-type="INSTALLMENT" />',
+    );
+  });
+
+  it('should mount the bill payment label', async () => {
+    const element = { insertAdjacentHTML: jest.fn() };
+    (findElement as jest.Mock).mockReturnValue(element);
+    (fetch as jest.Mock).mockImplementation(async () =>
+      Promise.resolve({
+        ok: true,
+        // @ts-expect-error test
+        json: jest.fn().mockResolvedValueOnce(mockWidgetConfigEnabled),
+      }),
+    );
+
+    await new ECLabelComponentBuilder(mockWebComponentOptions).build({ paymentType: 'BILL_PAYMENT' }).mount('#label');
+
+    expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+      'afterbegin',
+      '<easycredit-checkout-label payment-type="BILL" />',
     );
   });
 

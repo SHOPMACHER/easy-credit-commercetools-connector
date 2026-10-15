@@ -1,4 +1,4 @@
-import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
+import { Address, Cart, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
@@ -122,6 +122,32 @@ export const validatePaymentTypeAvailability = (
       fields: ecConfig,
     }),
   );
+};
+
+// easyCredit bill payment is only offered to private persons.
+export const validatePrivateCustomer = (
+  cart: Cart,
+  shippingAddress: Address | undefined,
+  ecConfig: { webShopId: string },
+  errors: Errorx[],
+) => {
+  const isCorporateCustomer =
+    Boolean(cart.businessUnit) ||
+    Boolean(cart.billingAddress?.company?.trim()) ||
+    Boolean(shippingAddress?.company?.trim()) ||
+    (cart.shippingMode === 'Multiple' &&
+      cart.shipping?.some(({ shippingAddress }) => Boolean(shippingAddress?.company?.trim())));
+
+  if (isCorporateCustomer) {
+    errors.push(
+      new Errorx({
+        code: 'CorporateCustomerNotAllowed',
+        httpErrorStatus: 400,
+        message: 'Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.',
+        fields: ecConfig,
+      }),
+    );
+  }
 };
 
 export const validatePayment = (payment: Payment) => {

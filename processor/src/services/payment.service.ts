@@ -28,6 +28,7 @@ import {
   validatePayment,
   validatePaymentAmount,
   validatePaymentTypeAvailability,
+  validatePrivateCustomer,
   validateSuccessTransaction,
   validateTransaction,
 } from '../validators/payment.validators';
@@ -50,7 +51,7 @@ import {
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
 
-// handlePaymentMethod and callers that omit a type stay on installment.
+// Callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
 
 // Throws a MultiErrorx if easyCredit cannot be offered for the cart
@@ -59,34 +60,57 @@ const validateCart = async (
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
 ): Promise<PaymentTypesAvailability> => {
   const ecConfig = { webShopId: readConfiguration().easyCredit.webShopId };
-  const errors: Errorx[] = [];
-
-  const billingAddress = cart.billingAddress;
-  const shippingAddress = getShippingAddress(cart);
-
-  validateAddresses(billingAddress, shippingAddress, ecConfig, errors);
-  validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
-
-  if (errors.length > 0) {
-    throw new MultiErrorx(errors);
-  }
-
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
-  const paymentTypes = await getPaymentTypesAvailability(amount);
 
-  validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
+  const validateCartData = () => {
+    const errors: Errorx[] = [];
+    const shippingAddress = getShippingAddress(cart);
 
-  if (errors.length > 0) {
-    throw new MultiErrorx(errors);
+    validateAddresses(cart.billingAddress, shippingAddress, ecConfig, errors);
+    validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
+
+    if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
+      validatePrivateCustomer(cart, shippingAddress, ecConfig, errors);
+    }
+
+    if (errors.length > 0) {
+      throw new MultiErrorx(errors);
+    }
+  };
+
+  const validateAvailability = async (): Promise<PaymentTypesAvailability> => {
+    const errors: Errorx[] = [];
+    const paymentTypes = await getPaymentTypesAvailability(amount);
+
+    validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
+
+    if (errors.length > 0) {
+      throw new MultiErrorx(errors);
+    }
+
+    return paymentTypes;
+  };
+
+  // The enabler hides bill payment only on availability errors, so they must win over cart errors that render an alert.
+  if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
+    const paymentTypes = await validateAvailability();
+    validateCartData();
+
+    return paymentTypes;
   }
 
-  return paymentTypes;
+  validateCartData();
+
+  return validateAvailability();
 };
 
-export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
+export const handlePaymentMethod = async (
+  cartId: string,
+  paymentType?: ECTransactionPaymentType,
+): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
-    const paymentTypes = await validateCart(cart);
+    const paymentTypes = await validateCart(cart, paymentType);
 
     return {
       webShopId: readConfiguration().easyCredit.webShopId,

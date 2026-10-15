@@ -90,6 +90,39 @@ describe('payment type availability', () => {
   });
 
   describe('handlePaymentMethod', () => {
+    it('should reject bill payment when a later Multiple shipping destination has a company', async () => {
+      const cart = {
+        ...mockCart(500),
+        shippingMode: 'Multiple',
+        shippingAddress: undefined,
+        shipping: [{ shippingAddress: address }, { shippingAddress: { ...address, company: 'ACME GmbH' } }],
+      } as unknown as Cart;
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      await expect(
+        getErrorCodes(handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment)),
+      ).resolves.toEqual([{ code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400 }]);
+    });
+
+    it('should offer bill payment when all Multiple shipping destinations are private', async () => {
+      const cart = {
+        ...mockCart(500),
+        shippingMode: 'Multiple',
+        shippingAddress: undefined,
+        shipping: [undefined, '', '  '].map((company) => ({ shippingAddress: { ...address, company } })),
+      } as unknown as Cart;
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      const result = await handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment);
+
+      expect(result.paymentTypes.BILL_PAYMENT).toEqual({
+        enabled: true,
+        available: true,
+        minAmount: 50,
+        maxAmount: 5000,
+      });
+    });
+
     it('should return the payment types if installment is available', async () => {
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));

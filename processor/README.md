@@ -36,7 +36,7 @@ Complete integration requires running/intergrating both of the modules. Please f
 | CTP_JWKS_URL | CommerceTools Composable Commerce JWT keys set endpoint e.g: https://mc-api.europe-west1.gcp.commercetools.com/.well-known/jwks.json. Used to initialize the CommerceTools Payment SKD inside the connector. |
 | CTP_JWT_ISSUER |  CommerceTools Composable Commerce JWT Issuer for JWT validation e.g: https://mc-api.europe-west1.gcp.commercetools.com/. Used to initialize the CommerceTools Payment SKD inside the connector. |
 | DEBUG | 0 or 1, if it is enabled (= 1), the logger of the connector will display log message from debug level. |
-| BILL_PAYMENT_ENABLED | 0 or 1 (default 0). Enables easyCredit pay by invoice (`BILL_PAYMENT`) if this is 1, easyCredit reports `availability: true` and `billPaymentActive: true` for the webshop, and the cart total is within `minBillingValue` / `maxBillingValue`. The payment method response then reports it as available and `POST /payments` accepts `paymentType: BILL_PAYMENT`. Offering it to customers in the checkout also requires the enabler (TEBA-248). |
+| BILL_PAYMENT_ENABLED | 0 or 1 (default 0). Offers easyCredit pay by invoice (`BILL_PAYMENT`) as a separate payment method in the checkout if this is 1, easyCredit reports `availability: true` and `billPaymentActive: true` for the webshop, and the cart total is within `minBillingValue` / `maxBillingValue`. `POST /payments` then accepts `paymentType: BILL_PAYMENT`. |
 | WEBSHOP_CACHE_TTL | Seconds (0 to 3600, default 300) to cache the easyCredit webshop configuration: activation status and order value limits per payment type. |
 
 ## Features
