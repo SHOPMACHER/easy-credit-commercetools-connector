@@ -20,7 +20,7 @@ To use this functionality, the following conditions must be met:
 ## Workflow
 
 1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency.
-2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1`.
+2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1` and a cart without excluded items, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). The cart is fetched again for this request, so items added after the GET payment method call are checked too.
 3. **Freeze the cart**: The cart is frozen with the `HardFreeze` strategy, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).
 5. **Create EC transaction**: Convert CT data into EC data (including the `paymentType`) and create the transaction.
@@ -57,6 +57,8 @@ The request is rejected before any cart or payment change if:
 
 - easyCredit rejected the webshop request with a permanent error or sent an invalid installment configuration, or a known deactivation/permanent failure blocks fallback without usable cached data, see [Webshop configuration](GetPaymentMethod.md#webshop-configuration) (`503 EasyCreditUnavailable`),
 - the selected payment type is disabled or not activated for the webshop (error code below). For installment this means `availability: false` or `installmentPaymentActive: false`. For bill this means `BILL_PAYMENT_ENABLED` is not `1`, `availability: false`, `billPaymentActive: false`, absent or invalid bill configuration, or stale/default webshop data (bill fails closed). The error is `400 PaymentTypeNotAvailable`,
+- `BILL_PAYMENT` is enabled but the cart contains an excluded product type or custom line item (`400 BillPaymentExcludedItems`). This takes precedence over `InvalidAmount`. A matching custom line item skips the product type lookup,
+- `BILL_PAYMENT` is enabled but the product type lookup fails. Bill payment remains unavailable: the error is `400 PaymentTypeNotAvailable` when the cart total is within the effective limits, otherwise `400 InvalidAmount`,
 - the payment type is enabled but the cart total is outside its effective limits (`400 InvalidAmount`). A disabled type never returns `InvalidAmount`, only `PaymentTypeNotAvailable`.
 
 The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop. A GET payment method response with `BILL_PAYMENT.available: true` and this endpoint use the same check.
@@ -161,7 +163,8 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The add
 | `InvalidAddress` | The billing address is incomplete or invalid: `firstName`, `lastName`, `streetName` and `city` must not be blank and `postalCode` must be 5 digits. Only reported if both addresses exist, in addition to the codes above. |
 | `InvalidCurrency` | The cart currency is not `EUR`. |
 | `InvalidAmount` | The cart total is outside the effective limits of the selected payment type, which is enabled. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
-| `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop. |
+| `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop, or the product type lookup for `BILL_PAYMENT` failed while the cart total is within its effective limits. |
+| `BillPaymentExcludedItems` | `BILL_PAYMENT` was selected but the cart contains a voucher or another excluded item, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). |
 | `TransactionNotSuccess` | easyCredit answered the new transaction with a negative decision. The message is the `decisionOutcomeText`. The CT transaction is `Failure` and the cart is unfrozen. |
 
 easyCredit errors (for example `5xx`) are returned with the upstream HTTP status and the title easyCredit sent as code, and the cart is unfrozen as described in [Cart freeze](#cart-freeze).

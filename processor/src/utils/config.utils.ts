@@ -6,6 +6,15 @@ import { getValidateMessages } from '../validators/helpers.validators';
 const withDefault = (value: string | undefined, defaultValue: string): string =>
   value === undefined || value === '' ? defaultValue : value;
 
+const parseList = (value: string | undefined): string[] => [
+  ...new Set(
+    (value ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  ),
+];
+
 /**
  * Read the configuration env vars
  * (Add yours accordingly)
@@ -29,6 +38,8 @@ export const readConfiguration = () => {
       debug: process.env.DEBUG as string,
       billPaymentEnabled: withDefault(process.env.BILL_PAYMENT_ENABLED, '0'),
       webshopCacheTtl: withDefault(process.env.WEBSHOP_CACHE_TTL, '300'),
+      billPaymentExcludedProductTypes: parseList(process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES),
+      billPaymentExcludedCustomLineItems: parseList(process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS),
     },
   };
 

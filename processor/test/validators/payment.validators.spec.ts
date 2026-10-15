@@ -215,6 +215,18 @@ describe('Validation Functions', () => {
       expect(errors).toHaveLength(0);
     });
 
+    it('should push BillPaymentExcludedItems instead of InvalidAmount if cart items exclude the type', () => {
+      validatePaymentTypeAvailability(
+        10,
+        { enabled: true, available: false, excludedByCartItems: true, minAmount: 50, maxAmount: 5000 },
+        ecConfig,
+        errors,
+      );
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'BillPaymentExcludedItems', httpErrorStatus: 400, fields: ecConfig }),
+      ]);
+    });
+
     it.each([100, 10001])('should push InvalidAmount with the given limits if amount %s is out of range', (amount) => {
       validatePaymentTypeAvailability(
         amount,

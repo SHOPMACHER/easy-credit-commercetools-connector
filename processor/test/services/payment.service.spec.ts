@@ -34,6 +34,7 @@ import {
 } from '../../src/types/payment.types';
 import { mapCreatePaymentResponse, mapCTCartToCTPayment, mapCTCartToECPayment } from '../../src/utils/map.utils';
 import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
+import { getBillPaymentExclusion } from '../../src/services/billPaymentRestriction.service';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -66,6 +67,7 @@ jest.mock('../../src/utils/config.utils', () => ({
 }));
 jest.mock('../../src/utils/payment.utils');
 jest.mock('../../src/services/webshop.service');
+jest.mock('../../src/services/billPaymentRestriction.service');
 
 const allPaymentTypesAvailable: PaymentTypesAvailability = {
   INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
@@ -75,6 +77,7 @@ const allPaymentTypesAvailable: PaymentTypesAvailability = {
 beforeEach(() => {
   // @ts-expect-error mocked
   (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(allPaymentTypesAvailable);
+  jest.mocked(getBillPaymentExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
 });
 
 describe('Payment handlers', () => {
