@@ -74,7 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
-						"description": "Returns the availability of each payment type for the cart. The status is 200 if INSTALLMENT_PAYMENT is available. BILL_PAYMENT is reported in the response without affecting the status, and the same check decides whether POST /payments accepts BILL_PAYMENT. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data. It is also unavailable if the cart contains a line item of a product type in BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES or a custom line item in BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS (for example vouchers), or if the product types cannot be loaded. See docs/GetPaymentMethod.md.",
+						"description": "Validates the cart for the payment type in the optional paymentType query parameter (INSTALLMENT_PAYMENT by default, or BILL_PAYMENT). The response reports the availability of both payment types, and POST /payments runs the same check for its paymentType. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit; bill payment is unavailable with stale or default data and only offered to private persons. It is also unavailable if the cart contains a line item of a product type in BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES or a custom line item in BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS (for example vouchers), or if the product types cannot be loaded. See docs/GetPaymentMethod.md.",
 						"method": "GET",
 						"header": [
 							{
@@ -84,7 +84,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=INSTALLMENT_PAYMENT",
 							"host": [
 								"{{connector_url}}"
 							],
@@ -92,6 +92,13 @@
 								"payments",
 								"payment-method",
 								"{{cart_id}}"
+							],
+							"query": [
+								{
+									"key": "paymentType",
+									"value": "INSTALLMENT_PAYMENT",
+									"description": "Optional. INSTALLMENT_PAYMENT (default) or BILL_PAYMENT"
+								}
 							]
 						}
 					},
@@ -262,7 +269,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
-						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), BillPaymentExcludedItems (BILL_PAYMENT with a voucher or another excluded cart item), BillPaymentCheckFailed (503, BILL_PAYMENT while the excluded product types cannot be loaded), InvalidAddress (incomplete billing address), plus the address and currency codes. See docs/CreatePayment.md.",
+						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop, and is only offered to private persons. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), BillPaymentExcludedItems (BILL_PAYMENT with a voucher or another excluded cart item), BillPaymentCheckFailed (503, BILL_PAYMENT while the excluded product types cannot be loaded), InvalidAddress (incomplete billing address), CorporateCustomerNotAllowed (BILL_PAYMENT only), plus the address and currency codes. See docs/CreatePayment.md.",
 						"method": "POST",
 						"header": [
 							{

@@ -102,6 +102,7 @@ describe('ECCheckoutComponent', () => {
       insertAdjacentHTML: jest.fn().mockImplementation(() => {
         mockWidget.innerHTML = 'easycredit-checkout';
       }),
+      querySelector: jest.fn().mockReturnValue(null),
     });
 
     const selector = 'div'; // Select the newly created div
@@ -109,7 +110,7 @@ describe('ECCheckoutComponent', () => {
 
     expect(importEasyCreditScript).toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(
-      `${baseOptions.processorUrl}/payments/payment-method/${checkoutOptions.cartId}`,
+      `${baseOptions.processorUrl}/payments/payment-method/${checkoutOptions.cartId}?paymentType=INSTALLMENT_PAYMENT`,
       {
         method: 'GET',
         headers: {
@@ -141,7 +142,7 @@ describe('ECCheckoutComponent', () => {
         }),
       }),
     );
-    (findElement as jest.Mock).mockReturnValue({ insertAdjacentHTML });
+    (findElement as jest.Mock).mockReturnValue({ insertAdjacentHTML, querySelector: jest.fn().mockReturnValue(null) });
 
     await component.mount('div');
 
@@ -183,6 +184,7 @@ describe('ECCheckoutComponent', () => {
       },
       body: JSON.stringify({
         cartId: checkoutOptions.cartId,
+        paymentType: 'INSTALLMENT_PAYMENT',
         redirectLinks: checkoutOptions.redirectLinks,
         customerRelationship: checkoutOptions.customerRelationship,
       }),
@@ -190,6 +192,131 @@ describe('ECCheckoutComponent', () => {
     expect(checkoutOptions.onLoading).toHaveBeenCalledTimes(1);
     expect(checkoutOptions.onError).toHaveBeenCalledTimes(0);
     expect(checkoutOptions.onSuccess).toHaveBeenCalledWith({ redirectUrl: 'https://redirect.com' });
+  });
+
+  describe('bill payment', () => {
+    const mockPaymentMethodResponse = (body: unknown) =>
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error test
+          json: jest.fn().mockResolvedValue(body),
+        }),
+      );
+    const unavailableResponse = (code: string) => ({
+      statusCode: 400,
+      message: 'error',
+      errors: [{ code, message: 'error', fields: { webShopId: 'shop-id' } }],
+    });
+
+    let element: { insertAdjacentHTML: jest.Mock; querySelector: jest.Mock };
+
+    beforeEach(() => {
+      component = new ECCheckoutComponent({
+        processorUrl: baseOptions.processorUrl,
+        sessionId: baseOptions.sessionId,
+        checkoutComponentOptions: { ...checkoutOptions, paymentType: 'BILL_PAYMENT' },
+      });
+      element = { insertAdjacentHTML: jest.fn(), querySelector: jest.fn().mockReturnValue(null) };
+      (findElement as jest.Mock).mockReturnValue(element);
+    });
+
+    it('should render the bill payment widget', async () => {
+      mockPaymentMethodResponse({ webShopId: 'shop-id', amount: 100 });
+
+      await component.mount('div');
+
+      expect(fetch).toHaveBeenCalledWith(
+        `${baseOptions.processorUrl}/payments/payment-method/${checkoutOptions.cartId}?paymentType=BILL_PAYMENT`,
+        expect.anything(),
+      );
+      expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+        'beforeend',
+        expect.stringContaining('payment-type="BILL"'),
+      );
+    });
+
+    it('should bind the submit handler to its own widget', async () => {
+      const widget = { addEventListener: jest.fn() };
+      element.querySelector.mockReturnValue(widget);
+      mockPaymentMethodResponse({ webShopId: 'shop-id', amount: 100 });
+
+      await component.mount('div');
+
+      expect(element.querySelector).toHaveBeenCalledWith('easycredit-checkout');
+      expect(widget.addEventListener).toHaveBeenCalledWith('submit', expect.any(Function));
+    });
+
+    it.each(['PaymentTypeNotAvailable', 'InvalidAmount', 'EasyCreditUnavailable'])(
+      'should be unavailable and render nothing on %s',
+      async (code) => {
+        mockPaymentMethodResponse(unavailableResponse(code));
+
+        await expect(component.isAvailable()).resolves.toBe(false);
+        await component.mount('div');
+
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(importEasyCreditScript).not.toHaveBeenCalled();
+        expect(element.insertAdjacentHTML).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should submit the bill payment type', async () => {
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error test
+          json: jest.fn().mockResolvedValueOnce({ redirectUrl: 'https://redirect.com' }),
+        }),
+      );
+
+      await component.submit();
+
+      const [, request] = (fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(request.body as string)).toMatchObject({ paymentType: 'BILL_PAYMENT' });
+    });
+
+    it('should stay available and show an alert for a corporate customer', async () => {
+      mockPaymentMethodResponse({
+        statusCode: 400,
+        message: 'error',
+        errors: [
+          { code: 'CorporateCustomerNotAllowed', message: 'Nur für Privatpersonen', fields: { webShopId: 'shop-id' } },
+        ],
+      });
+
+      await expect(component.isAvailable()).resolves.toBe(true);
+      await component.mount('div');
+
+      expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+        'beforeend',
+        expect.stringContaining('alert="Nur für Privatpersonen"'),
+      );
+    });
+  });
+
+  it('should keep showing the installment widget with an alert if the amount is out of limits', async () => {
+    const element = { insertAdjacentHTML: jest.fn(), querySelector: jest.fn().mockReturnValue(null) };
+    (findElement as jest.Mock).mockReturnValue(element);
+    (fetch as jest.Mock).mockImplementation(async () =>
+      Promise.resolve({
+        ok: false,
+        // @ts-expect-error test
+        json: jest.fn().mockResolvedValue({
+          statusCode: 400,
+          message: 'error',
+          errors: [{ code: 'InvalidAmount', message: 'Out of limits', fields: { webShopId: 'shop-id' } }],
+        }),
+      }),
+    );
+
+    await expect(component.isAvailable()).resolves.toBe(true);
+    await component.mount('div');
+
+    expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+      'beforeend',
+      expect.stringContaining('alert="Out of limits"'),
+    );
   });
 
   it('should call onError callback when the submission fails', async () => {
@@ -207,5 +334,89 @@ describe('ECCheckoutComponent', () => {
     expect(checkoutOptions.onLoading).toHaveBeenCalledTimes(1);
     expect(checkoutOptions.onError).toHaveBeenCalledWith(errorResponse);
     expect(checkoutOptions.onSuccess).toHaveBeenCalledTimes(0);
+  });
+
+  describe('refreshing payment method data', () => {
+    const actualUtils = jest.requireActual<typeof import('../../src/utils/app.utils')>('../../src/utils/app.utils');
+
+    const respondWith = (body: unknown, ok = true) => {
+      jest.mocked(fetch).mockResolvedValue({ ok, json: async () => body } as Response);
+    };
+
+    beforeEach(() => {
+      document.body.innerHTML = '<div id="checkout"></div>';
+      jest.mocked(findElement).mockImplementation(actualUtils.findElement);
+    });
+
+    afterEach(() => {
+      document.body.innerHTML = '';
+    });
+
+    it('should replace a stale address alert with the current amount when remounted', async () => {
+      respondWith(
+        {
+          statusCode: 400,
+          message: 'Invalid cart',
+          errors: [{ code: 'AddressesUnmatched', message: 'Addresses differ', fields: { webShopId: 'shop-id' } }],
+        },
+        false,
+      );
+      await component.mount('#checkout');
+      expect(document.querySelector('easycredit-checkout')?.getAttribute('alert')).toBe('Addresses differ');
+
+      respondWith({ webShopId: 'shop-id', amount: 500 });
+      document.querySelector('#checkout')!.innerHTML = '';
+      await component.mount('#checkout');
+
+      const widget = document.querySelector('easycredit-checkout');
+      expect(widget?.getAttribute('alert')).toBe('');
+      expect(widget?.getAttribute('amount')).toBe('500');
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should refresh each availability check and share its result with the next mount only', async () => {
+      respondWith({ webShopId: 'shop-id', amount: 500 });
+      await expect(component.isAvailable()).resolves.toBe(true);
+
+      respondWith({ webShopId: 'shop-id', amount: 700 });
+      await expect(component.isAvailable()).resolves.toBe(true);
+      await component.mount('#checkout');
+
+      expect(document.querySelector('easycredit-checkout')?.getAttribute('amount')).toBe('700');
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      respondWith({ webShopId: 'shop-id', amount: 800 });
+      document.querySelector('#checkout')!.innerHTML = '';
+      await component.mount('#checkout');
+
+      expect(document.querySelector('easycredit-checkout')?.getAttribute('amount')).toBe('800');
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it.each(['InvalidAmount', 'EasyCreditUnavailable'])(
+      'should offer bill payment again after %s is resolved',
+      async (code) => {
+        component = new ECCheckoutComponent({
+          ...baseOptions,
+          checkoutComponentOptions: { ...checkoutOptions, paymentType: 'BILL_PAYMENT' },
+        });
+        respondWith(
+          {
+            statusCode: code === 'EasyCreditUnavailable' ? 503 : 400,
+            message: 'Unavailable',
+            errors: [{ code, message: 'Unavailable', fields: { webShopId: 'shop-id' } }],
+          },
+          false,
+        );
+        await expect(component.isAvailable()).resolves.toBe(false);
+
+        respondWith({ webShopId: 'shop-id', amount: 500 });
+        await expect(component.isAvailable()).resolves.toBe(true);
+        await component.mount('#checkout');
+
+        expect(document.querySelector('easycredit-checkout')?.getAttribute('payment-type')).toBe('BILL');
+        expect(fetch).toHaveBeenCalledTimes(2);
+      },
+    );
   });
 });

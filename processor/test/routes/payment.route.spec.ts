@@ -97,7 +97,39 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual(mockResponse);
-      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId);
+      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId, undefined);
+    });
+
+    it('should pass the requested payment type to the handler', async () => {
+      // @ts-expect-error mocked
+      (handlePaymentMethod as jest.Mock).mockResolvedValue({
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { available: false },
+          BILL_PAYMENT: { available: true },
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345?paymentType=BILL_PAYMENT',
+        headers: { 'x-session-id': sessionId },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(handlePaymentMethod).toHaveBeenCalledWith('12345', 'BILL_PAYMENT');
+    });
+
+    it('should reject an unknown payment type', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345?paymentType=UNKNOWN',
+        headers: { 'x-session-id': sessionId },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(handlePaymentMethod).not.toHaveBeenCalled();
     });
 
     it('should not expose the internal enabled flag', async () => {

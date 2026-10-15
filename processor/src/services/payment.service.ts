@@ -29,6 +29,7 @@ import {
   validatePayment,
   validatePaymentAmount,
   validatePaymentTypeAvailability,
+  validatePrivateCustomer,
   validateSuccessTransaction,
   validateTransaction,
 } from '../validators/payment.validators';
@@ -52,7 +53,7 @@ import {
 import { getPaymentTypesAvailability } from './webshop.service';
 import { getBillPaymentExclusion } from './billPaymentRestriction.service';
 
-// handlePaymentMethod and callers that omit a type stay on installment.
+// Callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
 
 // Bill payment is for physical goods only; a failed product type lookup keeps it closed.
@@ -94,39 +95,66 @@ const validateCart = async (
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
 ): Promise<PaymentTypesAvailability> => {
   const ecConfig = { webShopId: readConfiguration().easyCredit.webShopId };
-  const errors: Errorx[] = [];
-
-  const billingAddress = cart.billingAddress;
-  const shippingAddress = getShippingAddress(cart);
-
-  validateAddresses(billingAddress, shippingAddress, ecConfig, errors);
-  validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
-
-  if (errors.length > 0) {
-    throw new MultiErrorx(errors);
-  }
-
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
-  const availability = await getPaymentTypesAvailability(amount);
-  // Installment requests skip the product type lookup; handlePaymentMethod applies it for the response.
-  const paymentTypes =
-    paymentType === ECTransactionPaymentType.ECTransactionBillPayment
-      ? await applyBillPaymentExclusion(cart, availability)
-      : availability;
 
-  validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
+  const validateCartData = () => {
+    const errors: Errorx[] = [];
+    const shippingAddress = getShippingAddress(cart);
 
-  if (errors.length > 0) {
-    throw new MultiErrorx(errors);
+    validateAddresses(cart.billingAddress, shippingAddress, ecConfig, errors);
+    validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
+
+    if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
+      validatePrivateCustomer(cart, shippingAddress, ecConfig, errors);
+    }
+
+    if (errors.length > 0) {
+      throw new MultiErrorx(errors);
+    }
+  };
+
+  const validateAvailability = async (): Promise<PaymentTypesAvailability> => {
+    const errors: Errorx[] = [];
+    const availability = await getPaymentTypesAvailability(amount);
+    // Installment requests skip the product type lookup; handlePaymentMethod applies it for the response.
+    const paymentTypes =
+      paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+        ? await applyBillPaymentExclusion(cart, availability)
+        : availability;
+
+    validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
+
+    if (errors.length > 0) {
+      throw new MultiErrorx(errors);
+    }
+
+    return paymentTypes;
+  };
+
+  // The enabler hides bill payment only on availability errors, so they must win over cart errors that render an alert.
+  if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
+    const paymentTypes = await validateAvailability();
+    validateCartData();
+
+    return paymentTypes;
   }
 
-  return paymentTypes;
+  validateCartData();
+
+  return validateAvailability();
 };
 
-export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
+export const handlePaymentMethod = async (
+  cartId: string,
+  paymentType?: ECTransactionPaymentType,
+): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
-    const paymentTypes = await applyBillPaymentExclusion(cart, await validateCart(cart));
+    const validated = await validateCart(cart, paymentType);
+    const paymentTypes =
+      paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+        ? validated
+        : await applyBillPaymentExclusion(cart, validated);
 
     return {
       webShopId: readConfiguration().easyCredit.webShopId,

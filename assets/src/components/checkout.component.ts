@@ -3,9 +3,18 @@ import {
   CheckoutComponentBuilder,
   CheckoutComponentOptions,
   CreatePaymentResponse,
+  PaymentType,
   WebComponentOptions,
 } from '../types/main';
 import { findElement, importEasyCreditScript } from '../utils/app.utils.ts';
+import { DEFAULT_PAYMENT_TYPE, toWebComponentPaymentType } from '../utils/payment-type.utils.ts';
+
+// Errors that mean the payment type can't be offered at all, so the option is hidden instead of showing an alert.
+const UNAVAILABLE_ERROR_CODES: Record<PaymentType, string[]> = {
+  INSTALLMENT_PAYMENT: ['PaymentTypeNotAvailable'],
+  // Bill payment fails closed, so an easyCredit outage hides it as well.
+  BILL_PAYMENT: ['PaymentTypeNotAvailable', 'InvalidAmount', 'EasyCreditUnavailable'],
+};
 
 export class ECCheckoutComponentBuilder implements CheckoutComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
@@ -43,22 +52,53 @@ export class ECCheckoutComponent implements CheckoutComponent {
 
   private readonly sessionId: string;
 
+  private paymentMethodResponse?: Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse>;
+
   constructor(opts: { processorUrl: string; sessionId: string; checkoutComponentOptions: CheckoutComponentOptions }) {
     this.processorUrl = opts.processorUrl;
     this.sessionId = opts.sessionId;
     this.checkoutComponentOptions = opts.checkoutComponentOptions;
   }
 
-  async mount(selector: string): Promise<void> {
-    importEasyCreditScript();
+  private get paymentType(): PaymentType {
+    return this.checkoutComponentOptions.paymentType ?? DEFAULT_PAYMENT_TYPE;
+  }
 
-    const response = await this.getPaymentMethod();
+  async isAvailable(): Promise<boolean> {
+    const request = this.getPaymentMethod();
+    this.paymentMethodResponse = request;
+
+    try {
+      const response = await request;
+
+      return Boolean(response) && this.isPaymentTypeAvailable(response);
+    } catch (error: unknown) {
+      if (this.paymentMethodResponse === request) {
+        this.paymentMethodResponse = undefined;
+      }
+      throw error;
+    }
+  }
+
+  async mount(selector: string): Promise<void> {
+    // Consume the last availability check once; a later mount must read the cart again.
+    const request = this.paymentMethodResponse ?? this.getPaymentMethod();
+    this.paymentMethodResponse = undefined;
+    const response = await request;
     if (!response) {
       throw new Error('Failed to retrieve payment method.');
     }
 
-    findElement(selector).insertAdjacentHTML('beforeend', this.generateTemplate(response));
-    document.querySelector('easycredit-checkout')?.addEventListener('submit', this.submit.bind(this));
+    if (!this.isPaymentTypeAvailable(response)) {
+      return;
+    }
+
+    importEasyCreditScript();
+
+    const element = findElement(selector);
+    element.insertAdjacentHTML('beforeend', this.generateTemplate(response));
+    // Scoped to this component's container, as installment and bill payment can be mounted on the same page.
+    element.querySelector('easycredit-checkout')?.addEventListener('submit', this.submit.bind(this));
   }
 
   async submit(): Promise<void> {
@@ -68,6 +108,7 @@ export class ECCheckoutComponent implements CheckoutComponent {
 
     const body = {
       cartId: this.checkoutComponentOptions.cartId,
+      paymentType: this.paymentType,
       redirectLinks: this.checkoutComponentOptions.redirectLinks,
       customerRelationship: this.checkoutComponentOptions.customerRelationship,
     };
@@ -90,16 +131,27 @@ export class ECCheckoutComponent implements CheckoutComponent {
     }
   }
 
-  private async getPaymentMethod(): Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse> {
-    const res = await fetch(`${this.processorUrl}/payments/payment-method/${this.checkoutComponentOptions.cartId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Session-Id': this.sessionId,
-      },
-    });
+  private isPaymentTypeAvailable(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): boolean {
+    if (!('errors' in response)) {
+      return true;
+    }
 
-    return res.json();
+    return !response.errors.some(({ code }) => UNAVAILABLE_ERROR_CODES[this.paymentType].includes(code));
+  }
+
+  private async getPaymentMethod(): Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse> {
+    const response = await fetch(
+      `${this.processorUrl}/payments/payment-method/${this.checkoutComponentOptions.cartId}?paymentType=${this.paymentType}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': this.sessionId,
+        },
+      },
+    );
+
+    return response.json();
   }
 
   private generateTemplate(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): string {
@@ -129,7 +181,7 @@ export class ECCheckoutComponent implements CheckoutComponent {
         amount="${amount}" 
         webshop-id="${webShopId}" 
         is-active="true" 
-        payment-type="INSTALLMENT" 
+        payment-type="${toWebComponentPaymentType(this.paymentType)}"
         alert="${errorMessage}" 
       />
     `;

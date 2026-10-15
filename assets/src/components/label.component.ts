@@ -1,13 +1,21 @@
 import { findElement, importEasyCreditScript } from '../utils/app.utils';
-import { LabelComponent, LabelComponentBuilder, WebComponentOptions } from '../types/main';
+import { toWebComponentPaymentType } from '../utils/payment-type.utils';
+import {
+  LabelComponent,
+  LabelComponentBuilder,
+  LabelComponentOptions,
+  PaymentType,
+  WebComponentOptions,
+} from '../types/main';
 
 export class ECLabelComponentBuilder implements LabelComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
 
-  build(): ECLabelComponent {
+  build(options: LabelComponentOptions = {}): ECLabelComponent {
     return new ECLabelComponent({
       processorUrl: this.baseOptions.processorUrl,
       sessionId: this.baseOptions.sessionId,
+      paymentType: options.paymentType,
     });
   }
 }
@@ -15,10 +23,12 @@ export class ECLabelComponentBuilder implements LabelComponentBuilder {
 export class ECLabelComponent implements LabelComponent {
   private readonly processorUrl: string;
   private readonly sessionId: string;
+  private readonly paymentType?: PaymentType;
 
-  constructor(opts: { processorUrl: string; sessionId: string }) {
+  constructor(opts: { processorUrl: string; sessionId: string; paymentType?: PaymentType }) {
     this.processorUrl = opts.processorUrl;
     this.sessionId = opts.sessionId;
+    this.paymentType = opts.paymentType;
   }
 
   async mount(selector: string) {
@@ -50,6 +60,6 @@ export class ECLabelComponent implements LabelComponent {
   }
 
   private _getTemplate() {
-    return `<easycredit-checkout-label />`;
+    return `<easycredit-checkout-label payment-type="${toWebComponentPaymentType(this.paymentType)}" />`;
   }
 }

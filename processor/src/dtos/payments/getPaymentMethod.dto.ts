@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { ECTransactionPaymentType } from '../../types/payment.types';
 
 export const GetPaymentMethodParamsSchema = {
   $id: 'paramsSchema',
@@ -8,6 +9,12 @@ export const GetPaymentMethodParamsSchema = {
   },
   required: ['cartId'],
 };
+
+export const GetPaymentMethodQuerySchema = Type.Object({
+  paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
+});
+
+export type GetPaymentMethodQuerySchemaDTO = Static<typeof GetPaymentMethodQuerySchema>;
 
 const PaymentTypeAvailabilitySchema = Type.Object({
   available: Type.Boolean(),

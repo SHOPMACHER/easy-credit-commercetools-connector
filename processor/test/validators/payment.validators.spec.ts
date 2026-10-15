@@ -1,4 +1,4 @@
-import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
+import { Address, Cart, Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import {
   validateAddresses,
   validateCurrency,
@@ -8,6 +8,7 @@ import {
   validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePendingTransaction,
+  validatePrivateCustomer,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
@@ -280,6 +281,63 @@ describe('Validation Functions', () => {
       validatePaymentTypeAvailability(500, { enabled: true, available: false }, ecConfig, errors);
       expect(errors).toHaveLength(1);
       expect(errors[0]).toEqual(expect.objectContaining({ code: 'PaymentTypeNotAvailable' }));
+    });
+  });
+
+  describe('validatePrivateCustomer', () => {
+    const ecConfig = { webShopId: 'webShopId123' };
+
+    it.each([
+      ['a business unit', { businessUnit: { typeId: 'business-unit', key: 'acme' } }, undefined],
+      ['a billing address company', { billingAddress: { country: 'DE', company: 'ACME GmbH' } }, undefined],
+      ['a shipping address company', {}, { country: 'DE', company: 'ACME GmbH' }],
+    ])('should reject a cart with %s', (_, cart, shippingAddress) => {
+      const errors: Errorx[] = [];
+
+      validatePrivateCustomer(cart as unknown as Cart, shippingAddress as Address | undefined, ecConfig, errors);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].code).toBe('CorporateCustomerNotAllowed');
+      expect(errors[0].fields).toEqual(ecConfig);
+    });
+
+    it('should accept a private customer', () => {
+      const errors: Errorx[] = [];
+      const address = { country: 'DE', company: '  ' } as Address;
+
+      validatePrivateCustomer({ billingAddress: address } as unknown as Cart, address, ecConfig, errors);
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it.each([1, 2])('should reject a company at shipping destination %s in Multiple mode', (companyIndex) => {
+      const address = { country: 'DE' };
+      const cart = {
+        shippingMode: 'Multiple',
+        billingAddress: address,
+        shipping: [0, 1, 2].map((index) => ({
+          shippingAddress: index === companyIndex ? { ...address, company: 'ACME GmbH' } : address,
+        })),
+      } as unknown as Cart;
+
+      validatePrivateCustomer(cart, address, ecConfig, errors);
+
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400, fields: ecConfig }),
+      ]);
+    });
+
+    it('should accept Multiple destinations with absent, empty or whitespace-only companies', () => {
+      const address = { country: 'DE' };
+      const cart = {
+        shippingMode: 'Multiple',
+        billingAddress: address,
+        shipping: [undefined, '', '  '].map((company) => ({ shippingAddress: { ...address, company } })),
+      } as unknown as Cart;
+
+      validatePrivateCustomer(cart, address, ecConfig, errors);
+
+      expect(errors).toHaveLength(0);
     });
   });
 

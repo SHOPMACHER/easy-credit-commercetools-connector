@@ -8,6 +8,8 @@ import {
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import {
   GetPaymentMethodParamsSchema,
+  GetPaymentMethodQuerySchema,
+  GetPaymentMethodQuerySchemaDTO,
   GetPaymentMethodResponseSchema,
   GetPaymentMethodResponseSchemaDTO,
 } from '../dtos/payments/getPaymentMethod.dto';
@@ -52,12 +54,17 @@ type PaymentRouteOptions = {
 };
 
 export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & PaymentRouteOptions) => {
-  fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO; Params: { cartId: string } }>(
+  fastify.get<{
+    Reply: GetPaymentMethodResponseSchemaDTO;
+    Params: { cartId: string };
+    Querystring: GetPaymentMethodQuerySchemaDTO;
+  }>(
     '/payment-method/:cartId',
     {
       preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         params: GetPaymentMethodParamsSchema,
+        querystring: GetPaymentMethodQuerySchema,
         response: {
           200: GetPaymentMethodResponseSchema,
           400: ErrorResponse,
@@ -66,8 +73,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { cartId } = request.params;
+      const { paymentType } = request.query;
 
-      const method = await handlePaymentMethod(cartId);
+      const method = await handlePaymentMethod(cartId, paymentType);
 
       reply.code(200).send(method);
     },
