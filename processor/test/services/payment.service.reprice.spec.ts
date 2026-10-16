@@ -50,6 +50,7 @@ const buildCart = (cartState: string, cents: number, currencyCode = 'EUR') =>
     billingAddress: address,
     shippingAddress: address,
     lineItems: [],
+    customLineItems: [],
     totalPrice: { currencyCode, centAmount: cents, fractionDigits: 2 },
   }) as unknown as Cart;
 

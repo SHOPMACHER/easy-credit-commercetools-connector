@@ -93,7 +93,22 @@ export const validatePaymentTypeAvailability = (
     return;
   }
 
-  const { enabled, minAmount, maxAmount } = availability;
+  const { enabled, excludedByCartItems, minAmount, maxAmount } = availability;
+
+  // Removing the item is the actionable fix, so it takes precedence over the amount limits.
+  if (excludedByCartItems) {
+    errors.push(
+      new Errorx({
+        code: 'BillPaymentExcludedItems',
+        httpErrorStatus: 400,
+        message:
+          'Die Zahlung per easyCredit-Rechnung ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+        fields: ecConfig,
+      }),
+    );
+
+    return;
+  }
 
   // A disabled type stays unavailable at any amount, so its limits would only mislead the customer.
   if (

@@ -138,6 +138,8 @@ export type PaymentTypeAvailability = {
   // Activated for the webshop regardless of the cart amount; not exposed by the API.
   enabled: boolean;
   available: boolean;
+  // Set when an item in the cart rules this type out; not exposed by the API.
+  excludedByCartItems?: boolean;
   minAmount?: number;
   maxAmount?: number;
 };

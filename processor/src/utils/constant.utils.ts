@@ -21,6 +21,8 @@ export const EASYCREDIT_WEBSHOP_INFO_RETRY_MS = 30000;
 export const EASYCREDIT_WEBSHOP_INFO_MAX_STALE_MS = 3600000;
 
 export const MAX_WEBSHOP_CACHE_TTL_SECONDS = 3600;
+// The product types are loaded in one query, whose limit is at most 500.
+export const MAX_BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 500;
 
 export const EASYCREDIT_PAYMENT_METHOD = 'easycredit';
 

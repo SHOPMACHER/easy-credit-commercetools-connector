@@ -6,6 +6,9 @@ import { resetWebshopInfoCache } from '../../src/services/webshop.service';
 import { getCartById, updateCart } from '../../src/commercetools/cart.commercetools';
 import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
+import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
+import { resetBillPaymentRestrictionCache } from '../../src/services/billPaymentRestriction.service';
+import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
 import { paymentsRoute } from '../../src/routes/payment.route';
@@ -16,6 +19,7 @@ jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/commercetools/customObject.commercetools');
+jest.mock('../../src/commercetools/productType.commercetools');
 
 const address = {
   country: 'DE',
@@ -36,11 +40,20 @@ const webshopInfo = {
   maxBillingValue: 5000,
 };
 
-const mockCart = (amountInEur: number) =>
+const physicalItem = { productType: { typeId: 'product-type', id: 'pt-physical' } };
+const voucherItem = { productType: { typeId: 'product-type', id: 'pt-voucher' } };
+
+const mockCart = (
+  amountInEur: number,
+  { lineItems = [physicalItem], customLineItems = [] }: { lineItems?: object[]; customLineItems?: object[] } = {},
+) =>
   ({
+    id: 'cart123',
     cartState: 'Active',
     billingAddress: address,
     shippingAddress: address,
+    lineItems,
+    customLineItems,
     totalPrice: { currencyCode: 'EUR', centAmount: amountInEur * 100, fractionDigits: 2 },
   }) as unknown as Cart;
 
@@ -78,9 +91,34 @@ describe('payment type availability', () => {
   let getWebshopInfoMock: jest.Mock<() => Promise<unknown>>;
   let createECPaymentMock: jest.Mock;
 
+  const redirectLinks = {
+    urlSuccess: 'https://example.com',
+    urlCancellation: 'https://example.com',
+    urlDenial: 'https://example.com',
+  };
+
+  const mockCreateFlow = (cart: Cart) => {
+    jest.mocked(getCartById).mockResolvedValue(cart);
+    jest.mocked(updateCart).mockResolvedValue({ ...cart, lineItems: [], cartState: 'Frozen' } as Cart);
+    jest.mocked(createPayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof createPayment>>);
+    jest.mocked(updatePayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof updatePayment>>);
+    jest
+      .mocked(getCustomObjectByKey)
+      .mockResolvedValue({ value: 'https://connector.example.com' } as Awaited<
+        ReturnType<typeof getCustomObjectByKey>
+      >);
+    createECPaymentMock.mockImplementation(async () => ({
+      technicalTransactionId: 'tech123',
+      transactionId: 'tx123',
+      redirectUrl: 'https://easycredit.example.com',
+      transactionInformation: { status: 'OPEN', decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: '' } },
+    }));
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     resetWebshopInfoCache();
+    resetBillPaymentRestrictionCache();
     getWebshopInfoMock = jest.fn<() => Promise<unknown>>().mockResolvedValue(webshopInfo);
     createECPaymentMock = jest.fn();
     (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -194,12 +232,6 @@ describe('payment type availability', () => {
   });
 
   describe('handleCreatePayment', () => {
-    const redirectLinks = {
-      urlSuccess: 'https://example.com',
-      urlCancellation: 'https://example.com',
-      urlDenial: 'https://example.com',
-    };
-
     it.each(['Active', 'Frozen'] as const)(
       'should leave a previously %s cart untouched when webshop validation fails',
       async (cartState) => {
@@ -231,24 +263,6 @@ describe('payment type availability', () => {
         }
       },
     );
-
-    const mockCreateFlow = (cart: Cart) => {
-      jest.mocked(getCartById).mockResolvedValue(cart);
-      jest.mocked(updateCart).mockResolvedValue({ ...cart, lineItems: [], cartState: 'Frozen' } as Cart);
-      jest.mocked(createPayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof createPayment>>);
-      jest.mocked(updatePayment).mockResolvedValue({ id: 'payment123' } as Awaited<ReturnType<typeof updatePayment>>);
-      jest
-        .mocked(getCustomObjectByKey)
-        .mockResolvedValue({ value: 'https://connector.example.com' } as Awaited<
-          ReturnType<typeof getCustomObjectByKey>
-        >);
-      createECPaymentMock.mockImplementation(async () => ({
-        technicalTransactionId: 'tech123',
-        transactionId: 'tx123',
-        redirectUrl: 'https://easycredit.example.com',
-        transactionInformation: { status: 'OPEN', decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: '' } },
-      }));
-    };
 
     it('should create a BILL_PAYMENT transaction over HTTP', async () => {
       mockCreateFlow(mockCart(500));
@@ -392,6 +406,168 @@ describe('payment type availability', () => {
       expect(updateCart).not.toHaveBeenCalled();
       expect(createPayment).not.toHaveBeenCalled();
       expect(createECPaymentMock).not.toHaveBeenCalled();
+    });
+  });
+  describe('bill payment exclusion for non-physical items', () => {
+    const originalEnv = { ...process.env };
+
+    const createBillPayment = () =>
+      handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+
+    beforeEach(() => {
+      process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher, gift-card';
+      process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'voucher-item';
+      jest
+        .mocked(getProductTypesByKeys)
+        .mockResolvedValue([{ id: 'pt-voucher', key: 'voucher' }] as Awaited<ReturnType<typeof getProductTypesByKeys>>);
+    });
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    it('should offer bill payment for a cart with only physical products', async () => {
+      mockCreateFlow(mockCart(500));
+
+      const result = await handlePaymentMethod('cart123');
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+
+      await createBillPayment();
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
+      expect(log.info).not.toHaveBeenCalled();
+    });
+
+    describe.each([
+      ['a blacklisted product type', { lineItems: [voucherItem] }, ['voucher'], []],
+      ['physical products and a voucher', { lineItems: [physicalItem, voucherItem] }, ['voucher'], []],
+      ['a custom line item matched by slug', { customLineItems: [{ slug: 'voucher-item' }] }, [], ['voucher-item']],
+      [
+        'a custom line item matched by key',
+        { customLineItems: [{ slug: 'other', key: 'voucher-item' }] },
+        [],
+        ['voucher-item'],
+      ],
+    ])('for a cart with %s', (_, items, productTypeKeys, customLineItems) => {
+      it('should report bill payment as unavailable and keep installment', async () => {
+        jest.mocked(getCartById).mockResolvedValue(mockCart(500, items));
+
+        const result = await handlePaymentMethod('cart123');
+
+        expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
+        expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
+        expect(log.info).toHaveBeenCalledWith('Bill payment is excluded for the cart items', {
+          cartId: 'cart123',
+          productTypeKeys,
+          customLineItems,
+        });
+      });
+
+      it('should reject BILL_PAYMENT and leave the cart untouched', async () => {
+        jest.mocked(getCartById).mockResolvedValue(mockCart(500, items));
+
+        await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+          { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+        ]);
+        expect(updateCart).not.toHaveBeenCalled();
+        expect(createPayment).not.toHaveBeenCalled();
+        expect(createECPaymentMock).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should return the error code and only the webShopId over HTTP', async () => {
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500, { lineItems: [voucherItem] }));
+      const app = await buildApp();
+
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/payments',
+          payload: {
+            cartId: 'cart123',
+            redirectLinks,
+            customerRelationship: { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0 },
+            paymentType: 'BILL_PAYMENT',
+          },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json().errors).toEqual([
+          expect.objectContaining({ code: 'BillPaymentExcludedItems', fields: { webShopId: '1.de.123123' } }),
+        ]);
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('should re-validate at payment creation if a voucher was added after the check', async () => {
+      jest.mocked(getCartById).mockResolvedValueOnce(mockCart(500));
+      const result = await handlePaymentMethod('cart123');
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+
+      jest.mocked(getCartById).mockResolvedValueOnce(mockCart(500, { lineItems: [physicalItem, voucherItem] }));
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+      expect(createECPaymentMock).not.toHaveBeenCalled();
+    });
+
+    it('should prefer the exclusion over the bill amount limits', async () => {
+      jest.mocked(getCartById).mockResolvedValue(mockCart(40, { lineItems: [voucherItem] }));
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should keep installment creation working for a cart with a voucher', async () => {
+      mockCreateFlow(mockCart(500, { lineItems: [voucherItem] }));
+
+      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
+    });
+
+    it('should not offer bill payment if the product types cannot be loaded', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+
+      const result = await handlePaymentMethod('cart123');
+
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
+      expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'PaymentTypeNotAvailable', httpErrorStatus: 400 },
+      ]);
+      expect(log.error).toHaveBeenCalledWith(
+        'Failed to check the items of cart cart123 for bill payment, bill payment is not offered',
+        expect.any(Error),
+      );
+    });
+
+    it('should keep the custom line item reason if the product types cannot be loaded', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      jest
+        .mocked(getCartById)
+        .mockResolvedValue(mockCart(40, { lineItems: [physicalItem], customLineItems: [{ slug: 'voucher-item' }] }));
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+      expect(log.info).toHaveBeenCalledWith('Bill payment is excluded for the cart items', {
+        cartId: 'cart123',
+        productTypeKeys: [],
+        customLineItems: ['voucher-item'],
+      });
+    });
+
+    it('should not load product types while bill payment is disabled', async () => {
+      process.env.BILL_PAYMENT_ENABLED = '0';
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500, { lineItems: [voucherItem] }));
+
+      await handlePaymentMethod('cart123');
+
+      expect(getProductTypesByKeys).not.toHaveBeenCalled();
     });
   });
 });

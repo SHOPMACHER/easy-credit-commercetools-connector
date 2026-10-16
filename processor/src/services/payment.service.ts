@@ -49,9 +49,43 @@ import {
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
+import { getBillPaymentExclusion } from './billPaymentRestriction.service';
 
 // handlePaymentMethod and callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
+
+// Bill payment is for physical goods only; a failed product type lookup keeps it closed.
+const applyBillPaymentExclusion = async (
+  cart: Cart,
+  paymentTypes: PaymentTypesAvailability,
+): Promise<PaymentTypesAvailability> => {
+  const bill = paymentTypes[ECTransactionPaymentType.ECTransactionBillPayment];
+
+  if (!bill.enabled) {
+    return paymentTypes;
+  }
+
+  const withUnavailableBill = (excludedByCartItems?: true): PaymentTypesAvailability => ({
+    ...paymentTypes,
+    [ECTransactionPaymentType.ECTransactionBillPayment]: { ...bill, available: false, excludedByCartItems },
+  });
+
+  try {
+    const { productTypeKeys, customLineItems } = await getBillPaymentExclusion(cart);
+
+    if (productTypeKeys.length === 0 && customLineItems.length === 0) {
+      return paymentTypes;
+    }
+
+    log.info('Bill payment is excluded for the cart items', { cartId: cart.id, productTypeKeys, customLineItems });
+
+    return withUnavailableBill(true);
+  } catch (error: unknown) {
+    log.error(`Failed to check the items of cart ${cart.id} for bill payment, bill payment is not offered`, error);
+
+    return withUnavailableBill();
+  }
+};
 
 // Throws a MultiErrorx if easyCredit cannot be offered for the cart
 const validateCart = async (
@@ -72,7 +106,7 @@ const validateCart = async (
   }
 
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
-  const paymentTypes = await getPaymentTypesAvailability(amount);
+  const paymentTypes = await applyBillPaymentExclusion(cart, await getPaymentTypesAvailability(amount));
 
   validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
 
@@ -327,7 +361,8 @@ const assertAmountMatches = async (paymentId: string, ecPayment: ECGetPaymentRes
   const payment = await getPaymentById(paymentId);
   const transaction = getTransaction(payment) as Transaction;
   const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
-  const ecCents = ecValue === undefined ? undefined : eurToCents(ecValue);
+  // The easyCredit response is not validated at runtime, so the order value can be missing.
+  const ecCents = typeof ecValue === 'number' ? eurToCents(ecValue) : undefined;
 
   if (
     cart.cartState !== CTCartState.Frozen ||
