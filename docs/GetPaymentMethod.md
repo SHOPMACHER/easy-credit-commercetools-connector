@@ -55,8 +55,6 @@ The limits are defined by easyCredit per webshop in EUR and cannot be configured
 - A known deactivation or permanent failure blocks default installment fallback until a valid webshop response replaces it. This block is kept per `webShopId` in memory even after cached limits expire and across later network errors. Once disabled data exceeds the 1-hour stale limit, the connector returns `503 EasyCreditUnavailable` instead of enabling installment with defaults. A fresh response that still reports deactivation returns `400 PaymentTypeNotAvailable` as usual.
 - A failed request normally sets a 30-second window before the next background retry; the window ends sooner if the stale-data deadline is reached. Checkouts in the meantime are answered from the last result and do not wait for easyCredit.
 
-See the [TEBA-254 release note](releases/TEBA-254.md) for compatibility changes and the outstanding production verification.
-
 <br />
 
 ## Example URL Call
