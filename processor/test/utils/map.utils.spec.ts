@@ -1,5 +1,6 @@
 import {
   getShippingAddress,
+  getShippingDestinations,
   mapAddress,
   mapAmountToCTTransactionAmount,
   mapCTCartToCTPayment,
@@ -908,6 +909,46 @@ describe('Payment Mapping', () => {
       const result = getShippingAddress(mockCart);
 
       expect(result).toEqual(mockCart.shippingAddress);
+    });
+  });
+
+  describe('getShippingDestinations', () => {
+    const home = { country: 'DE', city: 'Berlin' };
+    const office = { country: 'DE', city: 'Hamburg' };
+
+    it('should return the shipping address in Single mode', () => {
+      const cart = { shippingMode: 'Single', shippingAddress: home } as unknown as Cart;
+
+      expect(getShippingDestinations(cart)).toEqual([home]);
+    });
+
+    it('should return every shipping address in Multiple mode', () => {
+      const cart = {
+        shippingMode: 'Multiple',
+        shipping: [{ shippingAddress: home }, { shippingAddress: office }],
+      } as unknown as Cart;
+
+      expect(getShippingDestinations(cart)).toEqual([home, office]);
+    });
+
+    it('should add the item shipping addresses targeted by line items or custom line items', () => {
+      const cart = {
+        shippingMode: 'Single',
+        shippingAddress: home,
+        itemShippingAddresses: [
+          { ...home, key: 'home' },
+          { ...office, key: 'office' },
+          { ...office, key: 'unused' },
+        ],
+        lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }, {}],
+        customLineItems: [{ shippingDetails: { targets: [{ addressKey: 'office', quantity: 1 }] } }],
+      } as unknown as Cart;
+
+      expect(getShippingDestinations(cart)).toEqual([home, { ...home, key: 'home' }, { ...office, key: 'office' }]);
+    });
+
+    it('should return no destination for a cart without shipping address', () => {
+      expect(getShippingDestinations({ shippingMode: 'Single' } as unknown as Cart)).toEqual([]);
     });
   });
 });

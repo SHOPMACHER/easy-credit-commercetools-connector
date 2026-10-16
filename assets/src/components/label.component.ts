@@ -1,5 +1,5 @@
 import { findElement, importEasyCreditScript } from '../utils/app.utils';
-import { toWebComponentPaymentType } from '../utils/payment-type.utils';
+import { assertPaymentType, toWebComponentPaymentType } from '../utils/payment-type.utils';
 import {
   LabelComponent,
   LabelComponentBuilder,
@@ -26,6 +26,7 @@ export class ECLabelComponent implements LabelComponent {
   private readonly paymentType?: PaymentType;
 
   constructor(opts: { processorUrl: string; sessionId: string; paymentType?: PaymentType }) {
+    assertPaymentType(opts.paymentType);
     this.processorUrl = opts.processorUrl;
     this.sessionId = opts.sessionId;
     this.paymentType = opts.paymentType;

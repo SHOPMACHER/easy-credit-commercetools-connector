@@ -142,7 +142,7 @@ Complete integration requires running/intergrating both of the modules. Please f
 #### Availability
 
 - `paymentType` selects the easyCredit payment method: `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`. The component asks the connector whether this payment type can be offered for the cart, see [Get Payment Method](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/blob/main/docs/GetPaymentMethod.md).
-- `isAvailable()` resolves to `false` if the payment type cannot be offered at all. Hide the payment option in that case; `mount()` then renders nothing.
+- `isAvailable()` resolves to `false` if the payment type cannot be offered at all, or if the processor response contains no `webShopId` to render the widget with (for example `401` or `500`), or if the request fails (network error or a body that is not JSON). It does not reject. Hide the payment option in that case. For `BILL_PAYMENT`, `mount()` then renders nothing. For `INSTALLMENT_PAYMENT`, `mount()` keeps its previous behavior: it renders the widget with the error as an alert, or throws if the response has no `webShopId`.
 
   | Payment type | Hidden on |
   | --- | --- |
@@ -153,11 +153,34 @@ Complete integration requires running/intergrating both of the modules. Please f
 - Each `isAvailable()` call queries the current cart state from the processor. The next `mount()` reuses that result once, avoiding a second request; later mounts fetch again.
 - After the cart changes, call `isAvailable()` again. Hide the payment option when it returns `false`, and clear any previously mounted label and widget containers. Clear the containers before remounting an available option as well, so outdated content is not retained.
 
+#### Compatibility
+
+`paymentType` and `isAvailable()` require a processor that supports the `paymentType` query parameter of [Get Payment Method](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/blob/main/docs/GetPaymentMethod.md). Deploy the enabler and the processor from the same connector release. An older processor ignores `paymentType` and answers with the installment checks, so pay by invoice would be shown based on the wrong limits.
+
+No numbered release contains this integration yet, so neither a commit nor the package version tells whether a deployed processor supports it. Check the processor instead: with a valid session, `GET /payments/payment-method/{cartId}?paymentType=UNKNOWN` returns `400 InvalidField` on a supported processor, while an older processor ignores the parameter and answers with the installment checks.
+
+When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Existing callers that only use `mount()` and `submit()` need no additional call for installment. For bill payment, call `isAvailable()` before displaying the payment option.
+
+For a test double, choose the result for the scenario under test:
+
+```ts
+const availableCheckout: CheckoutComponent = {
+  mount: () => {},
+  submit: () => {},
+  isAvailable: async () => true,
+};
+const unavailableCheckout: CheckoutComponent = {
+  ...availableCheckout,
+  isAvailable: async () => false,
+};
+```
+
 #### Pay by invoice as a separate payment method
 
 - Build a second checkout component with `paymentType: 'BILL_PAYMENT'` and a label with `{ paymentType: 'BILL_PAYMENT' }`. Both payment methods can be mounted on the same page, each into its own container.
 - Pay by invoice is only offered if `BILL_PAYMENT_ENABLED=1` in the connector, easyCredit has activated it for the webshop and the cart total is within the billing limits.
-- Pay by invoice is only available for private persons. For a cart with a Business Unit or a company in the billing address or any applicable shipping address, the widget shows an error message.
+- Any `paymentType` other than `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` makes the builder throw an error.
+- Pay by invoice is only available for private persons who receive the goods at their billing address in Germany. For a cart with a Business Unit, a company in the billing or any shipping address, or a shipping address that differs from the billing address, the widget shows an error message. With `shippingMode: Multiple` or item shipping addresses, every shipping address is checked.
 
   ```ts
     const [labelBuilder, checkoutBuilder] = await Promise.all([

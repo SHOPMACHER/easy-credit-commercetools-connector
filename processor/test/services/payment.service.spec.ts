@@ -19,6 +19,7 @@ import {
   validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePrivateCustomer,
+  validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
@@ -35,6 +36,7 @@ import {
 } from '../../src/types/payment.types';
 import {
   getShippingAddress,
+  getShippingDestinations,
   mapCreatePaymentResponse,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
@@ -52,6 +54,10 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateCurrency: jest.fn(),
   validatePaymentTypeAvailability: jest.fn(),
   validatePrivateCustomer: jest.fn(),
+  validateShippingDestinations: jest.fn(),
+  paymentTypeNotAvailableError: jest.requireActual<typeof import('../../src/validators/payment.validators')>(
+    '../../src/validators/payment.validators',
+  ).paymentTypeNotAvailableError,
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
   validateSuccessTransaction: jest.fn(),
@@ -63,7 +69,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
   readConfiguration: jest.fn().mockReturnValue({
-    easyCredit: { webShopId: 'webShopId123' },
+    easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
     commerceTools: {
       projectKey: 'projectKey123',
       clientId: 'clientId123',
@@ -181,13 +187,21 @@ describe('Payment handlers', () => {
       };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
+      const shippingDestinations = [mockCart.shippingAddress];
       (getShippingAddress as jest.Mock).mockReturnValue(mockCart.shippingAddress);
+      (getShippingDestinations as jest.Mock).mockReturnValue(shippingDestinations);
 
       await handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment);
 
+      expect(validateShippingDestinations).toHaveBeenCalledWith(
+        mockCart.billingAddress,
+        shippingDestinations,
+        { webShopId: 'webShopId123' },
+        expect.any(Array),
+      );
       expect(validatePrivateCustomer).toHaveBeenCalledWith(
         mockCart,
-        mockCart.shippingAddress,
+        shippingDestinations,
         { webShopId: 'webShopId123' },
         expect.any(Array),
       );
@@ -389,7 +403,9 @@ describe('Payment handlers', () => {
         // @ts-expect-error mocked
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
-      (readConfiguration as jest.Mock).mockReturnValue({ easyCredit: { webShopId: 'webShopId123' } });
+      (readConfiguration as jest.Mock).mockReturnValue({
+        easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
+      });
       (mapCreatePaymentResponse as jest.Mock).mockReturnValue(mockECPayment);
 
       const result = await handleCreatePayment(
@@ -554,7 +570,9 @@ describe('Payment handlers', () => {
         // @ts-expect-error mocked
         createPayment: jest.fn().mockResolvedValue(mockECPayment),
       });
-      (readConfiguration as jest.Mock).mockReturnValue({ easyCredit: { webShopId: 'webShopId123' } });
+      (readConfiguration as jest.Mock).mockReturnValue({
+        easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
+      });
 
       await handleCreatePayment('cart123', redirectLinks, customerRelationship);
 

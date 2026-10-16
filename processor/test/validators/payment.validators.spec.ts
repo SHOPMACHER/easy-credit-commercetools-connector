@@ -9,6 +9,7 @@ import {
   validatePaymentTypeAvailability,
   validatePendingTransaction,
   validatePrivateCustomer,
+  validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
@@ -288,56 +289,77 @@ describe('Validation Functions', () => {
     const ecConfig = { webShopId: 'webShopId123' };
 
     it.each([
-      ['a business unit', { businessUnit: { typeId: 'business-unit', key: 'acme' } }, undefined],
-      ['a billing address company', { billingAddress: { country: 'DE', company: 'ACME GmbH' } }, undefined],
-      ['a shipping address company', {}, { country: 'DE', company: 'ACME GmbH' }],
-    ])('should reject a cart with %s', (_, cart, shippingAddress) => {
+      ['a business unit', { businessUnit: { typeId: 'business-unit', key: 'acme' } }, []],
+      ['a billing address company', { billingAddress: { country: 'DE', company: 'ACME GmbH' } }, []],
+      ['a shipping address company', {}, [{ country: 'DE', company: 'ACME GmbH' }]],
+      ['a company at a later shipping destination', {}, [{ country: 'DE' }, { country: 'DE', company: 'ACME GmbH' }]],
+    ])('should reject a cart with %s', (_, cart, shippingDestinations) => {
       const errors: Errorx[] = [];
 
-      validatePrivateCustomer(cart as unknown as Cart, shippingAddress as Address | undefined, ecConfig, errors);
-
-      expect(errors).toHaveLength(1);
-      expect(errors[0].code).toBe('CorporateCustomerNotAllowed');
-      expect(errors[0].fields).toEqual(ecConfig);
-    });
-
-    it('should accept a private customer', () => {
-      const errors: Errorx[] = [];
-      const address = { country: 'DE', company: '  ' } as Address;
-
-      validatePrivateCustomer({ billingAddress: address } as unknown as Cart, address, ecConfig, errors);
-
-      expect(errors).toHaveLength(0);
-    });
-
-    it.each([1, 2])('should reject a company at shipping destination %s in Multiple mode', (companyIndex) => {
-      const address = { country: 'DE' };
-      const cart = {
-        shippingMode: 'Multiple',
-        billingAddress: address,
-        shipping: [0, 1, 2].map((index) => ({
-          shippingAddress: index === companyIndex ? { ...address, company: 'ACME GmbH' } : address,
-        })),
-      } as unknown as Cart;
-
-      validatePrivateCustomer(cart, address, ecConfig, errors);
+      validatePrivateCustomer(cart as unknown as Cart, shippingDestinations as Address[], ecConfig, errors);
 
       expect(errors).toEqual([
         expect.objectContaining({ code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400, fields: ecConfig }),
       ]);
     });
 
-    it('should accept Multiple destinations with absent, empty or whitespace-only companies', () => {
-      const address = { country: 'DE' };
-      const cart = {
-        shippingMode: 'Multiple',
-        billingAddress: address,
-        shipping: [undefined, '', '  '].map((company) => ({ shippingAddress: { ...address, company } })),
-      } as unknown as Cart;
+    it('should accept destinations with absent, empty or whitespace-only companies', () => {
+      const errors: Errorx[] = [];
+      const shippingDestinations = [undefined, '', '  '].map((company) => ({ country: 'DE', company }) as Address);
 
-      validatePrivateCustomer(cart, address, ecConfig, errors);
+      validatePrivateCustomer(
+        { billingAddress: { country: 'DE', company: ' ' } } as unknown as Cart,
+        shippingDestinations,
+        ecConfig,
+        errors,
+      );
 
       expect(errors).toHaveLength(0);
+    });
+  });
+
+  describe('validateShippingDestinations', () => {
+    const ecConfig = { webShopId: 'webShopId123' };
+    const billingAddress = { country: 'DE', firstName: 'Max', streetName: 'Hauptstr.', city: 'Berlin' } as Address;
+
+    beforeEach(() => {
+      jest
+        .mocked(compareAddress)
+        .mockImplementation(
+          jest.requireActual<typeof import('../../src/utils/commerceTools.utils')>(
+            '../../src/utils/commerceTools.utils',
+          ).compareAddress,
+        );
+    });
+
+    it('should accept destinations that all match the billing address', () => {
+      const errors: Errorx[] = [];
+
+      validateShippingDestinations(billingAddress, [billingAddress, { ...billingAddress }], ecConfig, errors);
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it.each([
+      ['a different address', { ...billingAddress, streetName: 'Nebenstr.' }],
+      ['a destination outside Germany', { ...billingAddress, country: 'AT' }],
+    ])('should reject %s at a later destination', (_, destination) => {
+      const errors: Errorx[] = [];
+
+      validateShippingDestinations(billingAddress, [billingAddress, destination], ecConfig, errors);
+
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'AddressesUnmatched', httpErrorStatus: 400, fields: ecConfig }),
+      ]);
+    });
+
+    it('should not report AddressesUnmatched twice', () => {
+      const errors: Errorx[] = [];
+      validateAddresses(billingAddress, { ...billingAddress, city: 'Hamburg' }, ecConfig, errors);
+
+      validateShippingDestinations(billingAddress, [{ ...billingAddress, city: 'Hamburg' }], ecConfig, errors);
+
+      expect(errors.filter(({ code }) => code === 'AddressesUnmatched')).toHaveLength(1);
     });
   });
 

@@ -129,6 +129,21 @@ describe('paymentsRoute', () => {
       });
 
       expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        statusCode: 400,
+        message: expect.stringContaining('paymentType'),
+        errors: [
+          {
+            code: 'InvalidField',
+            message: expect.any(String),
+            fields: {
+              field: 'paymentType',
+              invalidValue: 'UNKNOWN',
+              allowedValues: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+            },
+          },
+        ],
+      });
       expect(handlePaymentMethod).not.toHaveBeenCalled();
     });
 

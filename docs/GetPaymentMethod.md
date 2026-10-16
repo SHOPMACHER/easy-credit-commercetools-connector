@@ -23,7 +23,7 @@ To use this functionality, the following conditions must be met:
 
 ## Workflow
 
-1. **Fetch Cart by ID**: The cart is retrieved from CommerceTools using the provided `cartId`.
+1. **Fetch Cart by ID**: The cart is retrieved from CommerceTools using the provided `cartId`. For `BILL_PAYMENT` with `BILL_PAYMENT_ENABLED=0`, the API returns `PaymentTypeNotAvailable` without reading the cart.
 2. **Validate the cart and the requested payment type**: The order of the checks depends on `paymentType`:
    - `INSTALLMENT_PAYMENT` (default): the billing and shipping addresses and the currency are validated first. If they are invalid, the API returns `400` without calling easyCredit. Then the availability of installment is checked.
    - `BILL_PAYMENT`: the availability of pay by invoice is checked first, then the addresses, the currency and the customer (private persons only). The checkout component hides pay by invoice only on availability errors, so they must take precedence over cart errors that it shows as an alert.
@@ -40,7 +40,7 @@ To use this functionality, the following conditions must be met:
 | `INSTALLMENT_PAYMENT` | `availability` and `installmentPaymentActive` are `true`, and `minInstallmentValue <= amount <= maxInstallmentValue` |
 | `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`, `availability` and `billPaymentActive` are `true`, `minBillingValue <= amount <= maxBillingValue`, the webshop configuration is a fresh easyCredit response (see below), and the cart contains no line item whose product type key is in `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES` and no custom line item whose `slug` or `key` is in `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`, and the product type lookup succeeds (see [Excluded cart items](#excluded-cart-items)) |
 
-Pay by invoice is additionally only offered to private persons: a cart with a Business Unit or a `company` in the billing or shipping address is rejected with `CorporateCustomerNotAllowed`. For both payment types, billing and shipping address must be identical and in Germany.
+Pay by invoice is additionally only offered to private persons: a cart with a Business Unit or a `company` in the billing or shipping address is rejected with `CorporateCustomerNotAllowed`. For both payment types, billing and shipping address must be identical and in Germany. For pay by invoice this applies to every shipping address of the cart, including all addresses with `shippingMode: Multiple` and the item shipping addresses that line items are shipped to.
 
 The limits are defined by easyCredit per webshop in EUR and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data (see below).
 
@@ -93,7 +93,7 @@ The check only runs while `BILL_PAYMENT` is otherwise enabled, and only for this
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `paymentType` | No | `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`. Any other value returns `400`. |
+| `paymentType` | No | `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`. Any other value returns `400 InvalidField`. |
 
 **Headers:**
 ```http
@@ -142,7 +142,8 @@ Returned if the requested payment type can be offered. `BILL_PAYMENT.available` 
 | Status | Code | Reason |
 | --- | --- | --- |
 | 400 | `InvalidBillingAddress`, `InvalidShippingAddress`, `AddressesUnmatched`, `InvalidCurrency` | The cart addresses or currency are invalid. |
-| 400 | `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or shipping address. |
+| 400 | `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or any shipping address. |
+| 400 | `InvalidField` | `paymentType` is not `INSTALLMENT_PAYMENT` or `BILL_PAYMENT`. `fields` contains the invalid value and the allowed values. |
 | 400 | `InvalidAddress` | The billing address is incomplete or invalid: `firstName`, `lastName`, `streetName` and `city` must not be blank and `postalCode` must be 5 digits. Reported in addition to the codes above if both addresses exist. |
 | 400 | `InvalidAmount` | The cart total is outside the effective limits of the requested payment type. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
 | 400 | `PaymentTypeNotAvailable` | The requested payment type is not activated: easyCredit reports `availability: false`, `installmentPaymentActive: false` or `billPaymentActive: false`. For `BILL_PAYMENT` also if `BILL_PAYMENT_ENABLED=0`, the bill configuration is missing or invalid, or only stale or default webshop data is available. |
