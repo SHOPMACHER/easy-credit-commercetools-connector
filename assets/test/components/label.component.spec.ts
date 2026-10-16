@@ -33,6 +33,13 @@ describe('ECLabelComponentBuilder', () => {
 
     expect((component as any).sessionId).toBe(mockWebComponentOptions.sessionId);
   });
+
+  it('should reject an unknown payment type', () => {
+    const builder = new ECLabelComponentBuilder(mockWebComponentOptions);
+
+    // @ts-expect-error plain JS callers can pass any value
+    expect(() => builder.build({ paymentType: 'BILL' })).toThrow('Invalid easyCredit paymentType "BILL"');
+  });
 });
 
 describe('ECLabelComponent', () => {

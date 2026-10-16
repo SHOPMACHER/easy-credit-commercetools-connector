@@ -51,7 +51,7 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ### Pay by invoice (easyCredit-Rechnung)
 
-TEBA-248 offers pay by invoice as a separate payment method with its own label and checkout widget. The backend creates and authorizes transactions with `paymentType: BILL_PAYMENT`. Set `BILL_PAYMENT_ENABLED=1` and have easyCredit activate pay by invoice for the webshop.
+The checkout offers pay by invoice as a separate payment method with its own label and checkout widget. The backend creates and authorizes transactions with `paymentType: BILL_PAYMENT`. Set `BILL_PAYMENT_ENABLED=1` and have easyCredit activate pay by invoice for the webshop.
 
 See the [web components integration guide](./docs/WebComponents.md#pay-by-invoice-as-a-separate-payment-method) and [Create payments](/docs/CreatePayment.md).
 

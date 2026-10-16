@@ -319,6 +319,127 @@ describe('ECCheckoutComponent', () => {
     );
   });
 
+  describe('availability of responses the widget cannot be rendered from', () => {
+    const respondWith = (body: unknown, ok = false) =>
+      jest.mocked(fetch).mockResolvedValue({ ok, json: async () => body } as Response);
+    const nonRenderableBodies: [string, unknown][] = [
+      ['a 401 without errors', { statusCode: 401, message: 'Unauthorized' }],
+      [
+        'a 500 without webShopId',
+        { statusCode: 500, message: 'Internal', errors: [{ code: 'General', message: 'Internal' }] },
+      ],
+      ['an empty success body', {}],
+    ];
+
+    let element: { insertAdjacentHTML: jest.Mock; querySelector: jest.Mock };
+
+    beforeEach(() => {
+      element = { insertAdjacentHTML: jest.fn(), querySelector: jest.fn().mockReturnValue(null) };
+      (findElement as jest.Mock).mockReturnValue(element);
+    });
+
+    it.each(nonRenderableBodies)(
+      'should report bill payment as unavailable and render nothing on %s',
+      async (_, body) => {
+        component = new ECCheckoutComponent({
+          ...baseOptions,
+          checkoutComponentOptions: { ...checkoutOptions, paymentType: 'BILL_PAYMENT' },
+        });
+        respondWith(body);
+
+        await expect(component.isAvailable()).resolves.toBe(false);
+        await expect(component.mount('div')).resolves.toBeUndefined();
+
+        expect(element.insertAdjacentHTML).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(nonRenderableBodies)('should report installment as unavailable on %s', async (_, body) => {
+      respondWith(body);
+
+      await expect(component.isAvailable()).resolves.toBe(false);
+      await expect(component.mount('div')).rejects.toThrow('Invalid WebShopId received.');
+    });
+
+    it.each([
+      ['a network error', () => jest.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'))],
+      [
+        'a non-JSON body',
+        () =>
+          jest.mocked(fetch).mockResolvedValueOnce({
+            ok: false,
+            json: async () => {
+              throw new SyntaxError('Unexpected token <');
+            },
+          } as unknown as Response),
+      ],
+    ])('should report bill payment as unavailable on %s and fetch again on mount', async (_, failRequest) => {
+      component = new ECCheckoutComponent({
+        ...baseOptions,
+        checkoutComponentOptions: { ...checkoutOptions, paymentType: 'BILL_PAYMENT' },
+      });
+      failRequest();
+
+      await expect(component.isAvailable()).resolves.toBe(false);
+
+      respondWith({ webShopId: 'shop-id', amount: 100 }, true);
+      await component.mount('div');
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+        'beforeend',
+        expect.stringContaining('payment-type="BILL"'),
+      );
+    });
+  });
+
+  it('should hide installment on PaymentTypeNotAvailable but still render its widget with the alert', async () => {
+    const element = { insertAdjacentHTML: jest.fn(), querySelector: jest.fn().mockReturnValue(null) };
+    (findElement as jest.Mock).mockReturnValue(element);
+    jest.mocked(fetch).mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        statusCode: 400,
+        message: 'error',
+        errors: [{ code: 'PaymentTypeNotAvailable', message: 'Not available', fields: { webShopId: 'shop-id' } }],
+      }),
+    } as Response);
+
+    await expect(component.isAvailable()).resolves.toBe(false);
+    await component.mount('div');
+
+    expect(importEasyCreditScript).toHaveBeenCalled();
+    expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
+      'beforeend',
+      expect.stringMatching(/payment-type="INSTALLMENT"[\s\S]*alert="Not available"/),
+    );
+  });
+
+  it('should encode the cart id in the payment method request', async () => {
+    component = new ECCheckoutComponent({
+      ...baseOptions,
+      checkoutComponentOptions: { ...checkoutOptions, cartId: 'a/b?c' },
+    });
+    jest.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ webShopId: 'shop-id' }) } as Response);
+
+    await component.isAvailable();
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${baseOptions.processorUrl}/payments/payment-method/a%2Fb%3Fc?paymentType=INSTALLMENT_PAYMENT`,
+      expect.anything(),
+    );
+  });
+
+  it.each(['INSTALLMENT', 'bill_payment', null])('should reject the unknown payment type %p', (paymentType) => {
+    expect(() =>
+      new ECCheckoutComponentBuilder(baseOptions).build({
+        ...checkoutOptions,
+        paymentType: paymentType as unknown as CheckoutComponentOptions['paymentType'],
+      }),
+    ).toThrow(`Invalid easyCredit paymentType "${String(paymentType)}"`);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('should call onError callback when the submission fails', async () => {
     const errorResponse = { error: 'Payment failed' };
     (fetch as jest.Mock).mockImplementation(async () =>

@@ -176,6 +176,170 @@
 							],
 							"cookie": [],
 							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Bill payment available",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+						},
+						{
+							"name": "Bill payment outside the limits",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidAmount\",\n            \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Bill payment for a corporate customer",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"CorporateCustomerNotAllowed\",\n            \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Invalid payment type",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"The value BILL is not valid for field paymentType.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidField\",\n            \"message\": \"The value BILL is not valid for field paymentType.\",\n            \"fields\": {\n                \"field\": \"paymentType\",\n                \"invalidValue\": \"BILL\",\n                \"allowedValues\": [\n                    \"INSTALLMENT_PAYMENT\",\n                    \"BILL_PAYMENT\"\n                ]\n            }\n        }\n    ]\n}"
 						}
 					]
 				},
