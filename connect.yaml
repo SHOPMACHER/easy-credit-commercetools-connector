@@ -52,7 +52,7 @@ deployAs:
           required: true
           default: "1"
         - key: BILL_PAYMENT_ENABLED
-          description: Accept easyCredit pay by invoice (0 or 1). Transactions with paymentType BILL_PAYMENT are accepted if this is 1 and easyCredit has activated pay by invoice for the webshop. Showing it in the checkout also requires the enabler.
+          description: Offer easyCredit pay by invoice as a separate payment method in the checkout (0 or 1). Transactions with paymentType BILL_PAYMENT are accepted if this is 1 and easyCredit has activated pay by invoice for the webshop.
           required: false
           default: "0"
         - key: WEBSHOP_CACHE_TTL

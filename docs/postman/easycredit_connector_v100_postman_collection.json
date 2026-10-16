@@ -74,7 +74,7 @@
 				{
 					"name": "Validate CommerceTools Cart",
 					"request": {
-						"description": "Returns the availability of each payment type for the cart. The status is 200 if INSTALLMENT_PAYMENT is available. BILL_PAYMENT is reported in the response without affecting the status, and the same check decides whether POST /payments accepts BILL_PAYMENT. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit. Bill payment is unavailable with stale or default data.",
+						"description": "Validates the cart for the payment type in the optional paymentType query parameter (INSTALLMENT_PAYMENT by default, or BILL_PAYMENT). The response reports the availability of both payment types, and POST /payments runs the same check for its paymentType. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit; bill payment is unavailable with stale or default data and only offered to private persons.",
 						"method": "GET",
 						"header": [
 							{
@@ -84,7 +84,7 @@
 							}
 						],
 						"url": {
-							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}",
+							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=INSTALLMENT_PAYMENT",
 							"host": [
 								"{{connector_url}}"
 							],
@@ -92,6 +92,13 @@
 								"payments",
 								"payment-method",
 								"{{cart_id}}"
+							],
+							"query": [
+								{
+									"key": "paymentType",
+									"value": "INSTALLMENT_PAYMENT",
+									"description": "Optional. INSTALLMENT_PAYMENT (default) or BILL_PAYMENT"
+								}
 							]
 						}
 					},
@@ -169,6 +176,170 @@
 							],
 							"cookie": [],
 							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Bill payment available",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+						},
+						{
+							"name": "Bill payment outside the limits",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidAmount\",\n            \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Bill payment for a corporate customer",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL_PAYMENT"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"CorporateCustomerNotAllowed\",\n            \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+						},
+						{
+							"name": "Invalid payment type",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "X-Session-Id",
+										"value": "{{ctp_session_id}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"payment-method",
+										"{{cart_id}}"
+									],
+									"query": [
+										{
+											"key": "paymentType",
+											"value": "BILL"
+										}
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"The value BILL is not valid for field paymentType.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidField\",\n            \"message\": \"The value BILL is not valid for field paymentType.\",\n            \"fields\": {\n                \"field\": \"paymentType\",\n                \"invalidValue\": \"BILL\",\n                \"allowedValues\": [\n                    \"INSTALLMENT_PAYMENT\",\n                    \"BILL_PAYMENT\"\n                ]\n            }\n        }\n    ]\n}"
 						}
 					]
 				},
@@ -262,7 +433,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
-						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), InvalidAddress (incomplete billing address), plus the address and currency codes. See docs/CreatePayment.md.",
+						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop, and is only offered to private persons. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), InvalidAddress (incomplete billing address), CorporateCustomerNotAllowed (BILL_PAYMENT only), plus the address and currency codes. See docs/CreatePayment.md.",
 						"method": "POST",
 						"header": [
 							{
