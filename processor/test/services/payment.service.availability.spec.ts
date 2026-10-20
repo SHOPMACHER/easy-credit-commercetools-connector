@@ -445,7 +445,7 @@ describe('payment type availability', () => {
         'a custom line item matched by key',
         { customLineItems: [{ slug: 'other', key: 'voucher-item' }] },
         [],
-        ['voucher-item'],
+        ['other'],
       ],
     ])('for a cart with %s', (_, items, productTypeKeys, customLineItems) => {
       it('should report bill payment as unavailable and keep installment', async () => {
@@ -499,6 +499,22 @@ describe('payment type availability', () => {
       }
     });
 
+    it('should not create the payment if a voucher is added between the check and the freeze', async () => {
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+      jest
+        .mocked(updateCart)
+        .mockRejectedValue(new Errorx({ code: 'ConcurrentModification', message: 'conflict', httpErrorStatus: 409 }));
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'ConcurrentModification', httpErrorStatus: 409 },
+      ]);
+      // The freeze failed, so the cart is still active and must not be unfrozen.
+      expect(updateCart).toHaveBeenCalledTimes(1);
+      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart', strategy: 'HardFreeze' }]);
+      expect(createPayment).not.toHaveBeenCalled();
+      expect(createECPaymentMock).not.toHaveBeenCalled();
+    });
+
     it('should re-validate at payment creation if a voucher was added after the check', async () => {
       jest.mocked(getCartById).mockResolvedValueOnce(mockCart(500));
       const result = await handlePaymentMethod('cart123');
@@ -537,7 +553,7 @@ describe('payment type availability', () => {
       expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
       expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
       await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
-        { code: 'PaymentTypeNotAvailable', httpErrorStatus: 400 },
+        { code: 'BillPaymentCheckFailed', httpErrorStatus: 503 },
       ]);
       expect(log.error).toHaveBeenCalledWith(
         'Failed to check the items of cart cart123 for bill payment, bill payment is not offered',
@@ -559,6 +575,26 @@ describe('payment type availability', () => {
         productTypeKeys: [],
         customLineItems: ['voucher-item'],
       });
+    });
+
+    it('should report a failed lookup instead of the bill amount limits', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      jest.mocked(getCartById).mockResolvedValue(mockCart(40));
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentCheckFailed', httpErrorStatus: 503 },
+      ]);
+    });
+
+    it('should create an installment payment without the product type lookup', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      mockCreateFlow(mockCart(500, { lineItems: [voucherItem] }));
+
+      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
+      expect(getProductTypesByKeys).not.toHaveBeenCalled();
+      expect(log.error).not.toHaveBeenCalled();
     });
 
     it('should not load product types while bill payment is disabled', async () => {

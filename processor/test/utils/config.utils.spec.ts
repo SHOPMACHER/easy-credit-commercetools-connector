@@ -73,14 +73,4 @@ describe('readConfiguration', () => {
 
     expect(() => readConfiguration()).toThrow(code);
   });
-
-  it('should accept at most 500 bill payment excluded product types', () => {
-    const keys = (count: number) => Array.from({ length: count }, (_, index) => `type-${index}`).join(',');
-
-    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = keys(500);
-    expect(readConfiguration().easyCredit.billPaymentExcludedProductTypes).toHaveLength(500);
-
-    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = keys(501);
-    expect(() => readConfiguration()).toThrow('TooManyBillPaymentExcludedProductTypes');
-  });
 });

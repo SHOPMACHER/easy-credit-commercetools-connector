@@ -57,12 +57,12 @@ describe('getBillPaymentExclusion', () => {
   });
 
   it.each([
-    ['slug', [{ slug: 'voucher-item' }]],
-    ['key', [{ slug: 'other', key: 'voucher-item' }]],
-  ])('should match custom line items by %s', async (_, customLineItems) => {
+    ['slug', [{ slug: 'voucher-item' }], ['voucher-item']],
+    ['key', [{ slug: 'other', key: 'voucher-item' }], ['other']],
+  ])('should match custom line items by %s and return their slugs', async (_, customLineItems, expected) => {
     await expect(getBillPaymentExclusion(buildCart({ customLineItems }))).resolves.toEqual({
       productTypeKeys: [],
-      customLineItems: ['voucher-item'],
+      customLineItems: expected,
     });
   });
 
@@ -106,25 +106,28 @@ describe('getBillPaymentExclusion', () => {
     expect(getProductTypesByKeys).toHaveBeenCalledTimes(2);
   });
 
-  it('should reload the product types when the configured keys change', async () => {
-    const cart = buildCart({ lineItems: [lineItem('pt-voucher')] });
-
-    await getBillPaymentExclusion(cart);
-    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher';
-    await getBillPaymentExclusion(cart);
-
-    expect(getProductTypesByKeys).toHaveBeenLastCalledWith(['voucher']);
-    expect(getProductTypesByKeys).toHaveBeenCalledTimes(2);
-  });
-
-  it('should warn about configured product types that do not exist', async () => {
+  it('should warn about configured product types that do not exist and still exclude the known ones', async () => {
     jest.mocked(getProductTypesByKeys).mockResolvedValue(productTypes({ id: 'pt-voucher', key: 'voucher' }));
 
-    await getBillPaymentExclusion(buildCart({ lineItems: [lineItem('pt-gift')] }));
-
+    await expect(getBillPaymentExclusion(buildCart({ lineItems: [lineItem('pt-voucher')] }))).resolves.toEqual({
+      productTypeKeys: ['voucher'],
+      customLineItems: [],
+    });
     expect(log.warn).toHaveBeenCalledWith('Bill payment excluded product types do not exist', {
       productTypeKeys: ['gift-card'],
     });
+  });
+
+  it('should not cache a result with unknown product types', async () => {
+    const cart = buildCart({ lineItems: [lineItem('pt-gift')] });
+    jest.mocked(getProductTypesByKeys).mockResolvedValueOnce(productTypes({ id: 'pt-voucher', key: 'voucher' }));
+
+    await expect(getBillPaymentExclusion(cart)).resolves.toEqual({ productTypeKeys: [], customLineItems: [] });
+    await expect(getBillPaymentExclusion(cart)).resolves.toEqual({
+      productTypeKeys: ['gift-card'],
+      customLineItems: [],
+    });
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(2);
   });
 
   it('should not cache a failed lookup', async () => {

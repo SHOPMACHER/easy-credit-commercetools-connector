@@ -25,7 +25,7 @@ To use this functionality, the following conditions must be met:
 2. **Validate Cart**: The billing and shipping addresses and the currency are validated. If they are invalid, the API returns `400` without calling easyCredit.
 3. **Fetch webshop configuration**: The activation status and limits of each payment type are read from the easyCredit webshop endpoint (`GET /payment/v3/webshop/{webShopId}`), see [Webshop configuration](#webshop-configuration).
 4. **Resolve payment types**: For each payment type the connector decides whether it can be offered for the cart total, see [Payment type availability](#payment-type-availability).
-5. **Return Result**: The API returns `200` if `INSTALLMENT_PAYMENT` is available, otherwise `400` with the reason. `BILL_PAYMENT` is reported in the response but does not affect the status of this call. The same check decides whether `POST /payments` accepts `BILL_PAYMENT`: a payment type reported as available here is accepted there, and a type reported as unavailable is rejected there with `InvalidAmount`, `PaymentTypeNotAvailable` or `BillPaymentExcludedItems`.
+5. **Return Result**: The API returns `200` if `INSTALLMENT_PAYMENT` is available, otherwise `400` with the reason. `BILL_PAYMENT` is reported in the response but does not affect the status of this call. The same check decides whether `POST /payments` accepts `BILL_PAYMENT`: a payment type reported as available here is accepted there, and a type reported as unavailable is rejected there with `InvalidAmount`, `PaymentTypeNotAvailable`, `BillPaymentExcludedItems` or `BillPaymentCheckFailed`.
 
 <br />
 
@@ -34,7 +34,7 @@ To use this functionality, the following conditions must be met:
 | Payment type | Offered if |
 | --- | --- |
 | `INSTALLMENT_PAYMENT` | `availability` and `installmentPaymentActive` are `true`, and `minInstallmentValue <= amount <= maxInstallmentValue` |
-| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`, `availability` and `billPaymentActive` are `true`, `minBillingValue <= amount <= maxBillingValue`, the webshop configuration is a fresh easyCredit response (see below), and the cart contains no line item whose product type key is in `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES` and no custom line item whose `slug` or `key` is in `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS` (see [Excluded cart items](#excluded-cart-items)) |
+| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`, `availability` and `billPaymentActive` are `true`, `minBillingValue <= amount <= maxBillingValue`, the webshop configuration is a fresh easyCredit response (see below), and the cart contains no line item whose product type key is in `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES` and no custom line item whose `slug` or `key` is in `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`, and the product type lookup succeeds (see [Excluded cart items](#excluded-cart-items)) |
 
 The limits are defined by easyCredit per webshop in EUR and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data (see below).
 
@@ -47,9 +47,16 @@ Pay by invoice is only offered for physical goods. Vouchers and other non-physic
 - `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`: product type keys. A cart with at least one line item of such a product type cannot use `BILL_PAYMENT`, also if it contains physical products.
 - `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`: custom line item slugs or keys, for items without a product type.
 
-The connector resolves the product type keys to ids with the `view_product_types` scope and caches them for `WEBSHOP_CACHE_TTL` seconds. Unknown keys are logged as a warning. If the lookup fails, `BILL_PAYMENT` is not offered (fail closed) and the error is logged; installment is not affected. A cart with a matching custom line item is excluded without the lookup. Each exclusion is logged at info level with the cart ID and the matching product type keys or custom line item slugs/keys.
+Both lists are comma-separated. Each entry has at least 2 characters out of `A-Z`, `a-z`, `0-9`, `_` and `-`. An invalid entry stops the connector at startup. Spaces around entries, empty entries and duplicates are ignored.
 
-The check only runs while `BILL_PAYMENT` is otherwise enabled. It does not change the status of this call: `BILL_PAYMENT.available` is `false`.
+The connector resolves the product type keys to ids in one query with the `view_product_types` scope, so keep the list short: with more than 500 keys, or a query URL that commercetools rejects as too long, the lookup always fails. The result is cached for `WEBSHOP_CACHE_TTL` seconds:
+
+- If a configured key does not exist, it is logged as a warning and the result is not cached, so a product type created later applies on the next request. Until the key is fixed or the product type exists, every check runs the query and logs the warning.
+- A product type that is deleted and created again with the same key gets a new id. Its line items are only excluded after the cache expires or the connector restarts.
+
+If the lookup fails (for example a missing scope or a commercetools outage), `BILL_PAYMENT` is not offered (fail closed) and the error is logged. `POST /payments` then returns `503 BillPaymentCheckFailed`. A cart with a matching custom line item is excluded without the lookup. Each exclusion is logged at info level with the cart ID, the matching product type keys and the slugs of the matching custom line items.
+
+The check only runs while `BILL_PAYMENT` is otherwise enabled, and only for this call and for `POST /payments` with `BILL_PAYMENT`. Installment payments are created without it. It does not change the status of this call: `BILL_PAYMENT.available` is `false`.
 
 <br />
 

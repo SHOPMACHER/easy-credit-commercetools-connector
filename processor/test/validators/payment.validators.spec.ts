@@ -16,7 +16,7 @@ import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
+import { CTTransactionState, CTTransactionType, PaymentTypeExclusion } from '../../src/types/payment.types';
 
 jest.mock('../../src/utils/commerceTools.utils', () => ({
   compareAddress: jest.fn(),
@@ -215,16 +215,17 @@ describe('Validation Functions', () => {
       expect(errors).toHaveLength(0);
     });
 
-    it('should push BillPaymentExcludedItems instead of InvalidAmount if cart items exclude the type', () => {
+    it.each<[PaymentTypeExclusion, string, number]>([
+      ['cartItems', 'BillPaymentExcludedItems', 400],
+      ['checkFailed', 'BillPaymentCheckFailed', 503],
+    ])('should push %s as %s instead of InvalidAmount', (exclusion, code, httpErrorStatus) => {
       validatePaymentTypeAvailability(
         10,
-        { enabled: true, available: false, excludedByCartItems: true, minAmount: 50, maxAmount: 5000 },
+        { enabled: true, available: false, exclusion, minAmount: 50, maxAmount: 5000 },
         ecConfig,
         errors,
       );
-      expect(errors).toEqual([
-        expect.objectContaining({ code: 'BillPaymentExcludedItems', httpErrorStatus: 400, fields: ecConfig }),
-      ]);
+      expect(errors).toEqual([expect.objectContaining({ code, httpErrorStatus, fields: ecConfig })]);
     });
 
     it.each([100, 10001])('should push InvalidAmount with the given limits if amount %s is out of range', (amount) => {

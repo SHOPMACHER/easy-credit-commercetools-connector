@@ -64,11 +64,6 @@ export const standardUrl = (path, message, overrideOptions = {}) => [
   ],
 ];
 
-export const maxItems = (path, message, max) => [
-  path,
-  [[(value) => Array.isArray(value) && value.length <= max, message]],
-];
-
 export const standardBoolean: ValidatorCreator = (path, message) => [path, [[required(validator.isBoolean), message]]];
 
 export const getValidateMessages = (validatorConfigs, item) =>

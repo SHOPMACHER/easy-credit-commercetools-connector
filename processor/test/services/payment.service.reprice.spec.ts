@@ -5,6 +5,8 @@ import * as webshopService from '../../src/services/webshop.service';
 import { getCartById, updateCart } from '../../src/commercetools/cart.commercetools';
 import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
+import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
+import { resetBillPaymentRestrictionCache } from '../../src/services/billPaymentRestriction.service';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
 
@@ -13,6 +15,7 @@ jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/commercetools/customObject.commercetools');
+jest.mock('../../src/commercetools/productType.commercetools');
 
 const address = {
   country: 'DE',
@@ -91,6 +94,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     webshopService.resetWebshopInfoCache();
+    resetBillPaymentRestrictionCache();
     createECPaymentMock = jest.fn(async () => ({
       technicalTransactionId: 'tech123',
       transactionId: 'tx123',
@@ -143,7 +147,36 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     expect(createECPaymentMock).toHaveBeenCalledTimes(1);
   });
 
-  it('fetches the availability once when the total is unchanged', async () => {
+  it.each([
+    ['a repriced total', 60000],
+    ['an unchanged total', 50000],
+  ])('rejects BILL_PAYMENT if the frozen cart gained an excluded item with %s and unfreezes it', async (_, cents) => {
+    const originalEnv = { ...process.env };
+    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher';
+    jest
+      .mocked(getProductTypesByKeys)
+      .mockResolvedValue([{ id: 'pt-voucher', key: 'voucher' }] as Awaited<ReturnType<typeof getProductTypesByKeys>>);
+    const physicalItem = { id: 'li-physical', productType: { typeId: 'product-type', id: 'pt-physical' } };
+    // For example a gift line item that a cart discount adds on recalculation.
+    const voucherItem = { id: 'li-voucher', productType: { typeId: 'product-type', id: 'pt-voucher' } };
+    const frozen = { ...buildCart('Frozen', cents), lineItems: [physicalItem, voucherItem] } as unknown as Cart;
+    mockFlow({ ...buildCart('Active', 50000), lineItems: [physicalItem] } as unknown as Cart, frozen);
+
+    try {
+      await expect(
+        getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+      ).resolves.toEqual([{ code: 'BillPaymentExcludedItems', httpErrorStatus: 400 }]);
+    } finally {
+      process.env = originalEnv;
+    }
+
+    expect(availabilitySpy).toHaveBeenCalledTimes(2);
+    expect(createPayment).not.toHaveBeenCalled();
+    expect(createECPaymentMock).not.toHaveBeenCalled();
+    expect(updateCart).toHaveBeenLastCalledWith(frozen, [{ action: 'unfreezeCart' }]);
+  });
+
+  it('fetches the availability once when the total and the items are unchanged', async () => {
     mockFlow(buildCart('Active', 50000), buildCart('Frozen', 50000));
 
     await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, INSTALLMENT);

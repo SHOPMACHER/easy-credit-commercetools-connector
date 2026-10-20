@@ -134,12 +134,14 @@ export type ECWebshopInfo = {
   maxBillingValue?: number;
 };
 
+export type PaymentTypeExclusion = 'cartItems' | 'checkFailed';
+
 export type PaymentTypeAvailability = {
   // Activated for the webshop regardless of the cart amount; not exposed by the API.
   enabled: boolean;
   available: boolean;
-  // Set when an item in the cart rules this type out; not exposed by the API.
-  excludedByCartItems?: boolean;
+  // Set when the cart item check rules this type out; not exposed by the API.
+  exclusion?: PaymentTypeExclusion;
   minAmount?: number;
   maxAmount?: number;
 };

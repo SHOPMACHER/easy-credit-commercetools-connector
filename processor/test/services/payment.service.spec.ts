@@ -270,7 +270,12 @@ describe('Payment handlers', () => {
     });
 
     it('should successfully create a payment and freeze the cart', async () => {
-      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const mockCart = {
+        cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
+        totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
+      };
       const mockPayment = { id: 'payment123' };
       const mockECPayment = {
         transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } },
@@ -309,7 +314,12 @@ describe('Payment handlers', () => {
     });
 
     it('should handle failure of decisionOutcome and unfreeze the cart', async () => {
-      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const mockCart = {
+        cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
+        totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
+      };
       const frozenCart = { ...mockCart, cartState: 'Frozen' };
       const mockPayment = { id: 'payment123' };
       const mockECPayment = {
@@ -354,7 +364,12 @@ describe('Payment handlers', () => {
     });
 
     it('should unfreeze the cart if payment creation fails', async () => {
-      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const mockCart = {
+        cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
+        totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
+      };
       const frozenCart = { ...mockCart, cartState: 'Frozen' };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
@@ -382,7 +397,12 @@ describe('Payment handlers', () => {
     });
 
     it('should keep the original error if unfreezing the cart fails', async () => {
-      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 1000 } };
+      const mockCart = {
+        cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
+        totalPrice: { currencyCode: 'EUR', centAmount: 1000 },
+      };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       (updateCart as jest.Mock)
@@ -410,6 +430,8 @@ describe('Payment handlers', () => {
     it('should validate the installment payment type and pass it to the easyCredit transaction', async () => {
       const mockCart = {
         cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
         totalPrice: { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 },
       };
       const mockPayment = { id: 'payment123' };
@@ -454,7 +476,12 @@ describe('Payment handlers', () => {
     });
 
     it('should not create a payment if the payment type is not available', async () => {
-      const mockCart = { cartState: 'Active', totalPrice: { currencyCode: 'EUR', centAmount: 50000 } };
+      const mockCart = {
+        cartState: 'Active',
+        lineItems: [],
+        customLineItems: [],
+        totalPrice: { currencyCode: 'EUR', centAmount: 50000 },
+      };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       // @ts-expect-error mocked
@@ -497,7 +524,7 @@ describe('Payment handlers', () => {
         numberOfOrders: 0,
       };
       const totalPrice = { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 };
-      const activeCart = { id: 'cart123', cartState: 'Active', totalPrice };
+      const activeCart = { id: 'cart123', cartState: 'Active', lineItems: [], customLineItems: [], totalPrice };
       const frozenCart = { ...activeCart, cartState: 'Frozen', freezeStrategy: 'HardFreeze' };
       const ctPayment = { id: 'payment123' };
       const positiveECPayment = { transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } } };

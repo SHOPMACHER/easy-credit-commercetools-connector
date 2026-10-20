@@ -1,6 +1,5 @@
 import {
   array,
-  maxItems,
   optional,
   region,
   standardInteger,
@@ -9,7 +8,7 @@ import {
   standardString,
   standardUrl,
 } from './helpers.validators';
-import { MAX_BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES, MAX_WEBSHOP_CACHE_TTL_SECONDS } from '../utils/constant.utils';
+import { MAX_WEBSHOP_CACHE_TTL_SECONDS } from '../utils/constant.utils';
 
 /**
  * Create here your own validators
@@ -140,16 +139,6 @@ const envValidators = [
     message: 'Bill payment excluded product types should be a comma-separated list of product type keys.',
     referencedBy: 'environmentVariables',
   }),
-
-  maxItems(
-    ['easyCredit', 'billPaymentExcludedProductTypes'],
-    {
-      code: 'TooManyBillPaymentExcludedProductTypes',
-      message: `Bill payment excluded product types should contain at most ${MAX_BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES} keys.`,
-      referencedBy: 'environmentVariables',
-    },
-    MAX_BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES,
-  ),
 
   array(standardKey)(['easyCredit', 'billPaymentExcludedCustomLineItems'], {
     code: 'InvalidBillPaymentExcludedCustomLineItems',

@@ -16,6 +16,7 @@ import {
   GetPaymentMethodResponse,
   GetPaymentResponse,
   PaymentResponse,
+  PaymentTypeExclusion,
   PaymentTypesAvailability,
 } from '../types/payment.types';
 import { CartUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/cart';
@@ -65,9 +66,9 @@ const applyBillPaymentExclusion = async (
     return paymentTypes;
   }
 
-  const withUnavailableBill = (excludedByCartItems?: true): PaymentTypesAvailability => ({
+  const withUnavailableBill = (exclusion: PaymentTypeExclusion): PaymentTypesAvailability => ({
     ...paymentTypes,
-    [ECTransactionPaymentType.ECTransactionBillPayment]: { ...bill, available: false, excludedByCartItems },
+    [ECTransactionPaymentType.ECTransactionBillPayment]: { ...bill, available: false, exclusion },
   });
 
   try {
@@ -79,11 +80,11 @@ const applyBillPaymentExclusion = async (
 
     log.info('Bill payment is excluded for the cart items', { cartId: cart.id, productTypeKeys, customLineItems });
 
-    return withUnavailableBill(true);
+    return withUnavailableBill('cartItems');
   } catch (error: unknown) {
     log.error(`Failed to check the items of cart ${cart.id} for bill payment, bill payment is not offered`, error);
 
-    return withUnavailableBill();
+    return withUnavailableBill('checkFailed');
   }
 };
 
@@ -106,7 +107,12 @@ const validateCart = async (
   }
 
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
-  const paymentTypes = await applyBillPaymentExclusion(cart, await getPaymentTypesAvailability(amount));
+  const availability = await getPaymentTypesAvailability(amount);
+  // Installment requests skip the product type lookup; handlePaymentMethod applies it for the response.
+  const paymentTypes =
+    paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+      ? await applyBillPaymentExclusion(cart, availability)
+      : availability;
 
   validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
 
@@ -120,7 +126,7 @@ const validateCart = async (
 export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
-    const paymentTypes = await validateCart(cart);
+    const paymentTypes = await applyBillPaymentExclusion(cart, await validateCart(cart));
 
     return {
       webShopId: readConfiguration().easyCredit.webShopId,
@@ -160,6 +166,9 @@ const unfreezeAfterFailedCreate = async (cart: Cart, orphanPaymentId?: string): 
   }
 };
 
+const getItemIds = ({ lineItems, customLineItems }: Cart): string =>
+  [...lineItems, ...customLineItems].map(({ id }) => id).join(',');
+
 export const handleCreatePayment = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
@@ -174,12 +183,17 @@ export const handleCreatePayment = async (
     cart = await getCartById(cartId);
     await validateCart(cart, paymentType);
     const { centAmount, currencyCode } = cart.totalPrice;
+    const itemIds = getItemIds(cart);
 
     cart = await hardFreezeCart(cart);
     shouldUnfreezeCart = true;
 
-    // Freezing can reprice the cart, so the limits validated above may no longer hold.
-    if (cart.totalPrice.centAmount !== centAmount || cart.totalPrice.currencyCode !== currencyCode) {
+    // Freezing can reprice the cart or add a 0 € gift line item, so the checks above may no longer hold.
+    if (
+      cart.totalPrice.centAmount !== centAmount ||
+      cart.totalPrice.currencyCode !== currencyCode ||
+      getItemIds(cart) !== itemIds
+    ) {
       await validateCart(cart, paymentType);
     }
 
@@ -361,8 +375,7 @@ const assertAmountMatches = async (paymentId: string, ecPayment: ECGetPaymentRes
   const payment = await getPaymentById(paymentId);
   const transaction = getTransaction(payment) as Transaction;
   const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
-  // The easyCredit response is not validated at runtime, so the order value can be missing.
-  const ecCents = typeof ecValue === 'number' ? eurToCents(ecValue) : undefined;
+  const ecCents = ecValue === undefined ? undefined : eurToCents(ecValue);
 
   if (
     cart.cartState !== CTCartState.Frozen ||
