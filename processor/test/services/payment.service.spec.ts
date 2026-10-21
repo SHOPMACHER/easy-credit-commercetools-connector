@@ -288,16 +288,16 @@ describe('Payment handlers', () => {
       });
 
       await expect(handlePaymentMethod('cart123')).rejects.toThrow(MultiErrorx);
-      expect(log.error).toHaveBeenCalledWith('Error in getting EasyCredit Payment Method', expect.any(Error));
+      expect(log.error).not.toHaveBeenCalled();
     });
 
-    it('should log and rethrow any unknown error', async () => {
+    it('should rethrow any unknown error and leave logging to the error handler', async () => {
       const error = new Error('Unexpected error');
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockRejectedValue(error);
 
       await expect(handlePaymentMethod('cart123')).rejects.toThrow(error);
-      expect(log.error).toHaveBeenCalledWith('Error in getting EasyCredit Payment Method', error);
+      expect(log.error).not.toHaveBeenCalled();
     });
   });
 

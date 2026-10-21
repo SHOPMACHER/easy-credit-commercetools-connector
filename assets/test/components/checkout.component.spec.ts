@@ -10,6 +10,12 @@ jest.mock('../../src/utils/app.utils');
 // @ts-expect-error: Mock fetch globally
 fetch = jest.fn() as jest.Mock;
 
+const billAvailableResponse = (amount = 100) => ({
+  webShopId: 'shop-id',
+  amount,
+  paymentTypes: { BILL_PAYMENT: { available: true } },
+});
+
 describe('ECCheckoutComponentBuilder', () => {
   let baseOptions: WebComponentOptions;
 
@@ -222,7 +228,7 @@ describe('ECCheckoutComponent', () => {
     });
 
     it('should render the bill payment widget', async () => {
-      mockPaymentMethodResponse({ webShopId: 'shop-id', amount: 100 });
+      mockPaymentMethodResponse(billAvailableResponse());
 
       await component.mount('div');
 
@@ -239,7 +245,7 @@ describe('ECCheckoutComponent', () => {
     it('should bind the submit handler to its own widget', async () => {
       const widget = { addEventListener: jest.fn() };
       element.querySelector.mockReturnValue(widget);
-      mockPaymentMethodResponse({ webShopId: 'shop-id', amount: 100 });
+      mockPaymentMethodResponse(billAvailableResponse());
 
       await component.mount('div');
 
@@ -255,11 +261,26 @@ describe('ECCheckoutComponent', () => {
         await expect(component.isAvailable()).resolves.toBe(false);
         await component.mount('div');
 
-        expect(fetch).toHaveBeenCalledTimes(1);
         expect(importEasyCreditScript).not.toHaveBeenCalled();
         expect(element.insertAdjacentHTML).not.toHaveBeenCalled();
       },
     );
+
+    it.each([
+      ['an older processor that omits paymentTypes', { webShopId: 'shop-id', amount: 100 }],
+      [
+        'a response that reports bill payment unavailable',
+        { webShopId: 'shop-id', amount: 100, paymentTypes: { BILL_PAYMENT: { available: false } } },
+      ],
+    ])('should be unavailable and render nothing on a 200 from %s', async (_, body) => {
+      mockPaymentMethodResponse(body);
+
+      await expect(component.isAvailable()).resolves.toBe(false);
+      await component.mount('div');
+
+      expect(importEasyCreditScript).not.toHaveBeenCalled();
+      expect(element.insertAdjacentHTML).not.toHaveBeenCalled();
+    });
 
     it('should submit the bill payment type', async () => {
       (fetch as jest.Mock).mockImplementation(async () =>
@@ -382,7 +403,7 @@ describe('ECCheckoutComponent', () => {
 
       await expect(component.isAvailable()).resolves.toBe(false);
 
-      respondWith({ webShopId: 'shop-id', amount: 100 }, true);
+      respondWith(billAvailableResponse(), true);
       await component.mount('div');
 
       expect(fetch).toHaveBeenCalledTimes(2);
@@ -495,23 +516,15 @@ describe('ECCheckoutComponent', () => {
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 
-    it('should refresh each availability check and share its result with the next mount only', async () => {
+    it('should read the current cart on every availability check and mount', async () => {
       respondWith({ webShopId: 'shop-id', amount: 500 });
       await expect(component.isAvailable()).resolves.toBe(true);
 
       respondWith({ webShopId: 'shop-id', amount: 700 });
-      await expect(component.isAvailable()).resolves.toBe(true);
       await component.mount('#checkout');
 
       expect(document.querySelector('easycredit-checkout')?.getAttribute('amount')).toBe('700');
       expect(fetch).toHaveBeenCalledTimes(2);
-
-      respondWith({ webShopId: 'shop-id', amount: 800 });
-      document.querySelector('#checkout')!.innerHTML = '';
-      await component.mount('#checkout');
-
-      expect(document.querySelector('easycredit-checkout')?.getAttribute('amount')).toBe('800');
-      expect(fetch).toHaveBeenCalledTimes(3);
     });
 
     it.each(['InvalidAmount', 'EasyCreditUnavailable'])(
@@ -531,12 +544,12 @@ describe('ECCheckoutComponent', () => {
         );
         await expect(component.isAvailable()).resolves.toBe(false);
 
-        respondWith({ webShopId: 'shop-id', amount: 500 });
+        respondWith(billAvailableResponse(500));
         await expect(component.isAvailable()).resolves.toBe(true);
         await component.mount('#checkout');
 
         expect(document.querySelector('easycredit-checkout')?.getAttribute('payment-type')).toBe('BILL');
-        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(fetch).toHaveBeenCalledTimes(3);
       },
     );
   });

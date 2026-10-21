@@ -245,6 +245,61 @@ describe('ECSummaryComponent', () => {
           expect.stringContaining('alert="Es ist ein Fehler aufgetreten. Die Zahlung per Rechnung ist nicht möglich."'),
         );
       });
+
+      it('should use the payment type passed by the shop on an error response', async () => {
+        component = new ECSummaryComponent({
+          ...baseOptions,
+          summaryComponentOptions: { ...summaryComponentOptions, paymentType: 'BILL_PAYMENT' },
+        });
+        jest.mocked(fetch).mockResolvedValue({
+          ok: false,
+          json: async () => ({
+            statusCode: 404,
+            message: 'Not found',
+            errors: [{ code: 'ResourceNotFound', message: 'Not found' }],
+          }),
+        } as Response);
+
+        await component.mount('#selector');
+
+        expect(element.insertAdjacentHTML).toHaveBeenNthCalledWith(
+          1,
+          'beforeend',
+          `<easycredit-checkout-label payment-type="BILL" />`,
+        );
+        expect(element.insertAdjacentHTML).toHaveBeenNthCalledWith(
+          2,
+          'beforeend',
+          expect.stringMatching(/payment-type="BILL"[\s\S]*alert="Not found"/),
+        );
+      });
+
+      it('should prefer the payment type of the payment over the one passed by the shop', async () => {
+        component = new ECSummaryComponent({
+          ...baseOptions,
+          summaryComponentOptions: { ...summaryComponentOptions, paymentType: 'INSTALLMENT_PAYMENT' },
+        });
+        jest
+          .mocked(fetch)
+          .mockResolvedValue({ ok: true, json: async () => billPaymentResponse('POSITIVE') } as Response);
+
+        await component.mount('#selector');
+
+        expect(element.insertAdjacentHTML).toHaveBeenNthCalledWith(
+          1,
+          'beforeend',
+          `<easycredit-checkout-label payment-type="BILL" />`,
+        );
+      });
+    });
+
+    it('should reject an unknown payment type', () => {
+      expect(() =>
+        new ECSummaryComponentBuilder(baseOptions).build({
+          ...summaryComponentOptions,
+          paymentType: 'BILL' as unknown as SummaryComponentOptions['paymentType'],
+        }),
+      ).toThrow('Invalid easyCredit paymentType "BILL"');
     });
   });
 });
