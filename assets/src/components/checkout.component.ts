@@ -31,6 +31,8 @@ export class ECCheckoutComponentBuilder implements CheckoutComponentBuilder {
 interface PaymentMethodSuccessResponse {
   webShopId: string;
   amount: number;
+  // Older processors omit it.
+  paymentTypes?: Partial<Record<PaymentType, { available: boolean }>>;
 }
 
 interface PaymentMethodErrorResponse {
@@ -59,8 +61,6 @@ export class ECCheckoutComponent implements CheckoutComponent {
 
   private readonly sessionId: string;
 
-  private paymentMethodResponse?: Promise<PaymentMethodSuccessResponse | PaymentMethodErrorResponse>;
-
   constructor(opts: { processorUrl: string; sessionId: string; checkoutComponentOptions: CheckoutComponentOptions }) {
     assertPaymentType(opts.checkoutComponentOptions.paymentType);
     this.processorUrl = opts.processorUrl;
@@ -73,27 +73,18 @@ export class ECCheckoutComponent implements CheckoutComponent {
   }
 
   async isAvailable(): Promise<boolean> {
-    const request = this.getPaymentMethod();
-    this.paymentMethodResponse = request;
-
     try {
-      const response = await request;
+      const response = await this.getPaymentMethod();
 
       return Boolean(response) && this.isPaymentTypeAvailable(response);
     } catch {
-      // Fails closed on network errors and non-JSON bodies (e.g. a gateway 502), so a later mount fetches again.
-      if (this.paymentMethodResponse === request) {
-        this.paymentMethodResponse = undefined;
-      }
+      // Fails closed on network errors and non-JSON bodies (e.g. a gateway 502).
       return false;
     }
   }
 
   async mount(selector: string): Promise<void> {
-    // Consume the last availability check once; a later mount must read the cart again.
-    const request = this.paymentMethodResponse ?? this.getPaymentMethod();
-    this.paymentMethodResponse = undefined;
-    const response = await request;
+    const response = await this.getPaymentMethod();
     if (!response) {
       throw new Error('Failed to retrieve payment method.');
     }
@@ -145,6 +136,11 @@ export class ECCheckoutComponent implements CheckoutComponent {
   private isPaymentTypeAvailable(response: PaymentMethodSuccessResponse | PaymentMethodErrorResponse): boolean {
     if (!getWebShopId(response)) {
       return false;
+    }
+
+    // An older processor ignores paymentType and answers with the installment checks, so bill needs its own flag.
+    if (this.paymentType === 'BILL_PAYMENT' && !isErrorResponse(response)) {
+      return response.paymentTypes?.BILL_PAYMENT?.available === true;
     }
 
     return (

@@ -52,8 +52,10 @@ const mockCart = (
     cartState: 'Active',
     billingAddress: address,
     shippingAddress: address,
+    shipping: [],
     lineItems,
     customLineItems,
+    itemShippingAddresses: [],
     totalPrice: { currencyCode: 'EUR', centAmount: amountInEur * 100, fractionDigits: 2 },
   }) as unknown as Cart;
 
@@ -66,6 +68,17 @@ const multipleShippingCart = (shippingAddresses: Record<string, unknown>[]) =>
     shippingMode: 'Multiple',
     shippingAddress: undefined,
     shipping: shippingAddresses.map((shippingAddress) => ({ shippingAddress })),
+  }) as unknown as Cart;
+
+const itemShippingCart = (itemAddress: Record<string, unknown>, targetedKey: string) =>
+  ({
+    ...mockCart(500),
+    itemShippingAddresses: [
+      { ...address, key: 'home' },
+      { ...itemAddress, key: 'other' },
+    ],
+    lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }],
+    customLineItems: [{ shippingDetails: { targets: [{ addressKey: targetedKey, quantity: 1 }] } }],
   }) as unknown as Cart;
 
 const getErrorCodes = async (promise: Promise<unknown>) => {
@@ -243,17 +256,6 @@ describe('payment type availability', () => {
     });
 
     describe('with item shipping addresses', () => {
-      const itemShippingCart = (itemAddress: Record<string, unknown>, targetedKey: string) =>
-        ({
-          ...mockCart(500),
-          itemShippingAddresses: [
-            { ...address, key: 'home' },
-            { ...itemAddress, key: 'other' },
-          ],
-          lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }],
-          customLineItems: [{ shippingDetails: { targets: [{ addressKey: targetedKey, quantity: 1 }] } }],
-        }) as unknown as Cart;
-
       it.each([
         ['AddressesUnmatched', 'a different address', { ...address, city: 'Hamburg' }],
         ['CorporateCustomerNotAllowed', 'a company', { ...address, company: 'ACME GmbH' }],
@@ -442,6 +444,29 @@ describe('payment type availability', () => {
       }
     });
 
+    it('should reject an unknown payment type in the body with InvalidJsonInput', async () => {
+      const app = await buildApp();
+
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/payments',
+          payload: {
+            cartId: 'cart123',
+            redirectLinks,
+            customerRelationship: { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0 },
+            paymentType: 'UNKNOWN',
+          },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json().errors).toEqual([expect.objectContaining({ code: 'InvalidJsonInput' })]);
+        expect(getCartById).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    });
+
     it('should create an INSTALLMENT_PAYMENT transaction when the payment type is omitted', async () => {
       mockCreateFlow(mockCart(500));
 
@@ -512,6 +537,38 @@ describe('payment type availability', () => {
           expect(createECPaymentMock).not.toHaveBeenCalled();
         },
       );
+    });
+
+    it.each([
+      [
+        'a Business Unit',
+        { ...mockCart(500), businessUnit: { typeId: 'business-unit', key: 'acme' } } as unknown as Cart,
+        'CorporateCustomerNotAllowed',
+      ],
+      [
+        'a company in the billing address',
+        { ...mockCart(500), billingAddress: { ...address, company: 'ACME GmbH' } } as unknown as Cart,
+        'CorporateCustomerNotAllowed',
+      ],
+      [
+        'a later Multiple shipping destination that differs',
+        multipleShippingCart([address, { ...address, streetName: 'Nebenstr.' }]),
+        'AddressesUnmatched',
+      ],
+      [
+        'an item shipping address that differs',
+        itemShippingCart({ ...address, city: 'Hamburg' }, 'other'),
+        'AddressesUnmatched',
+      ],
+    ])('should reject BILL_PAYMENT for a cart with %s and leave it untouched', async (_, cart, code) => {
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      await expect(
+        getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+      ).resolves.toEqual([{ code, httpErrorStatus: 400 }]);
+      expect(updateCart).not.toHaveBeenCalled();
+      expect(createPayment).not.toHaveBeenCalled();
+      expect(createECPaymentMock).not.toHaveBeenCalled();
     });
 
     it('should keep installment creation working when bill payment is disabled', async () => {

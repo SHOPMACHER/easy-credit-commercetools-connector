@@ -129,6 +129,7 @@ export type CheckoutComponentOptions = {
 
 export type SummaryComponentOptions = {
   paymentId: string;
+  paymentType?: PaymentType;
 };
 
 export type LabelComponentOptions = {

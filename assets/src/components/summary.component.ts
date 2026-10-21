@@ -6,7 +6,7 @@ import {
   WebComponentOptions,
 } from '../types/main';
 import { findElement, importEasyCreditScript } from '../utils/app.utils.ts';
-import { DEFAULT_PAYMENT_TYPE, toWebComponentPaymentType } from '../utils/payment-type.utils.ts';
+import { assertPaymentType, DEFAULT_PAYMENT_TYPE, toWebComponentPaymentType } from '../utils/payment-type.utils.ts';
 
 const NEGATIVE_DECISION_MESSAGES: Record<PaymentType, string> = {
   INSTALLMENT_PAYMENT: 'Es ist ein Fehler aufgetreten. Es konnte keine Ratenauswahl gefunden werden.',
@@ -69,6 +69,7 @@ export class ECSummaryComponent implements SummaryComponent {
   private readonly sessionId: string;
 
   constructor(opts: { processorUrl: string; sessionId: string; summaryComponentOptions: SummaryComponentOptions }) {
+    assertPaymentType(opts.summaryComponentOptions.paymentType);
     this.processorUrl = opts.processorUrl;
     this.sessionId = opts.sessionId;
     this.summaryComponentOptions = opts.summaryComponentOptions;
@@ -78,7 +79,11 @@ export class ECSummaryComponent implements SummaryComponent {
     importEasyCreditScript();
 
     const response = await this.getPayment();
-    const paymentType = ('errors' in response ? undefined : response.paymentType) ?? DEFAULT_PAYMENT_TYPE;
+    // An error body carries no payment type, so the one the shop passed in is the only hint.
+    const paymentType =
+      ('errors' in response ? undefined : response.paymentType) ??
+      this.summaryComponentOptions.paymentType ??
+      DEFAULT_PAYMENT_TYPE;
 
     findElement(selector).insertAdjacentHTML('beforeend', this.generateLabel(paymentType));
     findElement(selector).insertAdjacentHTML('beforeend', this.generateWidget(response, paymentType));

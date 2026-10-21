@@ -52,8 +52,10 @@ const buildCart = (cartState: string, cents: number, currencyCode = 'EUR') =>
     freezeStrategy: cartState === 'Frozen' ? 'HardFreeze' : undefined,
     billingAddress: address,
     shippingAddress: address,
+    shipping: [],
     lineItems: [],
     customLineItems: [],
+    itemShippingAddresses: [],
     totalPrice: { currencyCode, centAmount: cents, fractionDigits: 2 },
   }) as unknown as Cart;
 

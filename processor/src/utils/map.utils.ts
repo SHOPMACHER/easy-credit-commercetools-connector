@@ -174,14 +174,14 @@ export const getShippingAddress = (cart: Cart): Address | undefined => {
 export const getShippingDestinations = (cart: Cart): Address[] => {
   const shippingAddresses =
     cart.shippingMode === 'Multiple'
-      ? (cart.shipping ?? []).map(({ shippingAddress }) => shippingAddress)
+      ? cart.shipping.map(({ shippingAddress }) => shippingAddress)
       : [cart.shippingAddress];
   const targetedKeys = new Set(
-    [...(cart.lineItems ?? []), ...(cart.customLineItems ?? [])].flatMap(
+    [...cart.lineItems, ...cart.customLineItems].flatMap(
       ({ shippingDetails }) => shippingDetails?.targets.map(({ addressKey }) => addressKey) ?? [],
     ),
   );
-  const itemShippingAddresses = (cart.itemShippingAddresses ?? []).filter(({ key }) => key && targetedKeys.has(key));
+  const itemShippingAddresses = cart.itemShippingAddresses.filter(({ key }) => key && targetedKeys.has(key));
 
   return [...shippingAddresses, ...itemShippingAddresses].filter((address): address is Address => Boolean(address));
 };

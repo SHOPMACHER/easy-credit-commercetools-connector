@@ -915,24 +915,26 @@ describe('Payment Mapping', () => {
   describe('getShippingDestinations', () => {
     const home = { country: 'DE', city: 'Berlin' };
     const office = { country: 'DE', city: 'Hamburg' };
+    const cartWith = (fields: Record<string, unknown>) =>
+      ({ shipping: [], lineItems: [], customLineItems: [], itemShippingAddresses: [], ...fields }) as unknown as Cart;
 
     it('should return the shipping address in Single mode', () => {
-      const cart = { shippingMode: 'Single', shippingAddress: home } as unknown as Cart;
+      const cart = cartWith({ shippingMode: 'Single', shippingAddress: home });
 
       expect(getShippingDestinations(cart)).toEqual([home]);
     });
 
     it('should return every shipping address in Multiple mode', () => {
-      const cart = {
+      const cart = cartWith({
         shippingMode: 'Multiple',
         shipping: [{ shippingAddress: home }, { shippingAddress: office }],
-      } as unknown as Cart;
+      });
 
       expect(getShippingDestinations(cart)).toEqual([home, office]);
     });
 
     it('should add the item shipping addresses targeted by line items or custom line items', () => {
-      const cart = {
+      const cart = cartWith({
         shippingMode: 'Single',
         shippingAddress: home,
         itemShippingAddresses: [
@@ -942,13 +944,13 @@ describe('Payment Mapping', () => {
         ],
         lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }, {}],
         customLineItems: [{ shippingDetails: { targets: [{ addressKey: 'office', quantity: 1 }] } }],
-      } as unknown as Cart;
+      });
 
       expect(getShippingDestinations(cart)).toEqual([home, { ...home, key: 'home' }, { ...office, key: 'office' }]);
     });
 
     it('should return no destination for a cart without shipping address', () => {
-      expect(getShippingDestinations({ shippingMode: 'Single' } as unknown as Cart)).toEqual([]);
+      expect(getShippingDestinations(cartWith({ shippingMode: 'Single' }))).toEqual([]);
     });
   });
 });

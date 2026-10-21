@@ -84,12 +84,14 @@ export const validateCurrency = (currencyCode: string, ecConfig: { webShopId: st
   }
 };
 
+// Availability errors are expected on every checkout page load where a payment type is hidden, so they log at debug.
 export const paymentTypeNotAvailableError = (ecConfig: { webShopId: string }) =>
   new Errorx({
     code: 'PaymentTypeNotAvailable',
     httpErrorStatus: 400,
     message: 'Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.',
     fields: ecConfig,
+    skipLog: true,
   });
 
 export const validatePaymentTypeAvailability = (
@@ -146,6 +148,7 @@ export const validatePaymentTypeAvailability = (
         httpErrorStatus: 400,
         message: `Die Summe des Warenkorbs muss zwischen ${minAmount.toLocaleString('de-DE')}€ und ${maxAmount.toLocaleString('de-DE')}€ liegen.`,
         fields: ecConfig,
+        skipLog: true,
       }),
     );
 

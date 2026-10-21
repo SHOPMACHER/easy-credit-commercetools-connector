@@ -135,7 +135,7 @@ This guide provides instructions on how to integrate and display the connector's
 #### Availability
 
 - `paymentType` selects the easyCredit payment method: `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`. The component asks the connector whether this payment type can be offered for the cart, see [Get Payment Method](./GetPaymentMethod.md).
-- `isAvailable()` resolves to `false` if the payment type cannot be offered at all, or if the processor response contains no `webShopId` to render the widget with (for example `401` or `500`), or if the request fails (network error or a body that is not JSON). It does not reject. Hide the payment option in that case. For `BILL_PAYMENT`, `mount()` then renders nothing. For `INSTALLMENT_PAYMENT`, `mount()` keeps its previous behavior: it renders the widget with the error as an alert, or throws if the response has no `webShopId`.
+- `isAvailable()` resolves to `false` if the payment type cannot be offered at all, or if the processor response contains no `webShopId` to render the widget with (for example `401` or `500`), or if the request fails (network error or a body that is not JSON). For `BILL_PAYMENT`, a successful response must also report `paymentTypes.BILL_PAYMENT.available: true`. It does not reject. Hide the payment option in that case. For `BILL_PAYMENT`, `mount()` then renders nothing. For `INSTALLMENT_PAYMENT`, `mount()` keeps its previous behavior: it renders the widget with the error as an alert, or throws if the response has no `webShopId`.
 
   | Payment type | Hidden on |
   | --- | --- |
@@ -143,12 +143,12 @@ This guide provides instructions on how to integrate and display the connector's
   | `BILL_PAYMENT` | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `InvalidAmount` (cart total outside the billing limits), `EasyCreditUnavailable` |
 
 - Any other error is shown as an alert inside the widget, for example billing and shipping address differ or are not in Germany, or the cart total is outside the installment limits.
-- Each `isAvailable()` call queries the current cart state from the processor. The next `mount()` reuses that result once, avoiding a second request; later mounts fetch again.
+- Each `isAvailable()` and `mount()` call queries the current cart state from the processor.
 - After the cart changes, call `isAvailable()` again. Hide the payment option when it returns `false`, and clear any previously mounted label and widget containers. Clear the containers before remounting an available option as well, so outdated content is not retained.
 
 #### Compatibility
 
-`paymentType` and `isAvailable()` require a processor that supports the `paymentType` query parameter of [Get Payment Method](./GetPaymentMethod.md). Deploy the enabler and the processor from the same connector release. An older processor ignores `paymentType` and answers with the installment checks, so pay by invoice would be shown based on the wrong limits.
+`paymentType` and `isAvailable()` require a processor that supports the `paymentType` query parameter of [Get Payment Method](./GetPaymentMethod.md). Deploy the enabler and the processor from the same connector release. An older processor ignores `paymentType` and answers with the installment checks. The enabler then shows pay by invoice only if that response reports `paymentTypes.BILL_PAYMENT.available: true`, so a processor without this field never offers it.
 
 No numbered release contains this integration yet, so neither a commit nor the package version tells whether a deployed processor supports it. Check the processor instead: with a valid session, `GET /payments/payment-method/{cartId}?paymentType=UNKNOWN` returns `400 InvalidField` on a supported processor, while an older processor ignores the parameter and answers with the installment checks.
 
@@ -206,7 +206,7 @@ The example uses TypeScript; omit `as const` when using plain JavaScript.
 
 - Created from [EasyCredit Label component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-label--docs) and [EasyCredit Checkout component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-checkout--docs)
 - It is handled in [summary.component.ts](../assets/src/components/summary.component.ts)
-- The summary shows the payment type of the payment, installment or pay by invoice, as returned in `paymentType` by [Get Payment](./GetPayment.md). Without `paymentType` it shows installment.
+- The summary shows the payment type of the payment, installment or pay by invoice, as returned in `paymentType` by [Get Payment](./GetPayment.md). If the response has no `paymentType`, for example an error, it uses the optional `paymentType` build option and otherwise installment. Pass the payment type the customer selected, so an error is not shown under the installment label.
 - To use this component, you need to integrate this short snippet into your shop:
 
   ```
@@ -218,6 +218,7 @@ The example uses TypeScript; omit `as const` when using plain JavaScript.
     enabler.createSummaryBuilder().then((summaryComponentBuilder: any) => {
       const summaryComponent = summaryComponentBuilder.build({
         paymentId: easyCreditPayment.id,
+        paymentType: 'BILL_PAYMENT', // optional, 'INSTALLMENT_PAYMENT' (default) or 'BILL_PAYMENT'
       });
 
       summaryComponent
