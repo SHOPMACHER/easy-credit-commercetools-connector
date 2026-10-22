@@ -1,4 +1,4 @@
-import { Address, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
+import { Address, Cart, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
@@ -9,6 +9,14 @@ import {
   getTransaction,
 } from '../utils/payment.utils';
 import { CTTransactionState, CTTransactionType, PaymentTypeAvailability } from '../types/payment.types';
+
+const addressesUnmatchedError = (ecConfig: { webShopId: string }) =>
+  new Errorx({
+    code: 'AddressesUnmatched',
+    httpErrorStatus: 400,
+    message: 'Liefer- und Rechnungsadresse sind nicht identisch oder nicht in Deutschland.',
+    fields: ecConfig,
+  });
 
 export const validateAddresses = (
   billingAddress: Address | undefined,
@@ -44,14 +52,7 @@ export const validateAddresses = (
     !compareAddress(billingAddress, shippingAddress) ||
     billingAddress.country !== 'DE'
   ) {
-    errors.push(
-      new Errorx({
-        code: 'AddressesUnmatched',
-        httpErrorStatus: 400,
-        message: 'Liefer- und Rechnungsadresse sind nicht identisch oder nicht in Deutschland.',
-        fields: ecConfig,
-      }),
-    );
+    errors.push(addressesUnmatchedError(ecConfig));
   }
 
   if (billingAddress && shippingAddress && !isBillingAddressComplete(billingAddress)) {
@@ -82,6 +83,16 @@ export const validateCurrency = (currencyCode: string, ecConfig: { webShopId: st
     );
   }
 };
+
+// Availability errors are expected on every checkout page load where a payment type is hidden, so they log at debug.
+export const paymentTypeNotAvailableError = (ecConfig: { webShopId: string }) =>
+  new Errorx({
+    code: 'PaymentTypeNotAvailable',
+    httpErrorStatus: 400,
+    message: 'Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.',
+    fields: ecConfig,
+    skipLog: true,
+  });
 
 export const validatePaymentTypeAvailability = (
   amountInEur: number,
@@ -137,20 +148,53 @@ export const validatePaymentTypeAvailability = (
         httpErrorStatus: 400,
         message: `Die Summe des Warenkorbs muss zwischen ${minAmount.toLocaleString('de-DE')}€ und ${maxAmount.toLocaleString('de-DE')}€ liegen.`,
         fields: ecConfig,
+        skipLog: true,
       }),
     );
 
     return;
   }
 
-  errors.push(
-    new Errorx({
-      code: 'PaymentTypeNotAvailable',
-      httpErrorStatus: 400,
-      message: 'Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.',
-      fields: ecConfig,
-    }),
-  );
+  errors.push(paymentTypeNotAvailableError(ecConfig));
+};
+
+// easyCredit bill payment is only offered to private persons.
+export const validatePrivateCustomer = (
+  cart: Cart,
+  shippingDestinations: Address[],
+  ecConfig: { webShopId: string },
+  errors: Errorx[],
+) => {
+  const isCorporateCustomer =
+    Boolean(cart.businessUnit) ||
+    [cart.billingAddress, ...shippingDestinations].some((address) => Boolean(address?.company?.trim()));
+
+  if (isCorporateCustomer) {
+    errors.push(
+      new Errorx({
+        code: 'CorporateCustomerNotAllowed',
+        httpErrorStatus: 400,
+        message: 'Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.',
+        fields: ecConfig,
+      }),
+    );
+  }
+};
+
+// validateAddresses only compares the first destination, bill payment requires all of them to match the billing address.
+export const validateShippingDestinations = (
+  billingAddress: Address | undefined,
+  shippingDestinations: Address[],
+  ecConfig: { webShopId: string },
+  errors: Errorx[],
+) => {
+  if (!billingAddress || errors.some(({ code }) => code === 'AddressesUnmatched')) {
+    return;
+  }
+
+  if (shippingDestinations.some((address) => !compareAddress(billingAddress, address))) {
+    errors.push(addressesUnmatchedError(ecConfig));
+  }
 };
 
 export const validatePayment = (payment: Payment) => {

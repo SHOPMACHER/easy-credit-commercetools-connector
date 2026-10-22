@@ -169,3 +169,19 @@ export const getShippingAddress = (cart: Cart): Address | undefined => {
   }
   return cart.shippingAddress;
 };
+
+// Every address goods go to: all shipping addresses in Multiple mode, plus the item shipping addresses that items target.
+export const getShippingDestinations = (cart: Cart): Address[] => {
+  const shippingAddresses =
+    cart.shippingMode === 'Multiple'
+      ? cart.shipping.map(({ shippingAddress }) => shippingAddress)
+      : [cart.shippingAddress];
+  const targetedKeys = new Set(
+    [...cart.lineItems, ...cart.customLineItems].flatMap(
+      ({ shippingDetails }) => shippingDetails?.targets.map(({ addressKey }) => addressKey) ?? [],
+    ),
+  );
+  const itemShippingAddresses = cart.itemShippingAddresses.filter(({ key }) => key && targetedKeys.has(key));
+
+  return [...shippingAddresses, ...itemShippingAddresses].filter((address): address is Address => Boolean(address));
+};
