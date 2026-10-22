@@ -93,7 +93,36 @@ export const validatePaymentTypeAvailability = (
     return;
   }
 
-  const { enabled, minAmount, maxAmount } = availability;
+  const { enabled, exclusion, minAmount, maxAmount } = availability;
+
+  // Removing the item is the actionable fix, so it takes precedence over the amount limits.
+  if (exclusion === 'cartItems') {
+    errors.push(
+      new Errorx({
+        code: 'BillPaymentExcludedItems',
+        httpErrorStatus: 400,
+        message:
+          'Die Zahlung per easyCredit-Rechnung ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+        fields: ecConfig,
+      }),
+    );
+
+    return;
+  }
+
+  // The amount limits would hide that the cart items could not be checked at all.
+  if (exclusion === 'checkFailed') {
+    errors.push(
+      new Errorx({
+        code: 'BillPaymentCheckFailed',
+        httpErrorStatus: 503,
+        message: 'Die Zahlung per easyCredit-Rechnung ist derzeit nicht verfügbar.',
+        fields: ecConfig,
+      }),
+    );
+
+    return;
+  }
 
   // A disabled type stays unavailable at any amount, so its limits would only mislead the customer.
   if (

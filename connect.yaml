@@ -14,14 +14,14 @@ deployAs:
           description: commercetools project key
           required: true
         - key: CTP_CLIENT_ID
-          description: commercetools client ID with manage_payments, manage_orders, view_sessions, view_api_clients, manage_checkout_payment_intents, introspect_oauth_tokens, manage_types and view_types scopes
+          description: commercetools client ID with manage_payments, manage_orders, view_sessions, view_api_clients, manage_checkout_payment_intents, introspect_oauth_tokens, manage_types and view_types scopes, plus view_product_types if BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES is set
           required: true
         - key: CTP_REGION
           description: commercetools region (example - europe-west1.gcp)
           default: europe-west1.gcp
           required: false
         - key: CTP_SCOPES
-          description: commercetools scopes (example - view_api_clients manage_orders manage_payments view_types manage_types view_sessions introspect_oauth_tokens manage_checkout_payment_intents)
+          description: commercetools scopes (example - view_api_clients manage_orders manage_payments view_types manage_types view_sessions introspect_oauth_tokens manage_checkout_payment_intents, add view_product_types if BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES is set)
           required: true
         - key: CTP_AUTH_URL
           description: commercetools Auth URL
@@ -55,6 +55,12 @@ deployAs:
           description: Accept easyCredit pay by invoice (0 or 1). Transactions with paymentType BILL_PAYMENT are accepted if this is 1 and easyCredit has activated pay by invoice for the webshop. Showing it in the checkout also requires the enabler.
           required: false
           default: "0"
+        - key: BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES
+          description: Comma-separated product type keys (for example vouchers) that rule out pay by invoice if any line item of the cart has one of them. Each entry has at least 2 characters out of A-Z, a-z, 0-9, _ and -, an invalid entry stops the connector at startup. The keys are resolved in one query, so keep the list short; with more than 500 keys the lookup fails and pay by invoice is not offered. Requires the view_product_types scope.
+          required: false
+        - key: BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS
+          description: Comma-separated custom line item slugs or keys that rule out pay by invoice if the cart contains one of them. Each entry has at least 2 characters out of A-Z, a-z, 0-9, _ and -, an invalid entry stops the connector at startup.
+          required: false
         - key: WEBSHOP_CACHE_TTL
           description: Cache duration in seconds (0 to 3600) for the easyCredit webshop configuration (activation status and order value limits)
           required: false

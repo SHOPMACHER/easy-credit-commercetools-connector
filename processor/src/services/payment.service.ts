@@ -16,6 +16,7 @@ import {
   GetPaymentMethodResponse,
   GetPaymentResponse,
   PaymentResponse,
+  PaymentTypeExclusion,
   PaymentTypesAvailability,
 } from '../types/payment.types';
 import { CartUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/cart';
@@ -49,9 +50,43 @@ import {
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
+import { getBillPaymentExclusion } from './billPaymentRestriction.service';
 
 // handlePaymentMethod and callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
+
+// Bill payment is for physical goods only; a failed product type lookup keeps it closed.
+const applyBillPaymentExclusion = async (
+  cart: Cart,
+  paymentTypes: PaymentTypesAvailability,
+): Promise<PaymentTypesAvailability> => {
+  const bill = paymentTypes[ECTransactionPaymentType.ECTransactionBillPayment];
+
+  if (!bill.enabled) {
+    return paymentTypes;
+  }
+
+  const withUnavailableBill = (exclusion: PaymentTypeExclusion): PaymentTypesAvailability => ({
+    ...paymentTypes,
+    [ECTransactionPaymentType.ECTransactionBillPayment]: { ...bill, available: false, exclusion },
+  });
+
+  try {
+    const { productTypeKeys, customLineItems } = await getBillPaymentExclusion(cart);
+
+    if (productTypeKeys.length === 0 && customLineItems.length === 0) {
+      return paymentTypes;
+    }
+
+    log.info('Bill payment is excluded for the cart items', { cartId: cart.id, productTypeKeys, customLineItems });
+
+    return withUnavailableBill('cartItems');
+  } catch (error: unknown) {
+    log.error(`Failed to check the items of cart ${cart.id} for bill payment, bill payment is not offered`, error);
+
+    return withUnavailableBill('checkFailed');
+  }
+};
 
 // Throws a MultiErrorx if easyCredit cannot be offered for the cart
 const validateCart = async (
@@ -72,7 +107,12 @@ const validateCart = async (
   }
 
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
-  const paymentTypes = await getPaymentTypesAvailability(amount);
+  const availability = await getPaymentTypesAvailability(amount);
+  // Installment requests skip the product type lookup; handlePaymentMethod applies it for the response.
+  const paymentTypes =
+    paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+      ? await applyBillPaymentExclusion(cart, availability)
+      : availability;
 
   validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
 
@@ -86,7 +126,7 @@ const validateCart = async (
 export const handlePaymentMethod = async (cartId: string): Promise<GetPaymentMethodResponse> => {
   try {
     const cart = await getCartById(cartId);
-    const paymentTypes = await validateCart(cart);
+    const paymentTypes = await applyBillPaymentExclusion(cart, await validateCart(cart));
 
     return {
       webShopId: readConfiguration().easyCredit.webShopId,
@@ -126,6 +166,9 @@ const unfreezeAfterFailedCreate = async (cart: Cart, orphanPaymentId?: string): 
   }
 };
 
+const getItemIds = ({ lineItems, customLineItems }: Cart): string =>
+  [...lineItems, ...customLineItems].map(({ id }) => id).join(',');
+
 export const handleCreatePayment = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
@@ -140,12 +183,17 @@ export const handleCreatePayment = async (
     cart = await getCartById(cartId);
     await validateCart(cart, paymentType);
     const { centAmount, currencyCode } = cart.totalPrice;
+    const itemIds = getItemIds(cart);
 
     cart = await hardFreezeCart(cart);
     shouldUnfreezeCart = true;
 
-    // Freezing can reprice the cart, so the limits validated above may no longer hold.
-    if (cart.totalPrice.centAmount !== centAmount || cart.totalPrice.currencyCode !== currencyCode) {
+    // Freezing can reprice the cart or add a 0 € gift line item, so the checks above may no longer hold.
+    if (
+      cart.totalPrice.centAmount !== centAmount ||
+      cart.totalPrice.currencyCode !== currencyCode ||
+      getItemIds(cart) !== itemIds
+    ) {
       await validateCart(cart, paymentType);
     }
 

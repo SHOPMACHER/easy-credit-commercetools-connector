@@ -20,7 +20,7 @@ To use this functionality, the following conditions must be met:
 ## Workflow
 
 1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency.
-2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1`.
+2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1` and a cart without excluded items, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). The cart is fetched again for this request, so items added after the GET payment method call are checked too.
 3. **Freeze the cart**: The cart is frozen with the `HardFreeze` strategy, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).
 5. **Create EC transaction**: Convert CT data into EC data (including the `paymentType`) and create the transaction.
@@ -46,7 +46,7 @@ Payments created before this change have `method: "easycredit"`. They are treate
 
 The cart is frozen with `HardFreeze`: prices, discounts and discount codes stay fixed and shipping methods cannot be set (commercetools Cart freeze documentation). A cart that is frozen with another strategy (for example `SoftFreeze`) is unfrozen and frozen again with `HardFreeze`; a cart that is already hard-frozen is left as it is. Merchants can therefore not change the shipping method after the payment was started.
 
-Freezing can reprice the cart (unfreezing documents it, freezing an active cart does not say either way). If the total or currency of the frozen cart differs from the cart that was validated, the limits and the payment type availability are validated again on the frozen cart. On failure no payment is created and the cart is unfrozen again.
+Freezing can reprice the cart (unfreezing documents it, freezing an active cart does not say either way). If the total, the currency or the line items of the frozen cart differ from the cart that was validated (for example a gift line item added by a cart discount), the limits, the payment type availability and the [excluded cart items](./GetPaymentMethod.md#excluded-cart-items) are validated again on the frozen cart. On failure no payment is created and the cart is unfrozen again.
 
 Validation failures (addresses, currency, payment type availability) leave the cart untouched, including a cart that was already frozen. Once the cart is frozen, every failure of the request unfreezes it again. Until the CT `Authorization` transaction is written, the CT payment is an orphan on the cart. If the easyCredit call or writing that transaction fails, the connector also removes the payment from the cart in the same update that unfreezes it. A negative decision writes a `Failure` transaction and only unfreezes the cart. If this cleanup fails, it is only logged and the original error is returned.
 <br />
@@ -57,6 +57,8 @@ The request is rejected before any cart or payment change if:
 
 - easyCredit rejected the webshop request with a permanent error or sent an invalid installment configuration, or a known deactivation/permanent failure blocks fallback without usable cached data, see [Webshop configuration](GetPaymentMethod.md#webshop-configuration) (`503 EasyCreditUnavailable`),
 - the selected payment type is disabled or not activated for the webshop (error code below). For installment this means `availability: false` or `installmentPaymentActive: false`. For bill this means `BILL_PAYMENT_ENABLED` is not `1`, `availability: false`, `billPaymentActive: false`, absent or invalid bill configuration, or stale/default webshop data (bill fails closed). The error is `400 PaymentTypeNotAvailable`,
+- `BILL_PAYMENT` is enabled but the cart contains an excluded product type or custom line item (`400 BillPaymentExcludedItems`). This takes precedence over `InvalidAmount`. A matching custom line item skips the product type lookup,
+- `BILL_PAYMENT` is enabled but the product type lookup fails, for example because of a missing `view_product_types` scope or a commercetools outage (`503 BillPaymentCheckFailed`). This takes precedence over `InvalidAmount`,
 - the payment type is enabled but the cart total is outside its effective limits (`400 InvalidAmount`). A disabled type never returns `InvalidAmount`, only `PaymentTypeNotAvailable`.
 
 The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop. A GET payment method response with `BILL_PAYMENT.available: true` and this endpoint use the same check.
@@ -162,6 +164,8 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The add
 | `InvalidCurrency` | The cart currency is not `EUR`. |
 | `InvalidAmount` | The cart total is outside the effective limits of the selected payment type, which is enabled. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
 | `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop. |
+| `BillPaymentExcludedItems` | `BILL_PAYMENT` was selected but the cart contains a voucher or another excluded item, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). |
+| `BillPaymentCheckFailed` | `503`: `BILL_PAYMENT` was selected but the excluded product types could not be loaded from commercetools, so the cart items could not be checked. Check the `view_product_types` scope and the processor logs. |
 | `TransactionNotSuccess` | easyCredit answered the new transaction with a negative decision. The message is the `decisionOutcomeText`. The CT transaction is `Failure` and the cart is unfrozen. |
 
 easyCredit errors (for example `5xx`) are returned with the upstream HTTP status and the title easyCredit sent as code, and the cart is unfrozen as described in [Cart freeze](#cart-freeze).

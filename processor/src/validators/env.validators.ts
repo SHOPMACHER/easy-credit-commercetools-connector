@@ -1,4 +1,5 @@
 import {
+  array,
   optional,
   region,
   standardInteger,
@@ -132,6 +133,19 @@ const envValidators = [
     },
     { min: 0, max: MAX_WEBSHOP_CACHE_TTL_SECONDS },
   ),
+
+  array(standardKey)(['easyCredit', 'billPaymentExcludedProductTypes'], {
+    code: 'InvalidBillPaymentExcludedProductTypes',
+    message: 'Bill payment excluded product types should be a comma-separated list of product type keys.',
+    referencedBy: 'environmentVariables',
+  }),
+
+  array(standardKey)(['easyCredit', 'billPaymentExcludedCustomLineItems'], {
+    code: 'InvalidBillPaymentExcludedCustomLineItems',
+    message:
+      'Bill payment excluded custom line items should be a comma-separated list of custom line item slugs or keys.',
+    referencedBy: 'environmentVariables',
+  }),
 ];
 
 export default envValidators;

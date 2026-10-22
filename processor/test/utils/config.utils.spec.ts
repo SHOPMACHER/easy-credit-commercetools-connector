@@ -46,4 +46,31 @@ describe('readConfiguration', () => {
 
     expect(readConfiguration().easyCredit.webshopCacheTtl).toBe(value);
   });
+
+  it.each([
+    ['unset', undefined, []],
+    ['empty', '', []],
+    ['a list with spaces, empty entries and duplicates', ' voucher, ,gift-card,voucher ', ['voucher', 'gift-card']],
+  ])('should parse the bill payment exclusion lists if %s', (_, value, expected) => {
+    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = value;
+    process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = value;
+    if (value === undefined) {
+      delete process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES;
+      delete process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS;
+    }
+
+    const { easyCredit } = readConfiguration();
+
+    expect(easyCredit.billPaymentExcludedProductTypes).toEqual(expected);
+    expect(easyCredit.billPaymentExcludedCustomLineItems).toEqual(expected);
+  });
+
+  it.each([
+    ['BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES', 'InvalidBillPaymentExcludedProductTypes'],
+    ['BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS', 'InvalidBillPaymentExcludedCustomLineItems'],
+  ])('should reject an invalid entry in %s', (name, code) => {
+    process.env[name] = 'voucher,gift card';
+
+    expect(() => readConfiguration()).toThrow(code);
+  });
 });
