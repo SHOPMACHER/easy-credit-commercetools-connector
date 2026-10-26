@@ -1,4 +1,4 @@
-import { Address, Errorx, Payment } from '@commercetools/connect-payments-sdk';
+import { Address, Cart, Errorx, Payment } from '@commercetools/connect-payments-sdk';
 import {
   validateAddresses,
   validateCurrency,
@@ -8,6 +8,8 @@ import {
   validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePendingTransaction,
+  validatePrivateCustomer,
+  validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
@@ -280,6 +282,84 @@ describe('Validation Functions', () => {
       validatePaymentTypeAvailability(500, { enabled: true, available: false }, ecConfig, errors);
       expect(errors).toHaveLength(1);
       expect(errors[0]).toEqual(expect.objectContaining({ code: 'PaymentTypeNotAvailable' }));
+    });
+  });
+
+  describe('validatePrivateCustomer', () => {
+    const ecConfig = { webShopId: 'webShopId123' };
+
+    it.each([
+      ['a business unit', { businessUnit: { typeId: 'business-unit', key: 'acme' } }, []],
+      ['a billing address company', { billingAddress: { country: 'DE', company: 'ACME GmbH' } }, []],
+      ['a shipping address company', {}, [{ country: 'DE', company: 'ACME GmbH' }]],
+      ['a company at a later shipping destination', {}, [{ country: 'DE' }, { country: 'DE', company: 'ACME GmbH' }]],
+    ])('should reject a cart with %s', (_, cart, shippingDestinations) => {
+      const errors: Errorx[] = [];
+
+      validatePrivateCustomer(cart as unknown as Cart, shippingDestinations as Address[], ecConfig, errors);
+
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400, fields: ecConfig }),
+      ]);
+    });
+
+    it('should accept destinations with absent, empty or whitespace-only companies', () => {
+      const errors: Errorx[] = [];
+      const shippingDestinations = [undefined, '', '  '].map((company) => ({ country: 'DE', company }) as Address);
+
+      validatePrivateCustomer(
+        { billingAddress: { country: 'DE', company: ' ' } } as unknown as Cart,
+        shippingDestinations,
+        ecConfig,
+        errors,
+      );
+
+      expect(errors).toHaveLength(0);
+    });
+  });
+
+  describe('validateShippingDestinations', () => {
+    const ecConfig = { webShopId: 'webShopId123' };
+    const billingAddress = { country: 'DE', firstName: 'Max', streetName: 'Hauptstr.', city: 'Berlin' } as Address;
+
+    beforeEach(() => {
+      jest
+        .mocked(compareAddress)
+        .mockImplementation(
+          jest.requireActual<typeof import('../../src/utils/commerceTools.utils')>(
+            '../../src/utils/commerceTools.utils',
+          ).compareAddress,
+        );
+    });
+
+    it('should accept destinations that all match the billing address', () => {
+      const errors: Errorx[] = [];
+
+      validateShippingDestinations(billingAddress, [billingAddress, { ...billingAddress }], ecConfig, errors);
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it.each([
+      ['a different address', { ...billingAddress, streetName: 'Nebenstr.' }],
+      ['a destination outside Germany', { ...billingAddress, country: 'AT' }],
+    ])('should reject %s at a later destination', (_, destination) => {
+      const errors: Errorx[] = [];
+
+      validateShippingDestinations(billingAddress, [billingAddress, destination], ecConfig, errors);
+
+      expect(errors).toEqual([
+        expect.objectContaining({ code: 'AddressesUnmatched', httpErrorStatus: 400, fields: ecConfig }),
+      ]);
+    });
+
+    it('should not report AddressesUnmatched twice', () => {
+      const errors: Errorx[] = [];
+      validateAddresses(billingAddress, { ...billingAddress, city: 'Hamburg' }, ecConfig, errors);
+
+      validateShippingDestinations(billingAddress, [{ ...billingAddress, city: 'Hamburg' }], ecConfig, errors);
+
+      expect(errors.filter(({ code }) => code === 'AddressesUnmatched')).toHaveLength(1);
     });
   });
 

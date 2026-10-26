@@ -52,9 +52,33 @@ const mockCart = (
     cartState: 'Active',
     billingAddress: address,
     shippingAddress: address,
+    shipping: [],
     lineItems,
     customLineItems,
+    itemShippingAddresses: [],
     totalPrice: { currencyCode: 'EUR', centAmount: amountInEur * 100, fractionDigits: 2 },
+  }) as unknown as Cart;
+
+const withCentAmount = (cart: Cart, centAmount: number) =>
+  ({ ...cart, totalPrice: { ...cart.totalPrice, centAmount } }) as Cart;
+
+const multipleShippingCart = (shippingAddresses: Record<string, unknown>[]) =>
+  ({
+    ...mockCart(500),
+    shippingMode: 'Multiple',
+    shippingAddress: undefined,
+    shipping: shippingAddresses.map((shippingAddress) => ({ shippingAddress })),
+  }) as unknown as Cart;
+
+const itemShippingCart = (itemAddress: Record<string, unknown>, targetedKey: string) =>
+  ({
+    ...mockCart(500),
+    itemShippingAddresses: [
+      { ...address, key: 'home' },
+      { ...itemAddress, key: 'other' },
+    ],
+    lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }],
+    customLineItems: [{ shippingDetails: { targets: [{ addressKey: targetedKey, quantity: 1 }] } }],
   }) as unknown as Cart;
 
 const getErrorCodes = async (promise: Promise<unknown>) => {
@@ -128,6 +152,148 @@ describe('payment type availability', () => {
   });
 
   describe('handlePaymentMethod', () => {
+    it('should reject bill payment when a later Multiple shipping destination has a company', async () => {
+      const cart = {
+        ...mockCart(500),
+        shippingMode: 'Multiple',
+        shippingAddress: undefined,
+        shipping: [{ shippingAddress: address }, { shippingAddress: { ...address, company: 'ACME GmbH' } }],
+      } as unknown as Cart;
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      await expect(
+        getErrorCodes(handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment)),
+      ).resolves.toEqual([{ code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400 }]);
+    });
+
+    it('should offer bill payment when all Multiple shipping destinations are private', async () => {
+      const cart = {
+        ...mockCart(500),
+        shippingMode: 'Multiple',
+        shippingAddress: undefined,
+        shipping: [undefined, '', '  '].map((company) => ({ shippingAddress: { ...address, company } })),
+      } as unknown as Cart;
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      const result = await handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment);
+
+      expect(result.paymentTypes.BILL_PAYMENT).toEqual({
+        enabled: true,
+        available: true,
+        minAmount: 50,
+        maxAmount: 5000,
+      });
+    });
+
+    it.each([
+      ['the lower bill limit', 5000],
+      ['the upper bill limit', 500000],
+    ])('should offer bill payment at %s', async (_, centAmount) => {
+      jest.mocked(getCartById).mockResolvedValue(withCentAmount(mockCart(0), centAmount));
+
+      const result = await handlePaymentMethod('cart123', BILL);
+
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+    });
+
+    it.each([
+      ['below the lower bill limit', 4999],
+      ['above the upper bill limit', 500001],
+    ])('should reject bill payment %s with InvalidAmount', async (_, centAmount) => {
+      jest.mocked(getCartById).mockResolvedValue(withCentAmount(mockCart(0), centAmount));
+
+      await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+        { code: 'InvalidAmount', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should reject bill payment without reading the cart if BILL_PAYMENT_ENABLED is 0', async () => {
+      const original = process.env.BILL_PAYMENT_ENABLED;
+      process.env.BILL_PAYMENT_ENABLED = '0';
+
+      try {
+        await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+          { code: 'PaymentTypeNotAvailable', httpErrorStatus: 400 },
+        ]);
+      } finally {
+        process.env.BILL_PAYMENT_ENABLED = original;
+      }
+
+      expect(getCartById).not.toHaveBeenCalled();
+      expect(getWebshopInfoMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a Business Unit', { businessUnit: { typeId: 'business-unit', key: 'acme' } }],
+      ['a company in the billing address', { billingAddress: { ...address, company: 'ACME GmbH' } }],
+    ])('should reject bill payment for a cart with %s', async (_, cartFields) => {
+      jest.mocked(getCartById).mockResolvedValue({ ...mockCart(500), ...cartFields } as unknown as Cart);
+
+      await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+        { code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it.each([
+      ['a different address', { ...address, streetName: 'Nebenstr.' }],
+      ['an address outside Germany', { ...address, country: 'AT' }],
+      ['an address with other additional street info', { ...address, additionalStreetInfo: 'c/o Müller' }],
+    ])('should reject bill payment when a later Multiple shipping destination is %s', async (_, otherAddress) => {
+      jest.mocked(getCartById).mockResolvedValue(multipleShippingCart([address, otherAddress]));
+
+      await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+        { code: 'AddressesUnmatched', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should keep the installment address check on the first Multiple shipping destination', async () => {
+      jest
+        .mocked(getCartById)
+        .mockResolvedValue(multipleShippingCart([address, { ...address, streetName: 'Nebenstr.' }]));
+
+      const result = await handlePaymentMethod('cart123');
+
+      expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
+    });
+
+    it.each([
+      ['installment', undefined],
+      ['bill payment', BILL],
+    ])(
+      'should reject %s when billing and shipping address only differ in additional street info',
+      async (_, paymentType) => {
+        jest.mocked(getCartById).mockResolvedValue({
+          ...mockCart(500),
+          shippingAddress: { ...address, additionalStreetInfo: '3. OG' },
+        } as unknown as Cart);
+
+        await expect(getErrorCodes(handlePaymentMethod('cart123', paymentType))).resolves.toEqual([
+          { code: 'AddressesUnmatched', httpErrorStatus: 400 },
+        ]);
+      },
+    );
+
+    describe('with item shipping addresses', () => {
+      it.each([
+        ['AddressesUnmatched', 'a different address', { ...address, city: 'Hamburg' }],
+        ['CorporateCustomerNotAllowed', 'a company', { ...address, company: 'ACME GmbH' }],
+      ])('should reject bill payment with %s when an item ships to %s', async (code, _, itemAddress) => {
+        jest.mocked(getCartById).mockResolvedValue(itemShippingCart(itemAddress, 'other'));
+
+        await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+          { code, httpErrorStatus: 400 },
+        ]);
+      });
+
+      it('should ignore item shipping addresses that no item ships to', async () => {
+        jest.mocked(getCartById).mockResolvedValue(itemShippingCart({ ...address, city: 'Hamburg' }, 'home'));
+
+        const result = await handlePaymentMethod('cart123', BILL);
+
+        expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+      });
+    });
+
     it('should return the payment types if installment is available', async () => {
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
@@ -296,6 +462,29 @@ describe('payment type availability', () => {
       }
     });
 
+    it('should reject an unknown payment type in the body with InvalidJsonInput', async () => {
+      const app = await buildApp();
+
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/payments',
+          payload: {
+            cartId: 'cart123',
+            redirectLinks,
+            customerRelationship: { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0 },
+            paymentType: 'UNKNOWN',
+          },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json().errors).toEqual([expect.objectContaining({ code: 'InvalidJsonInput' })]);
+        expect(getCartById).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    });
+
     it('should create an INSTALLMENT_PAYMENT transaction when the payment type is omitted', async () => {
       mockCreateFlow(mockCart(500));
 
@@ -366,6 +555,38 @@ describe('payment type availability', () => {
           expect(createECPaymentMock).not.toHaveBeenCalled();
         },
       );
+    });
+
+    it.each([
+      [
+        'a Business Unit',
+        { ...mockCart(500), businessUnit: { typeId: 'business-unit', key: 'acme' } } as unknown as Cart,
+        'CorporateCustomerNotAllowed',
+      ],
+      [
+        'a company in the billing address',
+        { ...mockCart(500), billingAddress: { ...address, company: 'ACME GmbH' } } as unknown as Cart,
+        'CorporateCustomerNotAllowed',
+      ],
+      [
+        'a later Multiple shipping destination that differs',
+        multipleShippingCart([address, { ...address, streetName: 'Nebenstr.' }]),
+        'AddressesUnmatched',
+      ],
+      [
+        'an item shipping address that differs',
+        itemShippingCart({ ...address, city: 'Hamburg' }, 'other'),
+        'AddressesUnmatched',
+      ],
+    ])('should reject BILL_PAYMENT for a cart with %s and leave it untouched', async (_, cart, code) => {
+      jest.mocked(getCartById).mockResolvedValue(cart);
+
+      await expect(
+        getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+      ).resolves.toEqual([{ code, httpErrorStatus: 400 }]);
+      expect(updateCart).not.toHaveBeenCalled();
+      expect(createPayment).not.toHaveBeenCalled();
+      expect(createECPaymentMock).not.toHaveBeenCalled();
     });
 
     it('should keep installment creation working when bill payment is disabled', async () => {

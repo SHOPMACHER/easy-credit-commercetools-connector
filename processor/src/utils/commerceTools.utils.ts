@@ -9,6 +9,8 @@ export const compareAddress = (addr1: Address, addr2: Address): boolean => {
     addr1.mobile !== addr2.mobile ||
     addr1.streetName !== addr2.streetName ||
     addr1.streetNumber !== addr2.streetNumber ||
+    // Sent to easyCredit as additionalAddressInformation, which its own address check compares too.
+    (addr1.additionalStreetInfo ?? '') !== (addr2.additionalStreetInfo ?? '') ||
     addr1.postalCode !== addr2.postalCode ||
     addr1.city !== addr2.city ||
     addr1.country !== addr2.country
