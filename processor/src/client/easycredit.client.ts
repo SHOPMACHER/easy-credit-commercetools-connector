@@ -34,13 +34,13 @@ interface EasyCreditClient {
     orderId: string,
     trackingNumber?: string,
     customHeaders?: HeadersInit,
-  ): Promise<boolean>;
+  ): Promise<void>;
   getPayment(
     technicalTransactionId: string,
     signal?: AbortSignal,
     customHeaders?: HeadersInit,
   ): Promise<ECGetPaymentResponse>;
-  refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<boolean>;
+  refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<void>;
   getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse>;
   getWebshopInfo(): Promise<unknown>;
 }
@@ -89,6 +89,40 @@ class EasyCreditApiClient implements EasyCreditClient {
     return response.json();
   }
 
+  // easyCredit answers 202 when it accepted an asynchronous request; anything else must reach the caller as an error.
+  private async postAccepted(
+    url: string,
+    body: object,
+    failure: { code: string; message: string; logMessage: string },
+    signal?: AbortSignal,
+    customHeaders?: HeadersInit,
+  ): Promise<void> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        ...(signal && { signal }),
+      });
+    } catch (error: unknown) {
+      log.error(failure.logMessage, error);
+      // DOMException is not always an Error instance across realms, so match on the name only.
+      const name = (error as { name?: string } | null)?.name;
+      const aborted = name === 'AbortError' || name === 'TimeoutError';
+      throw new Errorx({ code: failure.code, message: failure.message, httpErrorStatus: aborted ? 504 : 502 });
+    }
+
+    if (response.status !== 202) {
+      if (!response.ok) {
+        await this.handleResponse(response, failure.code, failure.message);
+      }
+      // A 2xx other than 202 is no accepted request either. Answer 502, a 2xx error reply could be read as success.
+      throw new Errorx({ code: failure.code, message: failure.message, httpErrorStatus: 502 });
+    }
+  }
+
   public async integrationCheck(payload: object, customHeaders?: HeadersInit): Promise<boolean> {
     const headers = { ...this.getDefaultHeaders(), ...customHeaders };
     const response = await fetch(`${this.baseApiUrl}/payment/v3/webshop/integrationcheck`, {
@@ -117,38 +151,13 @@ class EasyCreditApiClient implements EasyCreditClient {
     signal?: AbortSignal,
     customHeaders?: HeadersInit,
   ): Promise<boolean> {
-    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(orderId ? { orderId } : {}),
-        ...(signal && { signal }),
-      });
-    } catch (error: unknown) {
-      log.error('Failed to authorize the payment', error);
-      // DOMException is not always an Error instance across realms, so match on the name only.
-      const name = (error as { name?: string } | null)?.name;
-      const aborted = name === 'AbortError' || name === 'TimeoutError';
-      throw new Errorx({
-        code: 'AuthorizationFailed',
-        message: 'Authorization failed',
-        httpErrorStatus: aborted ? 504 : 502,
-      });
-    }
-
-    if (response.status !== 202) {
-      if (!response.ok) {
-        await this.handleResponse(response, 'AuthorizationFailed', 'Authorization failed');
-      }
-      // A 2xx other than 202 is no accepted authorization either. Answer 502, a 2xx error reply could be read as success.
-      throw new Errorx({
-        code: 'AuthorizationFailed',
-        message: 'Authorization failed',
-        httpErrorStatus: 502,
-      });
-    }
+    await this.postAccepted(
+      `${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}/authorization`,
+      orderId ? { orderId } : {},
+      { code: 'AuthorizationFailed', message: 'Authorization failed', logMessage: 'Failed to authorize the payment' },
+      signal,
+      customHeaders,
+    );
 
     return true;
   }
@@ -158,29 +167,14 @@ class EasyCreditApiClient implements EasyCreditClient {
     orderId: string,
     trackingNumber?: string,
     customHeaders?: HeadersInit,
-  ): Promise<boolean> {
-    try {
-      const headers = { ...this.getDefaultHeaders(), ...customHeaders };
-      const body = { orderId, trackingNumber };
-      const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/capture`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      if (response.status !== 202) {
-        const errorData = await response.json();
-        throw new Error(
-          `Capture request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
-        );
-      }
-
-      return true;
-    } catch (error: unknown) {
-      log.error('Failed to capture the payment', error);
-
-      return false;
-    }
+  ): Promise<void> {
+    await this.postAccepted(
+      `${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/capture`,
+      { orderId, trackingNumber },
+      { code: 'CaptureFailed', message: 'Capture failed', logMessage: 'Failed to capture the payment' },
+      undefined,
+      customHeaders,
+    );
   }
 
   public async getPayment(
@@ -201,29 +195,14 @@ class EasyCreditApiClient implements EasyCreditClient {
     transactionId: string,
     payload: ECRefundPayload,
     customHeaders?: HeadersInit,
-  ): Promise<boolean> {
-    try {
-      const headers: HeadersInit = { ...this.getDefaultHeaders(), ...customHeaders };
-
-      const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/refund`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (response.status !== 202) {
-        const errorData = await response.json();
-        throw new Error(
-          `Refund request returned invalid status code ${response.status} with cause: ${JSON.stringify(errorData)}`,
-        );
-      }
-
-      return true;
-    } catch (error: unknown) {
-      log.error('Failed to create refund', error);
-
-      return false;
-    }
+  ): Promise<void> {
+    await this.postAccepted(
+      `${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/refund`,
+      payload,
+      { code: 'RefundFailed', message: 'Refund failed', logMessage: 'Failed to create refund' },
+      undefined,
+      customHeaders,
+    );
   }
 
   public async getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse> {

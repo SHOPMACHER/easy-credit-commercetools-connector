@@ -1,5 +1,6 @@
 import { Cart, Payment } from '@commercetools/connect-payments-sdk';
 import {
+  getAddedRefundTransaction,
   getCompletedRefunds,
   getPayment,
   getPaymentType,
@@ -18,6 +19,34 @@ import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { describe, expect, it } from '@jest/globals';
 
 describe('Payment Utility Functions', () => {
+  describe('getAddedRefundTransaction', () => {
+    const refund = (id: string, state: CTTransactionState) => ({ id, type: CTTransactionType.Refund, state });
+    const paymentOf = (...transactions: object[]) => ({ transactions }) as unknown as Payment;
+    const older = refund('older', CTTransactionState.Initial);
+
+    it('should return the Initial refund that the update added', () => {
+      const added = refund('added', CTTransactionState.Initial);
+
+      expect(getAddedRefundTransaction(paymentOf(older), paymentOf(older, added))?.id).toBe('added');
+    });
+
+    it('should find the added refund wherever CT puts it in the array', () => {
+      const added = refund('added', CTTransactionState.Initial);
+
+      expect(getAddedRefundTransaction(paymentOf(older), paymentOf(added, older))?.id).toBe('added');
+    });
+
+    it('should not fall back to an older Initial refund of another request', () => {
+      const added = refund('added', CTTransactionState.Pending);
+
+      expect(getAddedRefundTransaction(paymentOf(older), paymentOf(older, added))).toBeUndefined();
+    });
+
+    it('should return undefined when nothing was added', () => {
+      expect(getAddedRefundTransaction(paymentOf(older), paymentOf(older))).toBeUndefined();
+    });
+  });
+
   describe('getPendingTransaction', () => {
     it('should return the pending transaction if it exists', () => {
       const payment: Payment = {
