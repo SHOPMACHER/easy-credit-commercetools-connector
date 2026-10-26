@@ -109,6 +109,13 @@ This is a `GET`, but it can write to commercetools. The rules are the ones of [A
 - For installment payments `easyCreditInterest` and `easyCreditTotalValue` are written on the transaction when they differ from the stored values. A switch to pay by invoice removes them. Deployments that did not run the post-deploy script again lack these fields: the write then fails with a logged warning and the response is not affected.
 - If easyCredit sends no payment type for a `BILL_PAYMENT` payment, the call fails with `502 PaymentTypeUnknown` and writes nothing, but only while the easyCredit status is `PREAUTHORIZED` and the CT transaction is `Initial`, the state in which the payment can still be authorized. In every other state the stored type is kept, the error is logged, the interest fields are recorded for the stored type and the call succeeds. A value that is not `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` is treated the same way as an absent type.
 
+#### Failure modes for the frontend
+
+Besides the summary, this call can now answer with an error that is not about the request itself:
+- `400` with a validation code (for example `InvalidAmount`, `CorporateCustomerNotAllowed`, `AddressesUnmatched`): the shopper switched on the easyCredit page to a type that does not fit the cart. The transaction is `Failure` and the cart is unfrozen. Send the shopper back to the payment method selection.
+- `502 PaymentTypeUnknown`: easyCredit sent no usable payment type for a bill payment that is about to be authorized. Nothing was written. Do not continue with this payment.
+- `503` (for example `BillPaymentCheckFailed`, `EasyCreditUnavailable`) or another `5xx`: a temporary problem. Nothing was changed, so the call can be retried. The cart stays frozen until the shop cancels or the shopper picks another method, see [Authorize Payment](./AuthorizePayment.md#validation-of-the-final-type).
+
 #### Error Response (400):
 If the provided paymentId is invalid, or if there is an issue with the session token, the API will return a `400 Bad Request` error:
 

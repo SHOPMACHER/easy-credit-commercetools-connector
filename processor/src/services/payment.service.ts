@@ -1055,7 +1055,11 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
             amount: transaction.amount,
             interactionId: transaction.interactionId,
             timestamp: new Date().toISOString(),
-            custom: transaction.custom,
+            // Only the technical id: the interest fields belong to the Authorization transaction.
+            custom: transaction.custom && {
+              ...transaction.custom,
+              fields: { easyCreditTechnicalTransactionId: ecTechnicalTransactionId },
+            },
           },
         },
       ]);
