@@ -1,4 +1,5 @@
 import { version as PACKAGE_VERSION } from '../../package.json';
+import { ECTransactionPaymentType } from '../types/payment.types';
 
 export const EASYCREDIT_BASE_API_URL = 'https://ratenkauf.easycredit.de/api';
 
@@ -37,6 +38,15 @@ export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
 export const EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-technical-transaction-id';
 
 export const EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD = 'easyCreditTechnicalTransactionId';
+
+export const EASYCREDIT_PAYMENT_TYPE_LABELS: Record<ECTransactionPaymentType, string> = {
+  [ECTransactionPaymentType.ECTransactionInstallmentPayment]: 'easyCredit Ratenkauf',
+  [ECTransactionPaymentType.ECTransactionBillPayment]: 'easyCredit Rechnung',
+};
+
+export const EASYCREDIT_INTEREST_FIELD = 'easyCreditInterest';
+
+export const EASYCREDIT_TOTAL_VALUE_FIELD = 'easyCreditTotalValue';
 
 export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;

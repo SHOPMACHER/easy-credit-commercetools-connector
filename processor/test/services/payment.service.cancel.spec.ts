@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Errorx } from '@commercetools/connect-payments-sdk';
 import { handleCancelPayment } from '../../src/services/payment.service';
 import { getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
@@ -125,6 +126,46 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('handleCancelPayment dive
     expect(stateWrites()).toEqual(['Failure']);
     expect(divergenceLogs()).toHaveLength(0);
     expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+  });
+
+  // Live: easyCredit invalidates an older transaction once a newer one exists (its page shows error 410), and the
+  // status of the lookup for such a transaction is 404 or 410. The cart must not stay frozen because of that.
+  it.each([404, 410])(
+    'cancels and unfreezes the cart when the easyCredit lookup answers %s (transaction gone)',
+    async (httpErrorStatus) => {
+      mock(getPaymentById).mockResolvedValue(buildPayment('Initial', method));
+      client.getPayment.mockRejectedValue(new Errorx({ code: 'Gone', message: 'gone', httpErrorStatus }));
+
+      await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+      expect(stateWrites()).toEqual(['Failure']);
+      expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+      expect(divergenceLogs()).toHaveLength(0);
+    },
+  );
+
+  it('cancels a Pending transaction whose easyCredit transaction is gone', async () => {
+    mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
+    client.getPayment.mockRejectedValue(new Errorx({ code: 'Gone', message: 'gone', httpErrorStatus: 410 }));
+
+    await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+    expect(stateWrites()).toEqual(['Failure']);
+    expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+    expect(divergenceLogs()).toHaveLength(0);
+  });
+
+  it.each([
+    ['an HTTP 500', new Errorx({ code: 'Boom', message: 'x', httpErrorStatus: 500 })],
+    ['a network error', new Error('socket hang up')],
+  ])('rethrows and changes nothing when the easyCredit lookup fails with %s', async (_name, failure) => {
+    mock(getPaymentById).mockResolvedValue(buildPayment('Initial', method));
+    client.getPayment.mockRejectedValue(failure);
+
+    await expect(handleCancelPayment(PAYMENT_ID)).rejects.toBe(failure);
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(updateCart).not.toHaveBeenCalled();
   });
 
   it('keeps refusing to cancel when easyCredit is already AUTHORIZED, without writes or divergence log', async () => {

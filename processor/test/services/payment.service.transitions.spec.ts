@@ -5,6 +5,7 @@ import { getCartByPaymentId, updateCart } from '../../src/commercetools/cart.com
 import { getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
+import { getShippingAddress, getShippingDestinations } from '../../src/utils/map.utils';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
@@ -29,6 +30,8 @@ const TECH_ID = 'tech-1';
 type TestCart = {
   id: string;
   cartState: string;
+  billingAddress: Record<string, unknown>;
+  shippingAddress: Record<string, unknown>;
   totalPrice: { centAmount: number; currencyCode: string; fractionDigits: number };
 };
 
@@ -56,16 +59,28 @@ const buildPayment = () => ({
   ],
 });
 
+const address = {
+  firstName: 'Erika',
+  lastName: 'Mustermann',
+  streetName: 'Hauptstrasse',
+  streetNumber: '1',
+  city: 'Gescher',
+  postalCode: '48712',
+  country: 'DE',
+};
+
 const buildCart = (cartState = 'Frozen', centAmount = 10000): TestCart => ({
   id: 'cart-1',
   cartState,
+  billingAddress: { ...address },
+  shippingAddress: { ...address },
   totalPrice: { centAmount, currencyCode: 'EUR', fractionDigits: 2 },
 });
 
 const ec = (status: string, orderValue = 100) => ({
   status,
   decision: { transactionId: 'ec-tx-1', orderValue, decisionOutcome: 'POSITIVE' },
-  transaction: { financingTerm: 12, orderDetails: { orderValue, orderId: PAYMENT_ID } },
+  transaction: { financingTerm: 12, paymentType: ctMethod, orderDetails: { orderValue, orderId: PAYMENT_ID } },
 });
 
 const writes = () => mock(updatePayment).mock.calls.map((c) => c[1][0].state);
@@ -111,6 +126,12 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation(async () => cart);
   mock(updateCart).mockReset().mockResolvedValue({});
+  mock(getShippingAddress)
+    .mockReset()
+    .mockImplementation((c: any) => c.shippingAddress);
+  mock(getShippingDestinations)
+    .mockReset()
+    .mockImplementation((c: any) => [c.shippingAddress]);
   mock(log.error).mockClear();
   mock(log.warn).mockClear();
   client.getPayment.mockReset();
@@ -144,6 +165,9 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('R3 transitions, payment 
       expect(writes()).toEqual(['Success']);
       expect(ctState).toBe('Success');
       expect(updateCart).not.toHaveBeenCalled();
+      expect(
+        mock(log.error).mock.calls.filter((c) => String(c[0]).startsWith('EASYCREDIT_AUTHORIZATION_SENT')),
+      ).toEqual([]);
     });
 
     it('does not overwrite Failure with Pending either', async () => {

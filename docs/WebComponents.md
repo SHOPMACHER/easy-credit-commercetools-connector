@@ -206,7 +206,7 @@ The example uses TypeScript; omit `as const` when using plain JavaScript.
 
 - Created from [EasyCredit Label component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-label--docs) and [EasyCredit Checkout component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-checkout--docs)
 - It is handled in [summary.component.ts](../assets/src/components/summary.component.ts)
-- The summary shows the payment type of the payment, installment or pay by invoice, as returned in `paymentType` by [Get Payment](./GetPayment.md). If the response has no `paymentType`, for example an error, it uses the optional `paymentType` build option and otherwise installment. Pass the payment type the customer selected, so an error is not shown under the installment label.
+- The summary shows the payment type of the payment, installment or pay by invoice, as returned in `paymentType` by [Get Payment](./GetPayment.md). That is the final type from easyCredit: if easyCredit reports another type than the one the payment was created with (a switch on the easyCredit page, not verified against the live service, see [Create Payment](./CreatePayment.md#switching-on-the-easycredit-page)), the summary renders the new type, whatever type the component was built with. If the response has no `paymentType`, for example an error, it uses the optional `paymentType` build option and otherwise installment. Pass the payment type the customer selected, so an error is not shown under the installment label.
 - To use this component, you need to integrate this short snippet into your shop:
 
   ```
