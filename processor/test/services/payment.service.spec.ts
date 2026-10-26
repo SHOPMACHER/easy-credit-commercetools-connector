@@ -65,6 +65,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateInitialOrPendingTransaction: jest.fn(),
   validatePaymentAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
+  validateNotCaptured: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
@@ -973,7 +974,7 @@ describe('Payment handlers', () => {
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
-        capturePayment: jest.fn().mockResolvedValue(true),
+        capturePayment: jest.fn().mockResolvedValue(undefined),
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
       });
@@ -1067,7 +1068,7 @@ describe('Payment handlers', () => {
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (initEasyCreditClient as jest.Mock).mockReturnValue({
         // @ts-expect-error mocked
-        refundPayment: jest.fn().mockResolvedValue(true),
+        refundPayment: jest.fn().mockResolvedValue(undefined),
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
       });

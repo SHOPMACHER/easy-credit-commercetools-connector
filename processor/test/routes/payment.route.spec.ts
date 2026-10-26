@@ -417,6 +417,26 @@ describe('paymentsRoute', () => {
       expect(response.body).toBe('');
       expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.trackingNumber);
     });
+
+    it('should pass the easyCredit capture error on instead of a 204', async () => {
+      (handleCapturePayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 'Booking not allowed', message: 'Booking not allowed', httpErrorStatus: 409 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: {},
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        message: 'Booking not allowed',
+        statusCode: 409,
+        errors: [{ code: 'Booking not allowed', message: 'Booking not allowed' }],
+      });
+    });
   });
 
   describe('POST /payments/:paymentId/refund', () => {
@@ -443,6 +463,26 @@ describe('paymentsRoute', () => {
       expect(response.statusCode).toBe(202);
       expect(response.json()).toStrictEqual(mockPayment);
       expect(handleRefundPayment).toHaveBeenCalledWith(paymentId, mockRequest.amount);
+    });
+
+    it('should pass the easyCredit refund error on instead of a 202', async () => {
+      (handleRefundPayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 'RefundFailed', message: 'Refund failed', httpErrorStatus: 502 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/refund',
+        payload: { amount: 2 },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual({
+        message: 'Refund failed',
+        statusCode: 502,
+        errors: [{ code: 'RefundFailed', message: 'Refund failed' }],
+      });
     });
   });
 });

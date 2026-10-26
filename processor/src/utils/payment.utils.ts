@@ -26,9 +26,15 @@ export const getTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
 };
 
-export const getInitialRefundTransaction = (payment: Payment): Transaction | undefined => {
-  return payment.transactions.find(
-    (transaction) => transaction.type === CTTransactionType.Refund && transaction.state === CTTransactionState.Initial,
+// The update is version-locked, so the one ID missing before it is the refund this request added; CT does not specify the array order.
+export const getAddedRefundTransaction = (before: Payment, after: Payment): Transaction | undefined => {
+  const existingIds = new Set(before.transactions.map((transaction) => transaction.id));
+
+  return after.transactions.find(
+    (transaction) =>
+      !existingIds.has(transaction.id) &&
+      transaction.type === CTTransactionType.Refund &&
+      transaction.state === CTTransactionState.Initial,
   );
 };
 

@@ -1,6 +1,6 @@
 # Triggering Refunding Easycredit Payment
 
-This guide provides instructions on how to trigger a Refund for an Easycredit payment from CommerceTools shop side.
+This guide provides instructions on how to trigger a Refund for an Easycredit payment from CommerceTools shop side. It works for `INSTALLMENT_PAYMENT` and `BILL_PAYMENT` payments alike, for full and partial refunds and for several refunds on the same payment.
 
 ## Table of Contents
 
@@ -34,14 +34,18 @@ This guide provides instructions on how to trigger a Refund for an Easycredit pa
   - The CommerceTools Payment should be existed
   - The CommerceTools Payment amount (in EUR) must be greater than 0 and greater than the refunding amount
   - The CommerceTools Payment `paymentMethodInfo.paymentInterface` is `easycredit`
-  - The CommerceTools Payment must have a transaction with type = `Authorization`, state = `Success` and `interactionId` is defined and a easycredit payment is found with the `technicalTransactionId` is the value of the transaction's `interactionId`
+  - The CommerceTools Payment must have a transaction with type = `Authorization`, state = `Success` and a defined `interactionId`, which is the EasyCredit transaction ID
 
 - After validating completely, the connector will first create a new transaction for the refund. The transaction will have type = `Refund`, state = `Initial` and the amount is the refunding amount
 
-- Next, the connector will create a Refund request for the Easycredit payment we found above
+- Next, the connector will create a Refund request for this EasyCredit transaction, with the ID of the new Refund transaction as `bookingId`
 
 - Following the [Easycredit docs](https://developer.easycredit-ratenkauf.de/documentation/dokumentation-transaction-api-v3/), a successful refund request will return 202 as status code.
-So if the connector received 202 as status code, it will update the above Initial Refund transaction, change its state to `Pending` otherwise it will be changed to `Failure`
+So if the connector received 202 as status code, it will update the above Initial Refund transaction, change its state to `Pending` and return `202` with the updated payment.
+
+- Otherwise the transaction is changed to `Failure` and the API returns the error: the status code and the `title` of the easyCredit response as `code` and `message`, with the easyCredit `violations` as `fields`. Without a usable `title` the code is `RefundFailed`. If easyCredit cannot be reached, the API returns `502` (`504` on a timeout) with the code `RefundFailed`. This applies for example to a refund of a payment that is not captured yet or that exceeds the refundable amount.
+
+- Each request uses its own Refund transaction ID as easyCredit `bookingId`, also when another refund of the same payment is still `Initial` or `Pending`.
 
 - Then, the process of triggering the refund is done. However, the refund request will need time to be processed and we cannot wait for it to be done. However, the EasyCredit provide us a feature to receive new notifications about the resource called [Benachrichtigungs-URL](https://developer.easycredit-ratenkauf.de/documentation/anleitung-einbindung-transaction-api-v3/#2003044967732465). Our connector also supports this feature, all you need to do is open your EasyCredit portal account, and register our endpoint: `GET /easycredit-notification`
 

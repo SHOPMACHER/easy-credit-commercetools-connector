@@ -467,3 +467,66 @@ describe('Easycredit Notification handlers', () => {
     });
   });
 });
+
+describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification result (%s)', (method) => {
+  const pendingCapture = {
+    id: 'capture-transaction1',
+    type: CTTransactionType.Charge,
+    state: CTTransactionState.Pending,
+    interactionId: 'ABC123',
+  };
+  const payment = {
+    id: 'payment123',
+    paymentMethodInfo: { paymentInterface: 'easycredit', method },
+    transactions: [pendingCapture],
+  };
+  const booking = (status: string) => ({ bookingType: 'ApiBooking', type: 'CAPTURE', status });
+
+  const notify = async (bookings: object[], pending: object[]) => {
+    (initEasyCreditClient as jest.Mock).mockReturnValue({
+      // @ts-expect-error mocked
+      getMerchantTransaction: jest.fn().mockResolvedValue({ orderDetails: { orderId: 'payment123' }, bookings }),
+    });
+    (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+    (getCaptureBooking as jest.Mock).mockReturnValue(bookings);
+    // @ts-expect-error mocked
+    (getPaymentById as jest.Mock).mockResolvedValue(payment);
+    (getPendingCaptureTransactions as jest.Mock).mockReturnValue(pending);
+
+    await handleEasyCreditNotification('ABC123');
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('sets the pending Charge to Failure for a FAILED capture booking', async () => {
+    await notify([booking('FAILED')], [pendingCapture]);
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Failure },
+    ]);
+    expect(log.error).toHaveBeenCalledWith(
+      'EasyCredit capture failed, CommerceTools transaction state updated to Failure.',
+      { transactionId: 'capture-transaction1', paymentId: 'payment123' },
+    );
+  });
+
+  it('sets the pending Charge to Success when a retried capture is DONE after a FAILED one', async () => {
+    await notify([booking('FAILED'), booking('DONE')], [pendingCapture]);
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Success },
+    ]);
+  });
+
+  it('adds no Charge for a FAILED capture booking without pending Charge', async () => {
+    await notify([booking('FAILED')], []);
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(
+      'Failed EasyCredit capture without pending capture transaction, nothing to update.',
+      { paymentId: 'payment123' },
+    );
+  });
+});

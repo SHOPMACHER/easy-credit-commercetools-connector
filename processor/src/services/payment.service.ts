@@ -28,6 +28,7 @@ import {
   validateCurrency,
   validateInitialOrPendingTransaction,
   validateInitialRefundTransaction,
+  validateNotCaptured,
   validatePayment,
   validatePaymentAmount,
   validatePaymentTypeAvailability,
@@ -1025,6 +1026,7 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
 
     validatePayment(payment);
     validateSuccessTransaction(payment);
+    validateNotCaptured(payment);
 
     const transaction = getSuccessTransaction(payment) as Transaction;
     const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
@@ -1039,32 +1041,30 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
       });
     }
 
-    const response = await initEasyCreditClient().capturePayment(
+    await initEasyCreditClient().capturePayment(
       easyCreditTransaction.decision.transactionId,
       paymentId,
       trackingNumber,
     );
 
-    if (response) {
-      await updatePayment(payment, [
-        {
-          action: 'addTransaction',
-          transaction: {
-            type: CTTransactionType.Charge,
-            state: CTTransactionState.Pending,
-            amount: transaction.amount,
-            interactionId: transaction.interactionId,
-            timestamp: new Date().toISOString(),
-            // Only the technical id: the interest fields belong to the Authorization transaction.
-            custom: transaction.custom && {
-              ...transaction.custom,
-              fields: { easyCreditTechnicalTransactionId: ecTechnicalTransactionId },
-            },
+    await updatePayment(payment, [
+      {
+        action: 'addTransaction',
+        transaction: {
+          type: CTTransactionType.Charge,
+          state: CTTransactionState.Pending,
+          amount: transaction.amount,
+          interactionId: transaction.interactionId,
+          timestamp: new Date().toISOString(),
+          // Only the technical id: the interest fields belong to the Authorization transaction.
+          custom: transaction.custom && {
+            ...transaction.custom,
+            fields: { easyCreditTechnicalTransactionId: ecTechnicalTransactionId },
           },
         },
-      ]);
-      log.info('Capture payment initiated successfully', { paymentId });
-    }
+      },
+    ]);
+    log.info('Capture payment initiated successfully', { paymentId });
   } catch (error) {
     log.error('Error in capturing payment', error);
     throw error;
@@ -1092,24 +1092,39 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
       },
     ]);
 
-    const initialRefundTransaction = validateInitialRefundTransaction(updatedCTPayment);
+    const initialRefundTransaction = validateInitialRefundTransaction(payment, updatedCTPayment);
 
     const refundPayload: ECRefundPayload = {
       value: refundAmount,
       bookingId: initialRefundTransaction.id,
     };
 
-    const isSuccess = await initEasyCreditClient().refundPayment(ecTransactionId, refundPayload);
-
-    let newState;
-    if (isSuccess) {
-      newState = CTTransactionState.Pending;
-    } else {
-      newState = CTTransactionState.Failure;
+    try {
+      await initEasyCreditClient().refundPayment(ecTransactionId, refundPayload);
+    } catch (error) {
+      // The easyCredit error is what the caller needs, so a failed state update must not replace it.
+      await updatePayment(updatedCTPayment, [
+        {
+          action: 'changeTransactionState',
+          transactionId: initialRefundTransaction.id,
+          state: CTTransactionState.Failure,
+        },
+      ]).catch((updateError) =>
+        log.error('Failed to mark refund transaction as failed', {
+          paymentId,
+          transactionId: initialRefundTransaction.id,
+          error: updateError,
+        }),
+      );
+      throw error;
     }
 
     return await updatePayment(updatedCTPayment, [
-      { action: 'changeTransactionState', transactionId: initialRefundTransaction.id, state: newState },
+      {
+        action: 'changeTransactionState',
+        transactionId: initialRefundTransaction.id,
+        state: CTTransactionState.Pending,
+      },
     ]);
   } catch (error) {
     log.error('Error in refunding payment', error);

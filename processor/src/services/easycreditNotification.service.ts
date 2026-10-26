@@ -8,6 +8,7 @@ import {
 import { log } from '../libs/logger';
 import { CTTransactionState, CTTransactionType, ECGetMerchantTransactionResponse } from '../types/payment.types';
 import { mapUpdateActionForRefunds } from '../utils/map.utils';
+import { EASYCREDIT_REFUND_STATUS_DONE } from '../utils/constant.utils';
 import {
   getCaptureBooking,
   getCompletedRefunds,
@@ -92,6 +93,11 @@ const handleCaptureNotifications = async (
     return;
   }
 
+  // A retried capture leaves the earlier FAILED booking behind, so one DONE booking means captured.
+  const captureState = ecCaptureBookings.some((booking) => booking.status === EASYCREDIT_REFUND_STATUS_DONE)
+    ? CTTransactionState.Success
+    : CTTransactionState.Failure;
+
   const ctPayment = await getPaymentById(paymentId);
   const ctSuccessCaptures = getSuccessCaptureTransactions(ctPayment);
 
@@ -107,6 +113,13 @@ const handleCaptureNotifications = async (
   const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
   // Should change this logic on next major release
   if (ctPendingCaptureTransactions?.length === 0) {
+    // Without a pending Charge there is nothing to fail, and repeated FAILED notifications must not add Charges.
+    if (captureState === CTTransactionState.Failure) {
+      log.warn('Failed EasyCredit capture without pending capture transaction, nothing to update.', {
+        paymentId: ctPayment.id,
+      });
+      return;
+    }
     const ctAuthorizedTransactions = getSuccessTransaction(ctPayment);
     if (!ctAuthorizedTransactions) {
       log.error('No authorized transaction found to create capture from.', {
@@ -115,7 +128,7 @@ const handleCaptureNotifications = async (
       return;
     }
     const updatedPayment = await createCaptureTransactionFromAuthorized(ctPayment, ctAuthorizedTransactions);
-    await updatePendingCaptureToSuccess(updatedPayment, getPendingCaptureTransactions(updatedPayment)[0]);
+    await completePendingCapture(updatedPayment, getPendingCaptureTransactions(updatedPayment)[0], captureState);
   } else {
     const pendingCapture = ctPendingCaptureTransactions[0];
     if (pendingCapture.interactionId !== resourceId) {
@@ -125,7 +138,7 @@ const handleCaptureNotifications = async (
       });
       return;
     }
-    await updatePendingCaptureToSuccess(ctPayment, pendingCapture);
+    await completePendingCapture(ctPayment, pendingCapture, captureState);
   }
 };
 
@@ -148,17 +161,26 @@ const createCaptureTransactionFromAuthorized = async (
   ]);
 };
 
-const updatePendingCaptureToSuccess = async (ctPayment: Payment, pendingCapture: Transaction): Promise<Payment> => {
-  log.info('EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.', {
-    transactionId: pendingCapture.id,
-    paymentId: ctPayment.id,
-  });
+const completePendingCapture = async (
+  ctPayment: Payment,
+  pendingCapture: Transaction,
+  state: CTTransactionState.Success | CTTransactionState.Failure,
+): Promise<Payment> => {
+  const logContext = { transactionId: pendingCapture.id, paymentId: ctPayment.id };
+  if (state === CTTransactionState.Success) {
+    log.info(
+      'EasyCredit payment captured successfully, CommerceTools transaction state updated to Success.',
+      logContext,
+    );
+  } else {
+    log.error('EasyCredit capture failed, CommerceTools transaction state updated to Failure.', logContext);
+  }
 
   return await updatePayment(ctPayment, [
     {
       action: 'changeTransactionState',
       transactionId: pendingCapture.id,
-      state: CTTransactionState.Success,
+      state,
     },
   ]);
 };
