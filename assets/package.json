@@ -41,6 +41,7 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "jest": "30.0.5",
     "jest-environment-jsdom": "^30.0.5",
+    "jest-util": "30.0.5",
     "prettier": "^3.3.3",
     "sass": "1.79.1",
     "ts-jest": "^29.4.1",
@@ -50,7 +51,8 @@
   },
   "overrides": {
     "path-to-regexp": "3.3.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "compression": "^1.8.2"
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.9.5"
