@@ -14,23 +14,34 @@ enum NegativePaymentInformation {
   NO_INFORMATION = 'NO_INFORMATION',
 }
 
+const RedirectLinksSchema = Type.Object({
+  urlSuccess: Type.String(),
+  urlCancellation: Type.String(),
+  urlDenial: Type.String(),
+});
+
+const CustomerRelationshipSchema = Type.Object({
+  customerStatus: Type.Enum(CustomerStatus),
+  customerSince: Type.Optional(Type.String()),
+  orderDoneWithLogin: Type.Optional(Type.Boolean()),
+  numberOfOrders: Type.Number(),
+  negativePaymentInformation: Type.Optional(Type.Enum(NegativePaymentInformation)),
+  riskyItemsInShoppingCart: Type.Optional(Type.Boolean()),
+  logisticsServiceProvider: Type.Optional(Type.String()),
+});
+
 export const CreatePaymentBodySchema = Type.Object({
   cartId: Type.String(),
   paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
-  redirectLinks: Type.Object({
-    urlSuccess: Type.String(),
-    urlCancellation: Type.String(),
-    urlDenial: Type.String(),
-  }),
-  customerRelationship: Type.Object({
-    customerStatus: Type.Enum(CustomerStatus),
-    customerSince: Type.Optional(Type.String()),
-    orderDoneWithLogin: Type.Optional(Type.Boolean()),
-    numberOfOrders: Type.Number(),
-    negativePaymentInformation: Type.Optional(Type.Enum(NegativePaymentInformation)),
-    riskyItemsInShoppingCart: Type.Optional(Type.Boolean()),
-    logisticsServiceProvider: Type.Optional(Type.String()),
-  }),
+  redirectLinks: RedirectLinksSchema,
+  customerRelationship: CustomerRelationshipSchema,
+});
+
+// No cartId: express always uses the cart of the session.
+export const CreateExpressPaymentBodySchema = Type.Object({
+  paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
+  redirectLinks: RedirectLinksSchema,
+  customerRelationship: Type.Optional(CustomerRelationshipSchema),
 });
 
 export const CreatePaymentResponseSchema = Type.Object({
@@ -49,5 +60,7 @@ export const CreatePaymentResponseSchema = Type.Object({
 });
 
 export type CreatePaymentRequestSchemaDTO = Static<typeof CreatePaymentBodySchema>;
+
+export type CreateExpressPaymentRequestSchemaDTO = Static<typeof CreateExpressPaymentBodySchema>;
 
 export type CreatePaymentResponseSchemaDTO = Static<typeof CreatePaymentResponseSchema>;

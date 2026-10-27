@@ -11,6 +11,8 @@ For the terms in this document (EC, CT, easyCredit status values, cart freeze), 
 
 ## Overview
 This API creates payment details from CommerceTools. It uses the `cartId`, the necessary `redirectLinks` and the `customerRelationship` data. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
+
+For an express checkout from the product page or the cart, without addresses, see [Create Express Payment](./CreateExpressPayment.md).
 <br />
 
 ## Conditions
