@@ -4,9 +4,13 @@ import { updateCustomObject } from '../commercetools/customObject.commercetools'
 import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
+  getPaymentCustomTypeKey,
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
-import { createOrUpdateTransactionCustomType } from '../commercetools/customFields.commercetools';
+import {
+  createOrUpdatePaymentCustomType,
+  createOrUpdateTransactionCustomType,
+} from '../commercetools/customFields.commercetools';
 
 const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
 
@@ -23,6 +27,7 @@ async function postDeploy(_properties: Map<string, unknown>) {
 
   const transactionCustomTypeKey = getTransactionCustomTypeKey();
   await createOrUpdateTransactionCustomType(transactionCustomTypeKey);
+  await createOrUpdatePaymentCustomType(getPaymentCustomTypeKey());
 }
 
 async function runPostDeployScripts() {

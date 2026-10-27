@@ -184,7 +184,7 @@ describe('Cart Functions', () => {
 
       // @ts-expect-error test
       await expect(updateCart(cart, updateActions)).rejects.toThrow(Errorx);
-      expect(log.error).toHaveBeenCalledWith('Error in updatePayment', errorResponse);
+      expect(log.error).toHaveBeenCalledWith('Error in updateCart', errorResponse);
     });
   });
 });
