@@ -54,8 +54,9 @@ type ECTransactionOrderDetails = {
   orderId: string;
   numberOfProductsInShoppingCart: number;
   withoutFlexprice: boolean;
-  invoiceAddress: ECTransactionOrderDetailsAddress;
-  shippingAddress: ECTransactionOrderDetailsAddress;
+  // Omitted for express, the shopper enters the address on the easyCredit payment page.
+  invoiceAddress?: ECTransactionOrderDetailsAddress;
+  shippingAddress?: ECTransactionOrderDetailsAddress;
   shoppingCartInformation: ECTransactionOrderDetailsShoppingCartInformation[];
 };
 
@@ -159,7 +160,7 @@ export type ECTransaction = {
   financingTerm?: number;
   orderDetails: ECTransactionOrderDetails;
   shopsystem?: ECTransactionShopSystem;
-  customer: ECTransactionCustomer;
+  customer?: ECTransactionCustomer;
   customerRelationship?: ECTransactionCustomerRelationship;
   redirectLinks: ECTransactionRedirectLinks;
   paymentType?: ECTransactionPaymentType;
