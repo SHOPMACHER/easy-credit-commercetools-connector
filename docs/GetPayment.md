@@ -56,7 +56,7 @@ On successful retrieval of the payment information, the API returns a `200 OK` r
 
 `paymentType` is `INSTALLMENT_PAYMENT` or `BILL_PAYMENT`. It is the final payment type from the easyCredit transaction (`transaction.paymentType`), which can differ from the type the payment was created with if the shopper switched on the easyCredit page (not verified against the live service, see [Create Payment](./CreatePayment.md#switching-on-the-easycredit-page)). If easyCredit sends no type or an unrecognised one, or the payment is not synced (see [Side effects](#side-effects)), it is the type stored in `paymentMethodInfo.method` of the CT payment; the legacy method `easycredit` is reported as `INSTALLMENT_PAYMENT`.
 
-The installment specific `decision` fields `interest`, `totalValue`, `numberOfInstallments`, `installment`, `lastInstallment`, `mtan` and `bankAccountCheck` are optional. easyCredit sends a JSON `null` for fields that do not apply, for example `interest` of a completed `BILL_PAYMENT` (its `totalValue` then equals `orderValue`). The connector removes every `null` field of `decision` from the response, so such a field is omitted and never shows up as `0`. While a transaction is still `OPEN`, easyCredit reports installment values (`interest`, `totalValue`) even for a `BILL_PAYMENT`, so a summary rendered at that point shows a plan. After completion `interest` is omitted (`null`), while `totalValue` stays and equals `orderValue`. `orderValue` and `decisionOutcome` are always present. `interest` and `totalValue` are for display only: the cart has no interest line item and the amounts used for authorization are unchanged. For installment payments they are also stored on the `Authorization` transaction, see [Create Payment](./CreatePayment.md#transaction-custom-fields).
+The installment specific `decision` fields `interest`, `totalValue`, `numberOfInstallments`, `installment`, `lastInstallment`, `mtan` and `bankAccountCheck` are optional. easyCredit sends a JSON `null` for fields that do not apply, for example `interest` of a completed `BILL_PAYMENT` (its `totalValue` then equals `orderValue`). The connector removes every `null` field of `decision` from the response, so such a field is omitted and never shows up as `0`. While a transaction is still `OPEN`, easyCredit reports installment values (`interest`, `totalValue`) even for a `BILL_PAYMENT`, so a summary rendered at that point shows a plan. After completion `interest` is omitted (`null`), while `totalValue` stays and equals `orderValue`. `orderValue` and `decisionOutcome` are always present. `interest` and `totalValue` are for display only: the cart has no interest line item and the amounts used for authorization are unchanged. For installment payments they are also stored on the `Authorization` transaction, see [Create Payment](./CreatePayment.md#transaction-custom-fields). To render them see [Showing the interest on the storefront](#showing-the-interest-on-the-storefront).
 
 Example for an installment payment:
 
@@ -98,6 +98,30 @@ Example for a bill payment (the installment fields are absent):
     "decisionOutcome": ""
   }
 }
+```
+
+#### Showing the interest on the storefront
+
+The interest is not part of the commercetools cart, the payment or the order. The cart total, the `Authorization` transaction and the order total are the goods value (`orderValue`). A storefront that shows the interest, as the easyCredit integration guide expects (the interest as a separate item and the total including it), reads it from one of two places:
+
+| Source | Use it for | Fields |
+| --- | --- | --- |
+| `decision` in the response of this call | The order summary right after the shopper returns from easyCredit. It is read from easyCredit on every call. | `interest`, `totalValue`, `numberOfInstallments`, `installment`, `lastInstallment` |
+| Custom fields of the `Authorization` transaction on the CT payment | Later views that should not call the connector, for example the order confirmation page, emails or a back office. | `easyCreditInterest`, `easyCreditTotalValue`, see [Create Payment](./CreatePayment.md#transaction-custom-fields) |
+
+Rules for rendering:
+
+- Render the interest only after the shopper returned from easyCredit, when the easyCredit `status` is `PREAUTHORIZED` or `AUTHORIZED`. While it is `OPEN`, easyCredit reports installment values even for a bill payment, so they are only a preview.
+- Render it only if the payment is an installment payment (`paymentType` is `INSTALLMENT_PAYMENT`) and `interest` is present. For `BILL_PAYMENT` the field is omitted, so show no interest line.
+- Show `totalValue` as the amount the shopper repays in total. It equals `orderValue + interest`. Do not derive it from the cart total, which excludes the interest.
+- Units differ: `interest`, `totalValue` and `orderValue` are decimal EUR amounts (`17.05`), while commercetools cart and order amounts are cent amounts (`1705`).
+- The custom fields only exist after the connector has read the easyCredit transaction (this call, [Authorize Payment](./AuthorizePayment.md) or the callback). A payment that never got that far, or a deployment that did not run the post-deploy script again, has none. Fall back to this call.
+- The order created from the cart does not contain the interest. If an order confirmation or an ERP export needs it, read the custom fields of the `Authorization` transaction of the order's payment:
+
+```ts
+const authorization = payment.transactions.find((transaction) => transaction.type === 'Authorization');
+const interest = authorization?.custom?.fields?.easyCreditInterest; // undefined for bill payments
+const totalValue = authorization?.custom?.fields?.easyCreditTotalValue;
 ```
 
 #### Side effects
