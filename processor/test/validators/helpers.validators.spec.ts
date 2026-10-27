@@ -5,8 +5,10 @@ import {
   region,
   standardBoolean,
   standardEmail,
+  standardInteger,
   standardKey,
   standardNaturalNumber,
+  standardOneOf,
   standardString,
   standardUrl,
 } from '../../src/validators/helpers.validators';
@@ -69,6 +71,34 @@ describe('Validation Helpers', () => {
       const [path, validators] = standardNaturalNumber(['age'], message);
       const validate = getValidateMessages([[path, validators]], { age: '25.5' });
       expect(validate).toEqual([message]);
+    });
+  });
+
+  describe('standardInteger', () => {
+    const message = { code: 'InvalidTtl', message: 'Invalid TTL', referencedBy: 'test' };
+
+    it.each(['0', '300', '3600'])('should accept %s within the range', (ttl) => {
+      const [path, validators] = standardInteger(['ttl'], message, { min: 0, max: 3600 });
+      expect(getValidateMessages([[path, validators]], { ttl })).toHaveLength(0);
+    });
+
+    it.each(['-1', '3601', '1.5', '01', 'abc', ''])('should reject %p', (ttl) => {
+      const [path, validators] = standardInteger(['ttl'], message, { min: 0, max: 3600 });
+      expect(getValidateMessages([[path, validators]], { ttl })).toEqual([message]);
+    });
+  });
+
+  describe('standardOneOf', () => {
+    const message = { code: 'InvalidFlag', message: 'Invalid flag', referencedBy: 'test' };
+
+    it.each(['0', '1'])('should accept %s', (flag) => {
+      const [path, validators] = standardOneOf(['flag'], message, ['0', '1']);
+      expect(getValidateMessages([[path, validators]], { flag })).toHaveLength(0);
+    });
+
+    it.each(['2', 'x', '', undefined])('should reject %p', (flag) => {
+      const [path, validators] = standardOneOf(['flag'], message, ['0', '1']);
+      expect(getValidateMessages([[path, validators]], { flag })).toEqual([message]);
     });
   });
 

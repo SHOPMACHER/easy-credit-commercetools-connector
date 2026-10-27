@@ -124,6 +124,30 @@ export enum ECTransactionPaymentType {
   ECTransactionBillPayment = 'BILL_PAYMENT',
 }
 
+export type ECWebshopInfo = {
+  availability: boolean;
+  installmentPaymentActive: boolean;
+  minInstallmentValue: number;
+  maxInstallmentValue: number;
+  billPaymentActive?: boolean;
+  minBillingValue?: number;
+  maxBillingValue?: number;
+};
+
+export type PaymentTypeExclusion = 'cartItems' | 'checkFailed';
+
+export type PaymentTypeAvailability = {
+  // Activated for the webshop regardless of the cart amount; not exposed by the API.
+  enabled: boolean;
+  available: boolean;
+  // Set when the cart item check rules this type out; not exposed by the API.
+  exclusion?: PaymentTypeExclusion;
+  minAmount?: number;
+  maxAmount?: number;
+};
+
+export type PaymentTypesAvailability = Record<ECTransactionPaymentType, PaymentTypeAvailability>;
+
 type ECTransactionConsent = {
   sepaMandate: boolean;
   advertisement: boolean;
@@ -173,18 +197,19 @@ export type ECGetPaymentResponse = {
   status: ECTransactionStatus;
   decision: {
     transactionId: string;
-    interest: number;
-    totalValue: number;
+    // easyCredit sends JSON null for fields that do not apply (for example interest of a bill payment)
+    interest?: number | null;
+    totalValue?: number | null;
     orderValue: number;
     decisionOutcome: string;
-    numberOfInstallments: number;
-    installment: number;
-    lastInstallment: number;
-    mtan: {
+    numberOfInstallments?: number;
+    installment?: number;
+    lastInstallment?: number;
+    mtan?: {
       required: boolean;
       successful: boolean;
     };
-    bankAccountCheck: {
+    bankAccountCheck?: {
       required: boolean;
     };
   };
@@ -194,6 +219,8 @@ export type ECGetPaymentResponse = {
       orderValue: number;
       orderId: string;
     };
+    paymentType?: ECTransactionPaymentType;
+    paymentSwitchPossible?: boolean;
   };
 };
 
@@ -221,9 +248,15 @@ export type PaymentResponse = {
   };
 };
 
-export type GetPaymentResponse = ECGetPaymentResponse & {
+// The decision of the response has its JSON nulls removed (see handleGetPayment).
+export type GetPaymentResponse = Omit<ECGetPaymentResponse, 'decision'> & {
+  decision: Omit<ECGetPaymentResponse['decision'], 'interest' | 'totalValue'> & {
+    interest?: number;
+    totalValue?: number;
+  };
   webShopId: string;
   amount: number;
+  paymentType?: ECTransactionPaymentType;
 };
 
 export type ECRefundPayload = {

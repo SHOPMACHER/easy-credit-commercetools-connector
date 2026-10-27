@@ -1,6 +1,8 @@
 import {
   getShippingAddress,
+  getShippingDestinations,
   mapAddress,
+  mapAmountToCTTransactionAmount,
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
   mapLineItem,
@@ -22,6 +24,7 @@ import {
   ECBooking,
   ECTransaction,
   ECTransactionCustomerRelationship,
+  ECTransactionPaymentType,
 } from '../../src/types/payment.types';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
@@ -33,6 +36,8 @@ jest.mock('../../src/commercetools/customObject.commercetools', () => ({
 
 jest.mock('../../src/utils/app.utils', () => ({
   convertCentsToEur: jest.fn(),
+  eurToCents: (jest.requireActual('../../src/utils/app.utils') as typeof import('../../src/utils/app.utils'))
+    .eurToCents,
 }));
 
 describe('Payment Mapping', () => {
@@ -173,12 +178,66 @@ describe('Payment Mapping', () => {
           urlAuthorizationCallback: 'https://example.com/webhook/payment123/authorize',
         },
         paymentType: 'INSTALLMENT_PAYMENT',
-        paymentSwitchPossible: false,
+        paymentSwitchPossible: true,
       });
+    });
+
+    it('should use the given payment type', async () => {
+      const mockCart = {
+        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+        lineItems: [],
+        billingAddress: {},
+        shippingAddress: {},
+      } as unknown as Cart;
+
+      // @ts-expect-error mocked
+      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+
+      const result = await mapCTCartToECPayment(
+        mockCart,
+        { id: 'payment123' } as Payment,
+        { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+        { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+        ECTransactionPaymentType.ECTransactionBillPayment,
+      );
+
+      expect(result.paymentType).toBe('BILL_PAYMENT');
+    });
+
+    it('sends paymentSwitchPossible true for both payment types', async () => {
+      const mockCart = {
+        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+        lineItems: [],
+        billingAddress: {},
+        shippingAddress: {},
+      } as unknown as Cart;
+
+      // @ts-expect-error mocked
+      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+
+      for (const paymentType of [
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        ECTransactionPaymentType.ECTransactionBillPayment,
+      ]) {
+        const result = await mapCTCartToECPayment(
+          mockCart,
+          { id: 'payment123' } as Payment,
+          { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+          { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+          paymentType,
+        );
+
+        expect(result).toMatchObject({ paymentType, paymentSwitchPossible: true });
+      }
     });
   });
 
   describe('mapCTCartToCTPayment', () => {
+    const mockCartForPayment = {
+      id: 'cart123',
+      totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+    } as unknown as Cart;
+
     it('should map the cart to PaymentDraft correctly', () => {
       const mockCart: Cart = {
         id: 'cart123',
@@ -201,9 +260,39 @@ describe('Payment Mapping', () => {
         },
         paymentMethodInfo: {
           paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-          method: EASYCREDIT_PAYMENT_METHOD,
+          method: 'INSTALLMENT_PAYMENT',
+          name: { de: 'easyCredit Ratenkauf' },
         },
       });
+    });
+
+    it('should map explicit installment type', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionInstallmentPayment);
+
+      expect(result.paymentMethodInfo).toEqual({
+        paymentInterface: EASYCREDIT_PAYMENT_METHOD,
+        method: 'INSTALLMENT_PAYMENT',
+        name: { de: 'easyCredit Ratenkauf' },
+      });
+    });
+
+    it('should map bill payment type and keep the rest of the draft unchanged', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionBillPayment);
+
+      expect(result).toEqual({
+        amountPlanned: { currencyCode: 'EUR', centAmount: 10000 },
+        paymentMethodInfo: {
+          paymentInterface: EASYCREDIT_PAYMENT_METHOD,
+          method: 'BILL_PAYMENT',
+          name: { de: 'easyCredit Rechnung' },
+        },
+      });
+    });
+  });
+
+  describe('mapAmountToCTTransactionAmount', () => {
+    it('should round euros to cents instead of flooring', () => {
+      expect(mapAmountToCTTransactionAmount(19.99)).toEqual({ centAmount: 1999, currencyCode: 'EUR' });
     });
   });
 
@@ -847,6 +936,48 @@ describe('Payment Mapping', () => {
       const result = getShippingAddress(mockCart);
 
       expect(result).toEqual(mockCart.shippingAddress);
+    });
+  });
+
+  describe('getShippingDestinations', () => {
+    const home = { country: 'DE', city: 'Berlin' };
+    const office = { country: 'DE', city: 'Hamburg' };
+    const cartWith = (fields: Record<string, unknown>) =>
+      ({ shipping: [], lineItems: [], customLineItems: [], itemShippingAddresses: [], ...fields }) as unknown as Cart;
+
+    it('should return the shipping address in Single mode', () => {
+      const cart = cartWith({ shippingMode: 'Single', shippingAddress: home });
+
+      expect(getShippingDestinations(cart)).toEqual([home]);
+    });
+
+    it('should return every shipping address in Multiple mode', () => {
+      const cart = cartWith({
+        shippingMode: 'Multiple',
+        shipping: [{ shippingAddress: home }, { shippingAddress: office }],
+      });
+
+      expect(getShippingDestinations(cart)).toEqual([home, office]);
+    });
+
+    it('should add the item shipping addresses targeted by line items or custom line items', () => {
+      const cart = cartWith({
+        shippingMode: 'Single',
+        shippingAddress: home,
+        itemShippingAddresses: [
+          { ...home, key: 'home' },
+          { ...office, key: 'office' },
+          { ...office, key: 'unused' },
+        ],
+        lineItems: [{ shippingDetails: { targets: [{ addressKey: 'home', quantity: 1 }] } }, {}],
+        customLineItems: [{ shippingDetails: { targets: [{ addressKey: 'office', quantity: 1 }] } }],
+      });
+
+      expect(getShippingDestinations(cart)).toEqual([home, { ...home, key: 'home' }, { ...office, key: 'office' }]);
+    });
+
+    it('should return no destination for a cart without shipping address', () => {
+      expect(getShippingDestinations(cartWith({ shippingMode: 'Single' }))).toEqual([]);
     });
   });
 });

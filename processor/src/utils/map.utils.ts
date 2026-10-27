@@ -2,6 +2,7 @@ import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_PAYMENT_METHOD,
+  EASYCREDIT_PAYMENT_TYPE_LABELS,
   EASYCREDIT_REFUND_STATUS_DONE,
   EASYCREDIT_REFUND_STATUS_FAILED,
   LIBRARY_NAME,
@@ -19,7 +20,7 @@ import {
   PaymentResponse,
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetools/connect-payments-sdk';
-import { convertCentsToEur } from './app.utils';
+import { convertCentsToEur, eurToCents } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
@@ -51,6 +52,7 @@ export const mapCTCartToECPayment = async (
   payment: Payment,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
 ): Promise<ECTransaction> => {
   const connectorUrl = await getCustomObjectByKey(EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL);
 
@@ -91,19 +93,23 @@ export const mapCTCartToECPayment = async (
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
-    paymentType: ECTransactionPaymentType.ECTransactionInstallmentPayment,
-    paymentSwitchPossible: false,
+    paymentType,
+    paymentSwitchPossible: true,
   };
 };
 
-export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
+export const mapCTCartToCTPayment = (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
+): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
     centAmount: cart.totalPrice.centAmount,
   },
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-    method: EASYCREDIT_PAYMENT_METHOD,
+    method: paymentType,
+    name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] },
   },
 });
 
@@ -121,7 +127,7 @@ export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, pay
 });
 
 export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
-  centAmount: Math.floor(amount * 100),
+  centAmount: eurToCents(amount),
   currencyCode: 'EUR',
 });
 
@@ -158,4 +164,20 @@ export const getShippingAddress = (cart: Cart): Address | undefined => {
     return cart.shipping?.[0]?.shippingAddress;
   }
   return cart.shippingAddress;
+};
+
+// Every address goods go to: all shipping addresses in Multiple mode, plus the item shipping addresses that items target.
+export const getShippingDestinations = (cart: Cart): Address[] => {
+  const shippingAddresses =
+    cart.shippingMode === 'Multiple'
+      ? cart.shipping.map(({ shippingAddress }) => shippingAddress)
+      : [cart.shippingAddress];
+  const targetedKeys = new Set(
+    [...cart.lineItems, ...cart.customLineItems].flatMap(
+      ({ shippingDetails }) => shippingDetails?.targets.map(({ addressKey }) => addressKey) ?? [],
+    ),
+  );
+  const itemShippingAddresses = cart.itemShippingAddresses.filter(({ key }) => key && targetedKeys.has(key));
+
+  return [...shippingAddresses, ...itemShippingAddresses].filter((address): address is Address => Boolean(address));
 };

@@ -11,9 +11,9 @@ Complete integration requires running/intergrating both of the modules. Please f
 
 ## Table of Contents
 
-- [Step 1: Configuration](#step-1-configure-widget-settings)
-- [Step 2: Initialize and Display the components](#step-2-initialize-and-display-the-widget)
-- [Step 3: Troubleshooting](#step-4-handling-widget-events)
+- [Step 1: Configuration](#step-1-configuration)
+- [Step 2: Initialize and Display the components](#step-2-initialize-and-display-the-components)
+- [Step 3: Troubleshooting](#step-3-troubleshooting)
 
 ## Step 1: Configuration
 
@@ -32,7 +32,7 @@ Complete integration requires running/intergrating both of the modules. Please f
 ## Step 2: Initialize and Display the components
 
 - We provide you a way to initialize the components easily just with a short Javascript script. You can have a look at the [demo file](../assets/index.html)
-- Currently, we have 3 components which created from EasyCredit Web Components:
+- Currently, we have 4 components which created from EasyCredit Web Components: label, widget, checkout and summary.
 
 ### Label component
 
@@ -47,7 +47,8 @@ Complete integration requires running/intergrating both of the modules. Please f
     });
 
     enabler.createLabelBuilder().then((labelBuilder: any) => {
-          const labelComponent = labelBuilder.build({});
+          // paymentType: 'INSTALLMENT_PAYMENT' (default) or 'BILL_PAYMENT'
+          const labelComponent = labelBuilder.build({ paymentType: 'INSTALLMENT_PAYMENT' });
           labelComponent.mount('#easycredit-checkout-label');
           setLabelLoaded(true);
         });
@@ -102,6 +103,7 @@ Complete integration requires running/intergrating both of the modules. Please f
     enabler.createCheckoutBuilder().then((checkoutBuilder: any) => {
       const checkoutComponent = checkoutBuilder.build({
         cartId: cart.cartId,
+        paymentType: 'INSTALLMENT_PAYMENT', // optional, 'INSTALLMENT_PAYMENT' (default) or 'BILL_PAYMENT'
         redirectLinks: {
           urlSuccess: window.location.origin + window.location.pathname + '?step=3',
           urlCancellation: window.location.origin + window.location.pathname + '?step=2&status=cancelled',
@@ -137,10 +139,15 @@ Complete integration requires running/intergrating both of the modules. Please f
 
 - By doing this, the component will make API calls to the connector to check whether the component can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Checkout component](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/raw/main/docs/assets/easycredit-checkout.png)
 
+#### Availability and pay by invoice
+
+`paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`, and `isAvailable()` tells whether to offer the payment option. The availability rules, processor compatibility and an example that mounts both payment methods are described in the [Web Components guide](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/blob/main/docs/WebComponents.md#availability).
+
 ### Summary component
 
 - Created from [EasyCredit Label component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-label--docs) and [EasyCredit Checkout component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-checkout--docs)
 - It is handled in [summary.component.ts](./src/components/summary.component.ts)
+- The summary shows the payment type of the payment, installment or pay by invoice, as returned in `paymentType` by [Get Payment](https://github.com/SHOPMACHER/easy-credit-commercetools-connector/blob/main/docs/GetPayment.md). If the response has no `paymentType`, for example an error, it uses the optional `paymentType` build option and otherwise installment. Pass the payment type the customer selected, so an error is not shown under the installment label.
 - To use this component, you need to integrate this short snippet into your shop:
 
   ```
@@ -152,6 +159,7 @@ Complete integration requires running/intergrating both of the modules. Please f
     enabler.createSummaryBuilder().then((summaryComponentBuilder: any) => {
       const summaryComponent = summaryComponentBuilder.build({
         paymentId: easyCreditPayment.id,
+        paymentType: 'BILL_PAYMENT', // optional, 'INSTALLMENT_PAYMENT' (default) or 'BILL_PAYMENT'
       });
 
       summaryComponent

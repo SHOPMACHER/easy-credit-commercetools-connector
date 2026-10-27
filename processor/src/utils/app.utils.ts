@@ -7,3 +7,6 @@
 export const convertCentsToEur = (centAmount: number, fractionDigits: number = 2): number => {
   return centAmount / Math.pow(10, fractionDigits);
 };
+
+/** Converts a EUR amount to cents, rounding to avoid float truncation (19.99 * 100 = 1998.9999...). */
+export const eurToCents = (eur: number): number => Math.round(eur * 100);

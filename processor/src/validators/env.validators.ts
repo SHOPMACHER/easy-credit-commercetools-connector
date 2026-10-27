@@ -1,4 +1,14 @@
-import { optional, region, standardKey, standardString, standardUrl } from './helpers.validators';
+import {
+  array,
+  optional,
+  region,
+  standardInteger,
+  standardKey,
+  standardOneOf,
+  standardString,
+  standardUrl,
+} from './helpers.validators';
+import { MAX_WEBSHOP_CACHE_TTL_SECONDS } from '../utils/constant.utils';
 
 /**
  * Create here your own validators
@@ -103,6 +113,39 @@ const envValidators = [
       max: 1,
     },
   ),
+
+  standardOneOf(
+    ['easyCredit', 'billPaymentEnabled'],
+    {
+      code: 'InvalidBillPaymentEnabled',
+      message: 'Bill payment enabled should be either "0" or "1".',
+      referencedBy: 'environmentVariables',
+    },
+    ['0', '1'],
+  ),
+
+  standardInteger(
+    ['easyCredit', 'webshopCacheTtl'],
+    {
+      code: 'InvalidWebshopCacheTtl',
+      message: `Webshop cache TTL should be a whole number of seconds between 0 and ${MAX_WEBSHOP_CACHE_TTL_SECONDS}.`,
+      referencedBy: 'environmentVariables',
+    },
+    { min: 0, max: MAX_WEBSHOP_CACHE_TTL_SECONDS },
+  ),
+
+  array(standardKey)(['easyCredit', 'billPaymentExcludedProductTypes'], {
+    code: 'InvalidBillPaymentExcludedProductTypes',
+    message: 'Bill payment excluded product types should be a comma-separated list of product type keys.',
+    referencedBy: 'environmentVariables',
+  }),
+
+  array(standardKey)(['easyCredit', 'billPaymentExcludedCustomLineItems'], {
+    code: 'InvalidBillPaymentExcludedCustomLineItems',
+    message:
+      'Bill payment excluded custom line items should be a comma-separated list of custom line item slugs or keys.',
+    referencedBy: 'environmentVariables',
+  }),
 ];
 
 export default envValidators;

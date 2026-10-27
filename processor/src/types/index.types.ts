@@ -12,6 +12,10 @@ export type ConnectorEnvVars = {
     webShopId: string;
     apiPassword: string;
     debug: string;
+    billPaymentEnabled: string;
+    webshopCacheTtl: string;
+    billPaymentExcludedProductTypes: string[];
+    billPaymentExcludedCustomLineItems: string[];
   };
 };
 

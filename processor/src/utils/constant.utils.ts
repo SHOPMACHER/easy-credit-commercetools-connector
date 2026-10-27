@@ -1,4 +1,5 @@
 import { version as PACKAGE_VERSION } from '../../package.json';
+import { ECTransactionPaymentType } from '../types/payment.types';
 
 export const EASYCREDIT_BASE_API_URL = 'https://ratenkauf.easycredit.de/api';
 
@@ -10,9 +11,17 @@ export const LIBRARY_VERSION = PACKAGE_VERSION;
 
 export const VERSION_STRING = `${LIBRARY_NAME}/${LIBRARY_VERSION}`;
 
-export const MIN_CART_AMOUNT = 200;
+export const EASYCREDIT_DEFAULT_MIN_INSTALLMENT_AMOUNT = 200;
 
-export const MAX_CART_AMOUNT = 10000;
+export const EASYCREDIT_DEFAULT_MAX_INSTALLMENT_AMOUNT = 10000;
+
+export const EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS = 10000;
+
+export const EASYCREDIT_WEBSHOP_INFO_RETRY_MS = 30000;
+
+export const EASYCREDIT_WEBSHOP_INFO_MAX_STALE_MS = 3600000;
+
+export const MAX_WEBSHOP_CACHE_TTL_SECONDS = 3600;
 
 export const EASYCREDIT_PAYMENT_METHOD = 'easycredit';
 
@@ -30,8 +39,23 @@ export const EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-techn
 
 export const EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD = 'easyCreditTechnicalTransactionId';
 
+export const EASYCREDIT_PAYMENT_TYPE_LABELS: Record<ECTransactionPaymentType, string> = {
+  [ECTransactionPaymentType.ECTransactionInstallmentPayment]: 'easyCredit Ratenkauf',
+  [ECTransactionPaymentType.ECTransactionBillPayment]: 'easyCredit Rechnung',
+};
+
+export const EASYCREDIT_INTEREST_FIELD = 'easyCreditInterest';
+
+export const EASYCREDIT_TOTAL_VALUE_FIELD = 'easyCreditTotalValue';
+
 export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
+
+export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
+
+export const EASYCREDIT_AUTHORIZATION_TIMEOUT_MS = 30000;
+
+export const EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS = 5000;
