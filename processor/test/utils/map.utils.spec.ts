@@ -230,6 +230,39 @@ describe('Payment Mapping', () => {
         expect(result).toMatchObject({ paymentType, paymentSwitchPossible: true });
       }
     });
+
+    it('should leave customer and addresses out for express and keep the order details', async () => {
+      const mockCart = {
+        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+        lineItems: [],
+        customerEmail: 'john@doe.com',
+        billingAddress: { firstName: 'John', country: 'DE' },
+        shippingAddress: { firstName: 'John', country: 'DE' },
+      } as unknown as Cart;
+
+      // @ts-expect-error mocked
+      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+
+      const result = await mapCTCartToECPayment(
+        mockCart,
+        { id: 'payment123' } as Payment,
+        { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+        undefined,
+        ECTransactionPaymentType.ECTransactionBillPayment,
+        { express: true },
+      );
+
+      expect(result).not.toHaveProperty('customer');
+      expect(result).not.toHaveProperty('customerRelationship');
+      expect(result.orderDetails).toEqual({
+        orderValue: 100,
+        orderId: 'payment123',
+        numberOfProductsInShoppingCart: 0,
+        withoutFlexprice: false,
+        shoppingCartInformation: [],
+      });
+      expect(result.redirectLinks.urlAuthorizationCallback).toBe('https://example.com/webhook/payment123/authorize');
+    });
   });
 
   describe('mapCTCartToCTPayment', () => {
@@ -286,6 +319,17 @@ describe('Payment Mapping', () => {
           method: 'BILL_PAYMENT',
           name: { de: 'easyCredit Rechnung' },
         },
+      });
+    });
+
+    it('should flag an express payment with the payment custom type', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionBillPayment, {
+        express: true,
+      });
+
+      expect(result.custom).toEqual({
+        type: { typeId: 'type', key: 'easy-credit-payment' },
+        fields: { easyCreditExpress: true },
       });
     });
   });

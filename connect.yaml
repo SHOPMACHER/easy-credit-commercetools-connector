@@ -69,6 +69,10 @@ deployAs:
           description: Key of the custom type for transaction resources. Use an existing key to share a custom type with other connectors. The post-deploy script adds the field definitions easyCreditTechnicalTransactionId, easyCreditInterest and easyCreditTotalValue if they are missing, so an existing deployment gets the two interest fields by redeploying the connector. Until then writing them fails with a logged warning and an `Error in updatePayment` error log on every installment Get Payment or Authorize Payment call, and nothing else changes.
           required: false
           default: easy-credit-technical-transaction-id
+        - key: PAYMENT_CUSTOM_TYPE_KEY
+          description: Key of the custom type for payment resources. Use an existing key to share a custom type with other connectors.
+          required: false
+          default: easy-credit-payment
       securedConfiguration:
         - key: CTP_CLIENT_SECRET
           description: Commercetools Composable Commerce client secret

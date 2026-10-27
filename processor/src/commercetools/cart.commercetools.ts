@@ -62,7 +62,7 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
     return cartObject;
   } catch (error: any) {
-    log.error('Error in updatePayment', error);
+    log.error('Error in updateCart', error);
 
     throw new Errorx({
       code: error?.code as string,

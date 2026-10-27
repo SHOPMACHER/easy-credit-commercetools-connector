@@ -9,6 +9,8 @@
 
 ## Overview
 This API is designed to create payment details from CommerceTools using the provided `cartId`, needed `redirectLinks` and `customerRelationship` data. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
+
+For an express checkout from the product page or the cart, without addresses, see [Create Express Payment](./CreateExpressPayment.md).
 <br />
 
 ## Conditions

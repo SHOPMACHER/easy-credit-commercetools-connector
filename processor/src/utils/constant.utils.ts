@@ -52,6 +52,14 @@ export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }
 
+export const EASYCREDIT_PAYMENT_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-payment';
+
+export const EASYCREDIT_EXPRESS_FIELD = 'easyCreditExpress';
+
+export function getPaymentCustomTypeKey(): string {
+  return process.env.PAYMENT_CUSTOM_TYPE_KEY ?? EASYCREDIT_PAYMENT_CUSTOM_TYPE_DEFAULT_KEY;
+}
+
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 
 export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
