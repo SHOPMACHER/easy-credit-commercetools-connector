@@ -40,6 +40,7 @@ import { createPayment, getPaymentById, updatePayment } from '../commercetools/p
 import { getPaymentType, getSuccessTransaction, getTransaction } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import {
+  ExpressOptions,
   getShippingAddress,
   getShippingDestinations,
   mapAmountToCTTransactionAmount,
@@ -106,16 +107,26 @@ const assertPaymentTypeEnabled = (paymentType: ECTransactionPaymentType) => {
   }
 };
 
-const validateCartData = (cart: Cart, paymentType: ECTransactionPaymentType, ecConfig: { webShopId: string }) => {
+// Express skips the address checks: the address comes from easyCredit after the payment page.
+const validateCartData = (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType,
+  ecConfig: { webShopId: string },
+  { express = false }: ExpressOptions = {},
+) => {
   const errors: Errorx[] = [];
 
-  validateAddresses(cart.billingAddress, getShippingAddress(cart), ecConfig, errors);
+  if (!express) {
+    validateAddresses(cart.billingAddress, getShippingAddress(cart), ecConfig, errors);
+  }
   validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
 
   if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
-    const shippingDestinations = getShippingDestinations(cart);
+    const shippingDestinations = express ? [] : getShippingDestinations(cart);
 
-    validateShippingDestinations(cart.billingAddress, shippingDestinations, ecConfig, errors);
+    if (!express) {
+      validateShippingDestinations(cart.billingAddress, shippingDestinations, ecConfig, errors);
+    }
     validatePrivateCustomer(cart, shippingDestinations, ecConfig, errors);
   }
 
@@ -148,31 +159,48 @@ const validateAvailability = async (
 };
 
 // Throws a MultiErrorx if easyCredit cannot be offered for the cart
-const validateCart = async (cart: Cart, paymentType: ECTransactionPaymentType): Promise<PaymentTypesAvailability> => {
+const validateCart = async (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType,
+  options: ExpressOptions = {},
+): Promise<PaymentTypesAvailability> => {
   const ecConfig = { webShopId: readConfiguration().easyCredit.webShopId };
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
 
   // The enabler hides bill payment only on availability errors, so they must win over cart errors that render an alert.
   if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
     const paymentTypes = await validateAvailability(cart, amount, paymentType, ecConfig);
-    validateCartData(cart, paymentType, ecConfig);
+    validateCartData(cart, paymentType, ecConfig, options);
 
     return paymentTypes;
   }
 
-  validateCartData(cart, paymentType, ecConfig);
+  validateCartData(cart, paymentType, ecConfig, options);
 
   return validateAvailability(cart, amount, paymentType, ecConfig);
+};
+
+const assertSessionCart = (cartId: string | undefined): string => {
+  if (!cartId) {
+    throw new Errorx({
+      code: 'InvalidSession',
+      message: 'The session has no cart.',
+      httpErrorStatus: 400,
+    });
+  }
+
+  return cartId;
 };
 
 // Not logged here: the error handler already logs every error it answers with.
 export const handlePaymentMethod = async (
   cartId: string,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+  options: ExpressOptions = {},
 ): Promise<GetPaymentMethodResponse> => {
   assertPaymentTypeEnabled(paymentType);
   const cart = await getCartById(cartId);
-  const validated = await validateCart(cart, paymentType);
+  const validated = await validateCart(cart, paymentType, options);
   const paymentTypes =
     paymentType === ECTransactionPaymentType.ECTransactionBillPayment
       ? validated
@@ -187,14 +215,19 @@ export const handlePaymentMethod = async (
 
 // Handle payment creation logic
 // HardFreeze keeps discounts and shipping fixed; a cart frozen softly must be unfrozen first.
-const hardFreezeCart = async (cart: Cart): Promise<Cart> => {
+const hardFreezeCart = async (cart: Cart, { express = false }: ExpressOptions): Promise<Cart> => {
   const isFrozen = cart.cartState === CTCartState.Frozen;
   if (isFrozen && cart.freezeStrategy === 'HardFreeze') {
     return cart;
   }
 
+  // commercetools cannot freeze a cart without shipping address; the express return replaces this placeholder.
+  const placeholderAddress: CartUpdateAction[] =
+    express && !cart.shippingAddress ? [{ action: 'setShippingAddress', address: { country: 'DE' } }] : [];
+
   return updateCart(cart, [
     ...(isFrozen ? [{ action: 'unfreezeCart' as const }] : []),
+    ...placeholderAddress,
     { action: 'freezeCart', strategy: 'HardFreeze' },
   ]);
 };
@@ -215,11 +248,12 @@ const unfreezeAfterFailedCreate = async (cart: Cart, orphanPaymentId?: string): 
 const getItemIds = ({ lineItems, customLineItems }: Cart): string =>
   [...lineItems, ...customLineItems].map(({ id }) => id).join(',');
 
-export const handleCreatePayment = async (
+const createPaymentForCart = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
-  customerRelationship: ECTransactionCustomerRelationship,
-  paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+  customerRelationship: ECTransactionCustomerRelationship | undefined,
+  paymentType: ECTransactionPaymentType,
+  options: ExpressOptions,
 ): Promise<PaymentResponse> => {
   let cart: Cart | null = null;
   let shouldUnfreezeCart = false;
@@ -228,14 +262,14 @@ export const handleCreatePayment = async (
   try {
     assertPaymentTypeEnabled(paymentType);
     cart = await getCartById(cartId);
-    await validateCart(cart, paymentType);
+    await validateCart(cart, paymentType, options);
     const { centAmount, currencyCode } = cart.totalPrice;
     const itemIds = getItemIds(cart);
 
     // After validation, so a rejected request leaves the cart untouched. It re-freezes with HardFreeze, and the
     // re-validation below covers an unfreeze that repriced the cart.
     cart = await discardStaleAttempts(cart);
-    cart = await hardFreezeCart(cart);
+    cart = await hardFreezeCart(cart, options);
     shouldUnfreezeCart = true;
 
     // Freezing can reprice the cart or add a 0 € gift line item, so the checks above may no longer hold.
@@ -244,15 +278,15 @@ export const handleCreatePayment = async (
       cart.totalPrice.currencyCode !== currencyCode ||
       getItemIds(cart) !== itemIds
     ) {
-      await validateCart(cart, paymentType);
+      await validateCart(cart, paymentType, options);
     }
 
-    const ctPayment = await createPayment(mapCTCartToCTPayment(cart, paymentType));
+    const ctPayment = await createPayment(mapCTCartToCTPayment(cart, paymentType, options));
     cart = await updateCart(cart, [{ action: 'addPayment', payment: { typeId: 'payment', id: ctPayment.id } }]);
     orphan.paymentId = ctPayment.id;
 
     const ecPayment = await initEasyCreditClient().createPayment(
-      await mapCTCartToECPayment(cart, ctPayment, redirectLinks, customerRelationship, paymentType),
+      await mapCTCartToECPayment(cart, ctPayment, redirectLinks, customerRelationship, paymentType, options),
     );
 
     const transactionState =
@@ -295,7 +329,7 @@ export const handleCreatePayment = async (
 
     return mapCreatePaymentResponse(ecPayment, ctPayment);
   } catch (error: unknown) {
-    log.error('Error in handleCreatePayment', error);
+    log.error(`Error in ${options.express ? 'handleCreateExpressPayment' : 'handleCreatePayment'}`, error);
 
     // Validation failures must leave even an already frozen cart untouched.
     if (shouldUnfreezeCart && cart?.cartState === CTCartState.Frozen) {
@@ -506,6 +540,30 @@ const syncPaymentTypeBestEffort = async (payment: Payment, ecPayment: ECGetPayme
     log.warn('Failed to sync the payment type of an authorized payment', { paymentId: payment.id, error });
   }
 };
+
+export const handleCreatePayment = async (
+  cartId: string,
+  redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  customerRelationship: ECTransactionCustomerRelationship,
+  paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+): Promise<PaymentResponse> =>
+  createPaymentForCart(cartId, redirectLinks, customerRelationship, paymentType, { express: false });
+
+// Express handlers take the cartId from the session, never from the request.
+export const handleExpressPaymentMethod = async (
+  cartId: string | undefined,
+  paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+): Promise<GetPaymentMethodResponse> => handlePaymentMethod(assertSessionCart(cartId), paymentType, { express: true });
+
+export const handleCreateExpressPayment = async (
+  cartId: string | undefined,
+  redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  customerRelationship: ECTransactionCustomerRelationship | undefined,
+  paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+): Promise<PaymentResponse> =>
+  createPaymentForCart(assertSessionCart(cartId), redirectLinks, customerRelationship, paymentType, {
+    express: true,
+  });
 
 export const handleGetPayment = async (paymentId: string): Promise<GetPaymentResponse> => {
   try {

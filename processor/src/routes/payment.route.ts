@@ -22,7 +22,9 @@ import {
 import {
   handleAuthorizeECPayment,
   handleCapturePayment,
+  handleCreateExpressPayment,
   handleCreatePayment,
+  handleExpressPaymentMethod,
   handleGetPayment,
   handlePaymentMethod,
   handleRefundPayment,
@@ -33,6 +35,8 @@ import {
   GetPaymentResponseSchemaDTO,
 } from '../dtos/payments/getPayment.dto';
 import {
+  CreateExpressPaymentBodySchema,
+  CreateExpressPaymentRequestSchemaDTO,
   CreatePaymentBodySchema,
   CreatePaymentRequestSchemaDTO,
   CreatePaymentResponseSchema,
@@ -45,6 +49,7 @@ import {
   RefundPaymentResponseSchema,
   RefundPaymentResponseSchemaDTO,
 } from '../dtos/payments/refundPayment.dto';
+import { getCartIdFromContext } from '../libs/fastify/context/context';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -81,6 +86,28 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
   );
 
+  fastify.get<{
+    Reply: GetPaymentMethodResponseSchemaDTO;
+    Querystring: GetPaymentMethodQuerySchemaDTO;
+  }>(
+    '/express/payment-method',
+    {
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      schema: {
+        querystring: GetPaymentMethodQuerySchema,
+        response: {
+          200: GetPaymentMethodResponseSchema,
+          400: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const method = await handleExpressPaymentMethod(getCartIdFromContext(), request.query.paymentType);
+
+      reply.code(200).send(method);
+    },
+  );
+
   fastify.post<{ Body: CreatePaymentRequestSchemaDTO; Reply: CreatePaymentResponseSchemaDTO }>(
     '/',
     {
@@ -97,6 +124,32 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       const { cartId, redirectLinks, customerRelationship, paymentType } = request.body;
 
       const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship, paymentType);
+
+      reply.code(201).send(response);
+    },
+  );
+
+  fastify.post<{ Body: CreateExpressPaymentRequestSchemaDTO; Reply: CreatePaymentResponseSchemaDTO }>(
+    '/express',
+    {
+      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+      schema: {
+        body: CreateExpressPaymentBodySchema,
+        response: {
+          201: CreatePaymentResponseSchema,
+          400: ErrorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { redirectLinks, customerRelationship, paymentType } = request.body;
+
+      const response = await handleCreateExpressPayment(
+        getCartIdFromContext(),
+        redirectLinks,
+        customerRelationship,
+        paymentType,
+      );
 
       reply.code(201).send(response);
     },

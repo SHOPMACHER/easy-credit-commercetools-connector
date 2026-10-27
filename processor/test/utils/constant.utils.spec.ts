@@ -5,6 +5,7 @@ import {
   EASYCREDIT_REFUND_BOOKING_TYPE,
   EASYCREDIT_REFUND_STATUS_DONE,
   EASYCREDIT_REFUND_STATUS_FAILED,
+  getPaymentCustomTypeKey,
   LIBRARY_NAME,
   LIBRARY_VERSION,
   VERSION_STRING,
@@ -50,5 +51,23 @@ describe('Test constant.utils.ts', () => {
   test('should return the correct {EASYCREDIT_REFUND_STATUS_FAILED} constant', () => {
     expect(EASYCREDIT_REFUND_STATUS_FAILED).toBeDefined();
     expect(EASYCREDIT_REFUND_STATUS_FAILED).toBe('FAILED');
+  });
+
+  test('should default the payment custom type key and let the env override it', () => {
+    const original = process.env.PAYMENT_CUSTOM_TYPE_KEY;
+
+    try {
+      delete process.env.PAYMENT_CUSTOM_TYPE_KEY;
+      expect(getPaymentCustomTypeKey()).toBe('easy-credit-payment');
+
+      process.env.PAYMENT_CUSTOM_TYPE_KEY = 'shared-payment-type';
+      expect(getPaymentCustomTypeKey()).toBe('shared-payment-type');
+    } finally {
+      if (original === undefined) {
+        delete process.env.PAYMENT_CUSTOM_TYPE_KEY;
+      } else {
+        process.env.PAYMENT_CUSTOM_TYPE_KEY = original;
+      }
+    }
   });
 });

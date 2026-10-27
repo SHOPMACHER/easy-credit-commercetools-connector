@@ -588,6 +588,7 @@ describe('Payment handlers', () => {
         redirectLinks,
         customerRelationship,
         ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        { express: false },
       );
     });
 
@@ -684,6 +685,7 @@ describe('Payment handlers', () => {
         expect(mapCTCartToCTPayment).toHaveBeenCalledWith(
           frozenCart,
           ECTransactionPaymentType.ECTransactionInstallmentPayment,
+          { express: false },
         );
         expect(createPayment).toHaveBeenCalledWith({ draft: true });
       });
@@ -697,13 +699,14 @@ describe('Payment handlers', () => {
           { webShopId: 'webShopId123' },
           expect.any(Array),
         );
-        expect(mapCTCartToCTPayment).toHaveBeenCalledWith(frozenCart, bill);
+        expect(mapCTCartToCTPayment).toHaveBeenCalledWith(frozenCart, bill, { express: false });
         expect(mapCTCartToECPayment).toHaveBeenCalledWith(
           expect.anything(),
           ctPayment,
           redirectLinks,
           customerRelationship,
           bill,
+          { express: false },
         );
         expect(createECPayment).toHaveBeenCalledWith({ ec: true });
       });
