@@ -494,7 +494,7 @@ describe('payment type availability', () => {
       await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(
-        expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: false }),
+        expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: true }),
       );
       expect(createPayment).toHaveBeenCalledWith(
         expect.objectContaining({

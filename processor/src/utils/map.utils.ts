@@ -2,6 +2,7 @@ import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_PAYMENT_METHOD,
+  EASYCREDIT_PAYMENT_TYPE_LABELS,
   EASYCREDIT_REFUND_STATUS_DONE,
   EASYCREDIT_REFUND_STATUS_FAILED,
   LIBRARY_NAME,
@@ -93,13 +94,8 @@ export const mapCTCartToECPayment = async (
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
     paymentType,
-    paymentSwitchPossible: false,
+    paymentSwitchPossible: true,
   };
-};
-
-const PAYMENT_TYPE_LABELS: Record<ECTransactionPaymentType, string> = {
-  [ECTransactionPaymentType.ECTransactionInstallmentPayment]: 'easyCredit Ratenkauf',
-  [ECTransactionPaymentType.ECTransactionBillPayment]: 'easyCredit Rechnung',
 };
 
 export const mapCTCartToCTPayment = (
@@ -113,7 +109,7 @@ export const mapCTCartToCTPayment = (
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
     method: paymentType,
-    name: { de: PAYMENT_TYPE_LABELS[paymentType] },
+    name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] },
   },
 });
 

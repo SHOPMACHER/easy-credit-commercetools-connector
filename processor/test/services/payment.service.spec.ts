@@ -991,6 +991,45 @@ describe('Payment handlers', () => {
       expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
     });
 
+    it('should copy only the technical transaction id onto the Charge, not the interest fields', async () => {
+      const authorization = {
+        id: 'transactionId',
+        interactionId: 'transactionId123',
+        amount: { centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
+        custom: {
+          type: { typeId: 'type', id: 'type-1' },
+          fields: {
+            easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId',
+            easyCreditInterest: 17.05,
+            easyCreditTotalValue: 267.05,
+          },
+        },
+      };
+      const mockPayment = { id: 'payment123', transactions: [authorization] };
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        capturePayment: jest.fn().mockResolvedValue(true),
+        // @ts-expect-error mocked
+        getPayment: jest.fn().mockResolvedValue({
+          status: ECTransactionStatus.AUTHORIZED,
+          decision: { transactionId: 'transactionId123' },
+        }),
+      });
+      (validatePayment as jest.Mock).mockReturnValue(true);
+      (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
+      (getSuccessTransaction as jest.Mock).mockReturnValue(authorization);
+
+      await handleCapturePayment('payment123');
+
+      const [, actions] = (updatePayment as jest.Mock).mock.calls.at(-1) as [unknown, any[]];
+      expect(actions[0].transaction.custom).toStrictEqual({
+        type: { typeId: 'type', id: 'type-1' },
+        fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' },
+      });
+    });
+
     it('should throw and log error if payment capture fails', async () => {
       const mockError = new Error('Capture failed');
       // @ts-expect-error mocked

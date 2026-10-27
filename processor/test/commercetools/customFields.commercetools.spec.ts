@@ -1,10 +1,38 @@
 import { createOrUpdateTransactionCustomType } from '../../src/commercetools/customFields.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
-import { EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD } from '../../src/utils/constant.utils';
+import {
+  EASYCREDIT_INTEREST_FIELD,
+  EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
+} from '../../src/utils/constant.utils';
 
 jest.mock('../../src/client/create.client');
 
 const TEST_TYPE_KEY = 'test-transaction-custom-type';
+
+const technicalIdDefinition = {
+  name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+  label: {
+    en: 'EasyCredit Technical Transaction ID',
+    de: 'EasyCredit Technical Transaction ID',
+  },
+  required: false,
+  type: { name: 'String' },
+};
+
+const interestDefinition = {
+  name: EASYCREDIT_INTEREST_FIELD,
+  label: { en: 'EasyCredit Interest', de: 'EasyCredit Zinsen' },
+  required: false,
+  type: { name: 'Number' },
+};
+
+const totalValueDefinition = {
+  name: EASYCREDIT_TOTAL_VALUE_FIELD,
+  label: { en: 'EasyCredit Total Value', de: 'EasyCredit Gesamtsumme' },
+  required: false,
+  type: { name: 'Number' },
+};
 
 describe('createOrUpdateTransactionCustomType', () => {
   const mockTypesGet = jest.fn();
@@ -34,7 +62,11 @@ describe('createOrUpdateTransactionCustomType', () => {
               key: TEST_TYPE_KEY,
               version: 1,
               resourceTypeIds: ['transaction'],
-              fieldDefinitions: [{ name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD }],
+              fieldDefinitions: [
+                { name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD },
+                { name: EASYCREDIT_INTEREST_FIELD },
+                { name: EASYCREDIT_TOTAL_VALUE_FIELD },
+              ],
             },
           ],
         },
@@ -50,7 +82,7 @@ describe('createOrUpdateTransactionCustomType', () => {
     expect(mockWithKeyPost).not.toHaveBeenCalled();
   });
 
-  it('should add the field definition to an existing type if the field is missing', async () => {
+  it('should add every field definition to an existing type that has none of them', async () => {
     mockTypesGet.mockReturnValue({
       execute: jest.fn().mockResolvedValue({
         body: {
@@ -72,23 +104,82 @@ describe('createOrUpdateTransactionCustomType', () => {
 
     await createOrUpdateTransactionCustomType(TEST_TYPE_KEY);
 
+    expect(mockWithKeyPost).toHaveBeenCalledTimes(1);
     expect(mockWithKeyPost).toHaveBeenCalledWith({
       body: {
         version: 3,
         actions: [
-          {
-            action: 'addFieldDefinition',
-            fieldDefinition: {
-              name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
-              label: {
-                en: 'EasyCredit Technical Transaction ID',
-                de: 'EasyCredit Technical Transaction ID',
-              },
-              required: false,
-              type: { name: 'String' },
-            },
-          },
+          { action: 'addFieldDefinition', fieldDefinition: technicalIdDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: interestDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: totalValueDefinition },
         ],
+      },
+    });
+  });
+
+  it('should add only the missing interest fields to an existing type', async () => {
+    mockTypesGet.mockReturnValue({
+      execute: jest.fn().mockResolvedValue({
+        body: {
+          results: [
+            {
+              key: TEST_TYPE_KEY,
+              version: 5,
+              resourceTypeIds: ['transaction'],
+              fieldDefinitions: [{ name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD }],
+            },
+          ],
+        },
+      }),
+    });
+
+    mockWithKeyPost.mockReturnValue({
+      execute: jest.fn().mockResolvedValue({}),
+    });
+
+    await createOrUpdateTransactionCustomType(TEST_TYPE_KEY);
+
+    expect(mockWithKeyPost).toHaveBeenCalledTimes(1);
+    expect(mockWithKeyPost).toHaveBeenCalledWith({
+      body: {
+        version: 5,
+        actions: [
+          { action: 'addFieldDefinition', fieldDefinition: interestDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: totalValueDefinition },
+        ],
+      },
+    });
+  });
+
+  it('should add only the total value definition if just that one is missing', async () => {
+    mockTypesGet.mockReturnValue({
+      execute: jest.fn().mockResolvedValue({
+        body: {
+          results: [
+            {
+              key: TEST_TYPE_KEY,
+              version: 6,
+              resourceTypeIds: ['transaction'],
+              fieldDefinitions: [
+                { name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD },
+                { name: EASYCREDIT_INTEREST_FIELD },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+
+    mockWithKeyPost.mockReturnValue({
+      execute: jest.fn().mockResolvedValue({}),
+    });
+
+    await createOrUpdateTransactionCustomType(TEST_TYPE_KEY);
+
+    expect(mockWithKeyPost).toHaveBeenCalledWith({
+      body: {
+        version: 6,
+        actions: [{ action: 'addFieldDefinition', fieldDefinition: totalValueDefinition }],
       },
     });
   });
@@ -138,17 +229,7 @@ describe('createOrUpdateTransactionCustomType', () => {
           de: 'Custom type for transaction resources',
         },
         resourceTypeIds: ['transaction'],
-        fieldDefinitions: [
-          {
-            name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
-            label: {
-              en: 'EasyCredit Technical Transaction ID',
-              de: 'EasyCredit Technical Transaction ID',
-            },
-            required: false,
-            type: { name: 'String' },
-          },
-        ],
+        fieldDefinitions: [technicalIdDefinition, interestDefinition, totalValueDefinition],
       },
     });
   });

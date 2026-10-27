@@ -1,6 +1,7 @@
 # Authorize Payment
 
 * [Authorize EC transaction](#workflow)
+* [Sync the final payment type](#sync-the-final-payment-type)
 * [Timeout handling](#timeout-handling)
 * [Response Format](#response-format)
 * [Error Handling](#error-responses)
@@ -30,16 +31,19 @@ To use this functionality, the following conditions must be met:
    - `Initial` or `Pending`: continue.
    - `Failure`: `400 TransactionNotPreauthorized`.
 3. **Read the easyCredit status** (`GET` transaction):
-   - `AUTHORIZED`: check the amounts, set the CT transaction to `Success` and return `204`.
+   - `AUTHORIZED`: record the final payment type (best effort, see [Sync the final payment type](#sync-the-final-payment-type)), check the amounts, set the CT transaction to `Success` and return `204`.
    - `DECLINED` or `EXPIRED`: set the CT transaction to `Failure`, unfreeze the cart and return `400 TransactionNotAuthorized`.
    - `PREAUTHORIZED`: continue.
    - any other status: `400 TransactionNotPreauthorized`, nothing is written.
-4. **Only if the CT transaction is `Initial`**: check the amounts, send the authorization request to easyCredit and set the CT transaction to `Pending`.
+4. **Sync the final payment type** (`PREAUTHORIZED` only): easyCredit may offer a switch between installment and pay by invoice on its page, so the connector reads the final type from the easyCredit transaction and keeps `paymentMethodInfo` of the CT payment in sync. This runs before the amount check and before the authorization request, and its errors are returned. See [Sync the final payment type](#sync-the-final-payment-type).
+5. **Only if the CT transaction is `Initial`**: check the amounts, send the authorization request to easyCredit and set the CT transaction to `Pending`.
    - The amount check requires the cart to be `Frozen` and cart total, CT transaction amount and easyCredit `orderValue` to be identical in cents. If not, the CT transaction is set to `Failure`, the cart is unfrozen if it is still `Frozen` and `400 AmountMismatch` is returned. In this case no authorization request is sent.
+   - For a `BILL_PAYMENT` the connector also checks again that the cart still meets the pay by invoice rules for addresses and customer (billing and shipping address match and are in Germany, private customer only). A frozen cart still accepts address and company updates. If a rule is broken, the CT transaction is set to `Failure`, the cart is unfrozen and the error is returned (for example `400 AddressesUnmatched` or `400 CorporateCustomerNotAllowed`, see [Create Payment](./CreatePayment.md#error-response-400)). No authorization request is sent. The limits need no separate check: cart total, transaction amount and easyCredit `orderValue` must be identical, which rejects any price change.
    - easyCredit answers the authorization request with `202`, which only means the request was received, not that the transaction is authorized. Any other `2xx` is not an accepted authorization either and is answered with `502 AuthorizationFailed`.
    - All easyCredit requests of this endpoint share the 30 second budget that starts with the request. If it is already used up before the authorization request, `504 AuthorizationTimeout` is returned and no request is sent.
-   - If the CT transaction is already `Pending`, this step is skipped: a retry resumes at the polling step without a second authorization request.
-5. **Poll easyCredit** every 2 seconds, within the 30 second budget that started with the request:
+   - If the CT transaction is already `Pending`, this step is skipped: a sequential retry resumes at the polling step without a second authorization request. Two overlapping calls that both read the transaction as `Initial` each send the authorization request. The second one then finds `Pending` after its request and polls.
+   - The CT transaction is set to `Pending` only after the request was sent, so a failed or lost request leaves it `Initial`. Between the request and the `Pending` write there is a short window in which the transaction is still `Initial` although the request is out. A concurrent [Create Payment](./CreatePayment.md#switching-in-the-shop-checkout) or a payment type switch can fail the attempt in that window. The same happens if anything else sets the transaction to `Failure` in that window, for example the cancel webhook or a very fast `DECLINED` callback. In all these cases the connector logs `EASYCREDIT_AUTHORIZATION_SENT_ATTEMPT_DISCARDED`, stops without polling and returns `400 TransactionNotAuthorized`. "Discarded" in the log text does not imply a concurrent create or switch. easyCredit may still authorize the attempt. If so, the connector logs `EASYCREDIT_AUTHORIZED_CT_NOT_SUCCESS` when the easyCredit callback arrives and its status lookup (5 second limit) succeeds. That needs manual follow-up by the merchant, there is no automatic void at easyCredit.
+6. **Poll easyCredit** every 2 seconds, within the 30 second budget that started with the request:
    - `AUTHORIZED`: check the amounts again, set the CT transaction to `Success` and return `204`.
    - `DECLINED` or `EXPIRED`: set the CT transaction to `Failure`, unfreeze the cart and return `400 TransactionNotAuthorized`.
    - a transient poll failure (network error, abort or timeout, HTTP `5xx`, `408` or `429`) is logged and retried until the budget is used up.
@@ -62,14 +66,16 @@ sequenceDiagram
     else transaction Initial or Pending
         C->>EC: GET transaction
         alt AUTHORIZED
+            C->>CT: record final payment type (best effort)
             C->>CT: check cart and amounts, set Success
             C-->>S: 204
         else DECLINED or EXPIRED
             C->>CT: set Failure, unfreeze cart
             C-->>S: 400 TransactionNotAuthorized
         else PREAUTHORIZED
+            C->>CT: sync final payment type (may fail the transaction)
             opt transaction Initial
-                C->>CT: check cart state and amounts
+                C->>CT: check cart state and amounts (bill: address rules)
                 C->>EC: POST authorization (202 = received)
                 C->>CT: set Pending
             end
@@ -93,6 +99,51 @@ sequenceDiagram
 ```
 
 Updates of the CT payment can run concurrently with the easyCredit callback. The connector re-reads the payment and retries a transaction state update once if commercetools answers with HTTP `409`.
+<br />
+
+## Sync the final payment type
+
+Note: the easyCredit sandbox page did not offer a switch on 2026-10-26 (checked: financing terms, data entry, decision pages, plan editor, info FAQ), so the switch path is covered by unit tests only and is not verified end to end against the live service. A deployment that sees a switch should check the first one.
+
+The easyCredit transaction (`GET /transaction`) holds the final payment type in `transaction.paymentType`. The connector compares it with the type stored on the CT payment (`paymentMethodInfo.method`; the legacy method `easycredit` counts as `INSTALLMENT_PAYMENT`). Whether and how it acts depends on the easyCredit status and the CT transaction state:
+
+| easyCredit status | CT transaction | Type switched | Action |
+| --- | --- | --- | --- |
+| `PREAUTHORIZED` | `Initial` | yes | Validate the cart for the final type. If it is valid, write `paymentMethodInfo.method` and `name` and record the interest. On a failure see [below](#validation-of-the-final-type). |
+| `PREAUTHORIZED` | `Initial` | no | No validation, no write of the method. The interest is recorded. |
+| `PREAUTHORIZED` | `Pending` or `Success` | yes | Record only, no validation. A failing write is logged as a warning. |
+| `AUTHORIZED` | not `Failure` | yes | Record only. A failing write is logged as a warning. On this endpoint and in the callback a failing sync of any kind is logged and never changes the outcome; [Get Payment](./GetPayment.md) is stricter, see below. |
+| `OPEN`, `DECLINED`, `EXPIRED`, or any status with a `Failure` transaction | | | No-op. |
+
+Where the sync runs:
+
+- This endpoint: strict for `PREAUTHORIZED` (step 4, errors are returned), best effort for `AUTHORIZED` before the amount check.
+- [Get Payment](./GetPayment.md): the same rules, so the summary shows the final type. A switch is written by that call. It is not best effort for `AUTHORIZED`: only the write failures above are swallowed, other sync errors are returned.
+- [easyCredit callback](#easycredit-callback): only for `AUTHORIZED`, after the `Success` write and best effort. A callback for a `PREAUTHORIZED` transaction does not sync.
+
+A `409` version conflict is retried once with the re-read payment, but only for the `paymentMethodInfo` write. The interest write has no retry: a failure, including a `409`, is only logged as a warning.
+
+### Validation of the final type
+
+The cart is checked for the final type as described in [Create Payment](./CreatePayment.md#payment-type-availability): for `BILL_PAYMENT` that is `BILL_PAYMENT_ENABLED`, the webshop activation and limits, excluded items, private customer and address match; for `INSTALLMENT_PAYMENT` the installment limits, addresses and currency.
+
+- **Deterministic failure**: `BILL_PAYMENT_ENABLED` is not `1`, or every returned error is one of `InvalidAmount`, `BillPaymentExcludedItems`, `CorporateCustomerNotAllowed`, `AddressesUnmatched`, `InvalidBillingAddress`, `InvalidShippingAddress`, `InvalidAddress` or `InvalidCurrency`. The CT transaction is set to `Failure`, the cart is unfrozen and the error is returned (`400`). Nothing is written to `paymentMethodInfo`. If failing the transaction itself fails, that is logged and the validation error is still returned. `InvalidAmount` is computed from the cached webshop limits: during an easyCredit webshop outage the connector uses the last known limits (for up to one hour past the cache lifetime) or, without any, the default installment limits (200 to 10,000 EUR), and bill payment limits only while the webshop data is fresh. A switch can therefore be failed with `InvalidAmount` on the default limits. This only matters for a webshop whose real installment minimum is below 200 EUR.
+- **Anything else** (for example `PaymentTypeNotAvailable` from the webshop configuration, `503 BillPaymentCheckFailed`, `503 EasyCreditUnavailable`, a `5xx`, a cart that cannot be read, or a list that also contains another code): the error is returned and the transaction is not touched, so an outage cannot destroy a credit decision the shopper already got. A retry runs the sync again. The cart stays `Frozen` and the transaction `Initial` meanwhile. If the error does not go away, the shop can call the [cancel webhook](./CancelPayment.md) (the transaction becomes `Failure` and the cart is unfrozen) or let the shopper pick another payment method: a new create call discards this attempt, see [Create Payment](./CreatePayment.md#switching-in-the-shop-checkout).
+
+### easyCredit sends no payment type
+
+A value other than `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` is treated like an absent type for the outcome. The sync itself writes exactly one log line per case:
+
+- Unrecognised value (any stored type): one error with the raw value, no warning.
+- Absent value, stored type `INSTALLMENT_PAYMENT` or the legacy `easycredit`: one warning.
+- Absent value, stored type `BILL_PAYMENT`: one error.
+
+Outcome for an absent and an unrecognised value:
+
+- Stored type `INSTALLMENT_PAYMENT` or the legacy `easycredit`: the stored type is kept and the interest is still recorded.
+- Stored type `BILL_PAYMENT`: if the sync is gated for validation (easyCredit status `PREAUTHORIZED` and CT transaction `Initial`), the connector fails closed with `502 PaymentTypeUnknown` and writes nothing. In every other case (`AUTHORIZED`, or `PREAUTHORIZED` with a `Pending` or `Success` transaction) nothing is about to be authorized, so the stored type is kept, the log line is still written, the interest is recorded for the stored type and no error is returned, on this endpoint, in the callback and in [Get Payment](./GetPayment.md).
+
+A payment with the legacy method `easycredit` is not rewritten when easyCredit also says installment. See [Create Payment](./CreatePayment.md#transaction-custom-fields) for the interest fields.
 <br />
 
 ## Timeout handling
@@ -136,8 +187,12 @@ The payment is authorized and the CT transaction is `Success`. The API returns a
 | 400 | `InvalidPaymentMethod` | The payment is not an easyCredit payment. |
 | 400 | `InvalidPaymentTransaction` | The payment has no `Authorization` transaction with an `interactionId`. |
 | 400 | `TransactionNotPreauthorized` | The CT transaction is `Failure`, or the easyCredit status is neither `PREAUTHORIZED`, `AUTHORIZED`, `DECLINED` nor `EXPIRED`. |
-| 400 | `TransactionNotAuthorized` | easyCredit reported `DECLINED` or `EXPIRED`. The CT transaction is `Failure` and the cart is unfrozen. |
+| 400 | `TransactionNotAuthorized` | easyCredit reported `DECLINED` or `EXPIRED`. The CT transaction is `Failure` and the cart is unfrozen. Also returned when the attempt was failed concurrently after the authorization request was sent, see [Workflow](#workflow), step 5. |
 | 400 | `AmountMismatch` | The cart is no longer `Frozen`, or cart total, CT transaction amount and easyCredit order value (in cents) differ, or easyCredit sent no order value. The CT transaction is `Failure`. The cart is unfrozen only if it was still `Frozen`. |
+| 400 | `InvalidAmount`, `BillPaymentExcludedItems`, `CorporateCustomerNotAllowed`, `AddressesUnmatched`, `InvalidBillingAddress`, `InvalidShippingAddress`, `InvalidAddress`, `InvalidCurrency`, `PaymentTypeNotAvailable` | The cart does not fit the final payment type, or for `BILL_PAYMENT` its address or customer rules are broken. The CT transaction is `Failure` and the cart is unfrozen, except for `PaymentTypeNotAvailable` from webshop data, which leaves the transaction unchanged, see [Validation of the final type](#validation-of-the-final-type). |
+| 502 | `PaymentTypeUnknown` | easyCredit sent no or an unrecognised payment type for a `BILL_PAYMENT` payment while the status is `PREAUTHORIZED` and the CT transaction is `Initial`. Nothing is written and the payment cannot be continued. |
+| 503 | `BillPaymentCheckFailed` | The payment type was switched to `BILL_PAYMENT` on the easyCredit page and the excluded product types could not be loaded from commercetools, so the cart items could not be checked. An unswitched bill payment does not look up product types at authorize, so it cannot cause this error. The CT transaction is unchanged, retry later, see [Validation of the final type](#validation-of-the-final-type). |
+| 503 | `EasyCreditUnavailable` | The webshop configuration needed to validate the final type is not available, see [Webshop configuration](./GetPaymentMethod.md#webshop-configuration). The CT transaction is unchanged, retry later. The `Retry-After` header contains the seconds until the next retry. |
 | 504 | `AuthorizationTimeout` | easyCredit did not report a final status within 30 seconds, or the budget was used up before the authorization request or during the first easyCredit lookup. The CT transaction stays `Pending`, or `Initial` if the authorization request was never sent, see [Timeout handling](#timeout-handling). Do not create the order. |
 | 502, 504 | `AuthorizationFailed` | The authorization request to easyCredit failed on the network (`502`) or was aborted by a timeout (`504`). The CT transaction is unchanged. |
 | upstream status | easyCredit `title`, or `AuthorizationFailed` | easyCredit rejected the authorization request. The code is the title in the easyCredit error body (`AuthorizationFailed` if there is none) and the HTTP status is the one easyCredit returned, except for a `2xx` other than `202`, which is answered with `502 AuthorizationFailed`. The CT transaction is unchanged. |
@@ -189,7 +244,7 @@ easyCredit calls `GET /webhook/{paymentId}/authorize` (the `urlAuthorizationCall
 | CT transaction | easyCredit status | Result |
 | --- | --- | --- |
 | `Success` | any | No-op, success response. |
-| `Initial` or `Pending` | `AUTHORIZED` | Amount check, then `Success`. |
+| `Initial` or `Pending` | `AUTHORIZED` | Amount check, then `Success`, then the final payment type is recorded (best effort, a failure is only logged). |
 | `Initial` or `Pending` | `DECLINED`, `EXPIRED` | `Failure`, cart unfrozen, `400 TransactionNotAuthorized`. |
 | `Initial` or `Pending` | any other | `400 TransactionNotAuthorized`, nothing is written. |
 
