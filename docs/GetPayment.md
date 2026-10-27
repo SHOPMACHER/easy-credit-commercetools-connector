@@ -113,15 +113,19 @@ Rules for rendering:
 
 - Render the interest only after the shopper returned from easyCredit, when the easyCredit `status` is `PREAUTHORIZED` or `AUTHORIZED`. While it is `OPEN`, easyCredit reports installment values even for a bill payment, so they are only a preview.
 - Render it only if the payment is an installment payment (`paymentType` is `INSTALLMENT_PAYMENT`) and `interest` is present. For `BILL_PAYMENT` the field is omitted, so show no interest line.
+- Read the `Authorization` custom fields only when `paymentMethodInfo.method` of the payment is `INSTALLMENT_PAYMENT` (or the legacy `easycredit`). The connector removes the fields on a switch to pay by invoice, but that write is best effort, so a stale value can remain until the next Get Payment, Authorize Payment or callback.
 - Show `totalValue` as the amount the shopper repays in total. It equals `orderValue + interest`. Do not derive it from the cart total, which excludes the interest.
 - Units differ: `interest`, `totalValue` and `orderValue` are decimal EUR amounts (`17.05`), while commercetools cart and order amounts are cent amounts (`1705`).
 - The custom fields only exist after the connector has read the easyCredit transaction (this call, [Authorize Payment](./AuthorizePayment.md) or the callback). A payment that never got that far, or a deployment that did not run the post-deploy script again, has none. Fall back to this call.
 - The order created from the cart does not contain the interest. If an order confirmation or an ERP export needs it, read the custom fields of the `Authorization` transaction of the order's payment:
 
 ```ts
+const method = payment.paymentMethodInfo.method;
+const isInstallment = method === 'INSTALLMENT_PAYMENT' || method === 'easycredit';
 const authorization = payment.transactions.find((transaction) => transaction.type === 'Authorization');
-const interest = authorization?.custom?.fields?.easyCreditInterest; // undefined for bill payments
-const totalValue = authorization?.custom?.fields?.easyCreditTotalValue;
+const fields = isInstallment ? authorization?.custom?.fields : undefined;
+const interest = fields?.easyCreditInterest;
+const totalValue = fields?.easyCreditTotalValue;
 ```
 
 #### Side effects
