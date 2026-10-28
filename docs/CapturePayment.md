@@ -10,6 +10,8 @@ This API is designed to capture EC payment using the provided CT `paymentId`. It
 For pay by invoice (`BILL_PAYMENT`) the capture reports the shipment to EC: the customer pays at the earliest 30 days after delivery. Request it once the order is shipped. The flow, the EC bookings and the notification are the same as for installment.
 <br />
 
+Behavior changes for existing integrations, installment included, are listed in the [changelog](../CHANGELOG.md#breaking-changes).
+
 ## Conditions
 
 To use this functionality, the following conditions must be met:
