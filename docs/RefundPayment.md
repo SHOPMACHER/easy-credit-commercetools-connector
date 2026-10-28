@@ -4,6 +4,8 @@ This guide provides instructions on how to trigger a Refund for an Easycredit pa
 
 Pay by invoice (`BILL_PAYMENT`) behaves like installment: full, partial and several refunds work, also before the capture, and the notification completes them the same way.
 
+Behavior changes for existing integrations, installment included, are listed in the [changelog](../CHANGELOG.md#breaking-changes).
+
 ## Table of Contents
 
 - [API endpoint](#api-endpoint)
