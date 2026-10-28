@@ -3,10 +3,8 @@ import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
 import {
-  getAddedRefundTransaction,
-  getPendingCaptureTransactions,
+  getAddedTransaction,
   getPendingTransaction,
-  getSuccessCaptureTransactions,
   getSuccessTransaction,
   getTransaction,
 } from '../utils/payment.utils';
@@ -274,18 +272,8 @@ export const validateTransaction = (payment: Payment) => {
   }
 };
 
-export const validateNotCaptured = (payment: Payment): void => {
-  if (getPendingCaptureTransactions(payment).length > 0 || getSuccessCaptureTransactions(payment).length > 0) {
-    throw new Errorx({
-      code: 'PaymentAlreadyCaptured',
-      httpErrorStatus: 400,
-      message: 'The payment has already been captured',
-    });
-  }
-};
-
 export const validateInitialRefundTransaction = (before: Payment, after: Payment): Transaction => {
-  const transaction = getAddedRefundTransaction(before, after);
+  const transaction = getAddedTransaction(before, after, CTTransactionType.Refund, CTTransactionState.Initial);
 
   if (!transaction) {
     throw new Errorx({

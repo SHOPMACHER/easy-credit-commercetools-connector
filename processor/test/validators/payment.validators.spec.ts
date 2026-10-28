@@ -4,7 +4,6 @@ import {
   validateCurrency,
   validateECTransactionId,
   validateInitialOrPendingTransaction,
-  validateNotCaptured,
   validatePayment,
   validatePaymentAmount,
   validatePaymentTypeAvailability,
@@ -521,32 +520,6 @@ describe('Validation Functions', () => {
 
       expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
     });
-  });
-
-  describe('validateNotCaptured', () => {
-    const paymentWith = (...states: CTTransactionState[]) =>
-      ({
-        transactions: [
-          { type: CTTransactionType.Authorization, state: CTTransactionState.Success },
-          ...states.map((state) => ({ type: CTTransactionType.Charge, state })),
-        ],
-      }) as unknown as Payment;
-
-    it.each([[], [CTTransactionState.Failure]])(
-      'should pass without a pending or successful Charge (%p)',
-      (...states) => {
-        expect(() => validateNotCaptured(paymentWith(...states))).not.toThrow();
-      },
-    );
-
-    it.each([CTTransactionState.Pending, CTTransactionState.Success])(
-      'should throw PaymentAlreadyCaptured for a %s Charge',
-      (state) => {
-        expect(() => validateNotCaptured(paymentWith(state))).toThrow(
-          expect.objectContaining({ code: 'PaymentAlreadyCaptured', httpErrorStatus: 400 }),
-        );
-      },
-    );
   });
 
   describe('validateECTransactionId', () => {

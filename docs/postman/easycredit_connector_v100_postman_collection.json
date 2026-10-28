@@ -428,7 +428,155 @@
 						},
 						"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Invalid refund amount",
+							"originalRequest": {
+								"auth": {
+									"type": "oauth2",
+									"oauth2": [
+										{
+											"key": "addTokenTo",
+											"value": "header",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 5\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"refund"
+									]
+								},
+								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\"\n        }\n    ]\n}"
+						},
+						{
+							"name": "easyCredit timeout (refund stays Pending, do not resend)",
+							"originalRequest": {
+								"auth": {
+									"type": "oauth2",
+									"oauth2": [
+										{
+											"key": "addTokenTo",
+											"value": "header",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 5\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"refund"
+									]
+								},
+								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
+							},
+							"status": "Gateway Timeout",
+							"code": 504,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Refund failed\",\n    \"statusCode\": 504,\n    \"errors\": [\n        {\n            \"code\": \"RefundFailed\",\n            \"message\": \"Refund failed\"\n        }\n    ]\n}"
+						},
+						{
+							"name": "Connector credentials rejected",
+							"originalRequest": {
+								"auth": {
+									"type": "oauth2",
+									"oauth2": [
+										{
+											"key": "addTokenTo",
+											"value": "header",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 5\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"refund"
+									]
+								},
+								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
+							},
+							"status": "Bad Gateway",
+							"code": 502,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"A service behind the connector rejected its credentials\",\n    \"statusCode\": 502,\n    \"errors\": [\n        {\n            \"code\": \"UpstreamAuthenticationFailed\",\n            \"message\": \"A service behind the connector rejected its credentials\"\n        }\n    ]\n}"
+						}
+					]
 				},
 				{
 					"name": "Create EasyCredit transaction (payment)",
@@ -716,7 +864,7 @@
 					]
 				},
 				{
-					"name": "Authorize EasyCredit Transaction Copy",
+					"name": "Capture Payment",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -741,9 +889,161 @@
 								"{{payment_id}}",
 								"capture"
 							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"trackingNumber\": \"1Z999AA10123456784\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
 						}
 					},
-					"response": []
+					"response": [
+						{
+							"name": "Capture requested (also for an already captured payment)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/capture",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"capture"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"trackingNumber\": \"1Z999AA10123456784\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								}
+							},
+							"status": "No Content",
+							"code": 204,
+							"_postman_previewlanguage": "text",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						},
+						{
+							"name": "Transaction not authorized",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/capture",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"capture"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"trackingNumber\": \"1Z999AA10123456784\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"You are not allow to capture a payment without Easy Credit AUTHORIZED transaction.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"TransactionIsNotAuthorized\",\n            \"message\": \"You are not allow to capture a payment without Easy Credit AUTHORIZED transaction.\"\n        }\n    ]\n}"
+						},
+						{
+							"name": "easyCredit unreachable",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/capture",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"capture"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"trackingNumber\": \"1Z999AA10123456784\"\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								}
+							},
+							"status": "Bad Gateway",
+							"code": 502,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Capture failed\",\n    \"statusCode\": 502,\n    \"errors\": [\n        {\n            \"code\": \"CaptureFailed\",\n            \"message\": \"Capture failed\"\n        }\n    ]\n}"
+						}
+					]
 				}
 			]
 		},

@@ -65,7 +65,6 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateInitialOrPendingTransaction: jest.fn(),
   validatePaymentAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
-  validateNotCaptured: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
@@ -981,6 +980,8 @@ describe('Payment handlers', () => {
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (getSuccessTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+      // @ts-expect-error mocked
+      (updatePayment as jest.Mock).mockResolvedValue(mockPayment);
 
       await handleCapturePayment('payment123', 'trackingNumber');
 
@@ -989,55 +990,20 @@ describe('Payment handlers', () => {
         'payment123',
         'trackingNumber',
       );
-      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith('easyCreditTechnicalTransactionId');
+      expect(initEasyCreditClient().getPayment).toHaveBeenCalledWith(
+        'easyCreditTechnicalTransactionId',
+        expect.any(AbortSignal),
+      );
     });
 
-    it('should copy only the technical transaction id onto the Charge, not the interest fields', async () => {
-      const authorization = {
-        id: 'transactionId',
-        interactionId: 'transactionId123',
-        amount: { centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
-        custom: {
-          type: { typeId: 'type', id: 'type-1' },
-          fields: {
-            easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId',
-            easyCreditInterest: 17.05,
-            easyCreditTotalValue: 267.05,
-          },
-        },
-      };
-      const mockPayment = { id: 'payment123', transactions: [authorization] };
-      // @ts-expect-error mocked
-      (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
-      (initEasyCreditClient as jest.Mock).mockReturnValue({
-        // @ts-expect-error mocked
-        capturePayment: jest.fn().mockResolvedValue(true),
-        // @ts-expect-error mocked
-        getPayment: jest.fn().mockResolvedValue({
-          status: ECTransactionStatus.AUTHORIZED,
-          decision: { transactionId: 'transactionId123' },
-        }),
-      });
-      (validatePayment as jest.Mock).mockReturnValue(true);
-      (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
-      (getSuccessTransaction as jest.Mock).mockReturnValue(authorization);
-
-      await handleCapturePayment('payment123');
-
-      const [, actions] = (updatePayment as jest.Mock).mock.calls.at(-1) as [unknown, any[]];
-      expect(actions[0].transaction.custom).toStrictEqual({
-        type: { typeId: 'type', id: 'type-1' },
-        fields: { easyCreditTechnicalTransactionId: 'easyCreditTechnicalTransactionId' },
-      });
-    });
-
-    it('should throw and log error if payment capture fails', async () => {
+    it('should pass the error on without logging it again', async () => {
+      jest.mocked(log.error).mockClear();
       const mockError = new Error('Capture failed');
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
-      await expect(handleCapturePayment('payment123')).rejects.toThrow('Capture failed');
-      expect(log.error).toHaveBeenCalledWith('Error in capturing payment', mockError);
+      await expect(handleCapturePayment('payment123')).rejects.toBe(mockError);
+      expect(log.error).not.toHaveBeenCalled();
     });
   });
 
@@ -1085,13 +1051,14 @@ describe('Payment handlers', () => {
       });
     });
 
-    it('should throw and log error if payment refund fails', async () => {
+    it('should pass the error on without logging it again', async () => {
+      jest.mocked(log.error).mockClear();
       const mockError = new Error('Refund failed');
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockRejectedValue(mockError);
 
-      await expect(handleRefundPayment('payment123', 10)).rejects.toThrow('Refund failed');
-      expect(log.error).toHaveBeenCalledWith('Error in refunding payment', mockError);
+      await expect(handleRefundPayment('payment123', 10)).rejects.toBe(mockError);
+      expect(log.error).not.toHaveBeenCalled();
     });
   });
 });

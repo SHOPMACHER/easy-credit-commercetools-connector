@@ -38,7 +38,12 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/createPayment.dto';
-import { CapturePaymentRequestSchemaDTO, CapturePaymentResponseSchemaDTO } from '../dtos/payments/capturePayment.dto';
+import {
+  CapturePaymentBodySchema,
+  CapturePaymentRequestSchemaDTO,
+  CapturePaymentResponseSchema,
+  CapturePaymentResponseSchemaDTO,
+} from '../dtos/payments/capturePayment.dto';
 import {
   RefundPaymentBodySchema,
   RefundPaymentRequestSchemaDTO,
@@ -158,10 +163,14 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     {
       preHandler: [opts.oauth2AuthHook.authenticate()],
       schema: {
-        body: AuthorizePaymentBodySchema,
+        body: CapturePaymentBodySchema,
         response: {
-          204: AuthorizePaymentResponseSchema,
+          204: CapturePaymentResponseSchema,
           400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+          504: ErrorResponse,
         },
       },
     },
@@ -188,6 +197,10 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         response: {
           202: RefundPaymentResponseSchema,
           400: ErrorResponse,
+          404: ErrorResponse,
+          409: ErrorResponse,
+          502: ErrorResponse,
+          504: ErrorResponse,
         },
       },
     },
