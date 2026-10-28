@@ -2,6 +2,7 @@ import { readConfiguration } from '../utils/config.utils';
 import {
   EASYCREDIT_BASE_API_URL,
   EASYCREDIT_PARTNER_BASE_API_URL,
+  EASYCREDIT_REQUEST_TIMEOUT_MS,
   EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS,
 } from '../utils/constant.utils';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../types/payment.types';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { log } from '../libs/logger';
+import { ECOutcomeUnknownError } from './easycredit.errors';
 
 interface EasyCreditConfig {
   webShopId: string;
@@ -76,7 +78,6 @@ class EasyCreditApiClient implements EasyCreditClient {
     if (!response.ok) {
       // Gateways can answer with null or a non-JSON body, which must not hide the status code.
       const errorData: Partial<ECTransactionError> = (await response.json().catch(() => ({}))) ?? {};
-      log.error('EasyCredit API error', errorData);
       // An empty title must still produce a usable code and message.
       const title = typeof errorData.title === 'string' ? errorData.title.trim() : undefined;
       throw new Errorx({
@@ -111,15 +112,22 @@ class EasyCreditApiClient implements EasyCreditClient {
       // DOMException is not always an Error instance across realms, so match on the name only.
       const name = (error as { name?: string } | null)?.name;
       const aborted = name === 'AbortError' || name === 'TimeoutError';
-      throw new Errorx({ code: failure.code, message: failure.message, httpErrorStatus: aborted ? 504 : 502 });
+      throw new ECOutcomeUnknownError({
+        code: failure.code,
+        message: failure.message,
+        httpErrorStatus: aborted ? 504 : 502,
+      });
     }
 
     if (response.status !== 202) {
       if (!response.ok) {
-        await this.handleResponse(response, failure.code, failure.message);
+        await this.handleResponse(response, failure.code, failure.message).catch((error: Errorx) => {
+          // easyCredit rejects a request with a 4xx; after a 5xx it may still book it.
+          throw response.status >= 500 ? new ECOutcomeUnknownError(error) : error;
+        });
       }
       // A 2xx other than 202 is no accepted request either. Answer 502, a 2xx error reply could be read as success.
-      throw new Errorx({ code: failure.code, message: failure.message, httpErrorStatus: 502 });
+      throw new ECOutcomeUnknownError({ code: failure.code, message: failure.message, httpErrorStatus: 502 });
     }
   }
 
@@ -172,7 +180,7 @@ class EasyCreditApiClient implements EasyCreditClient {
       `${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/capture`,
       { orderId, trackingNumber },
       { code: 'CaptureFailed', message: 'Capture failed', logMessage: 'Failed to capture the payment' },
-      undefined,
+      AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS),
       customHeaders,
     );
   }
@@ -200,7 +208,7 @@ class EasyCreditApiClient implements EasyCreditClient {
       `${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}/refund`,
       payload,
       { code: 'RefundFailed', message: 'Refund failed', logMessage: 'Failed to create refund' },
-      undefined,
+      AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS),
       customHeaders,
     );
   }
@@ -211,6 +219,7 @@ class EasyCreditApiClient implements EasyCreditClient {
     const response = await fetch(`${this.partnerBaseApiUrl}/merchant/v3/transaction/${transactionId}`, {
       method: 'GET',
       headers,
+      signal: AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS),
     });
 
     return await this.handleResponse(response);

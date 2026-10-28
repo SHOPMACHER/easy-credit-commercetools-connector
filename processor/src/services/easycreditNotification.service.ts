@@ -6,14 +6,15 @@ import {
   updatePayment,
 } from '../commercetools/payment.commercetools';
 import { log } from '../libs/logger';
-import { CTTransactionState, CTTransactionType, ECGetMerchantTransactionResponse } from '../types/payment.types';
-import { mapUpdateActionForRefunds } from '../utils/map.utils';
-import { EASYCREDIT_REFUND_STATUS_DONE } from '../utils/constant.utils';
+import { CTTransactionState, ECGetMerchantTransactionResponse } from '../types/payment.types';
+import { mapPendingChargeTransaction, mapUpdateActionForRefunds } from '../utils/map.utils';
+import { EASYCREDIT_BOOKING_STATUS_DONE, EASYCREDIT_BOOKING_STATUS_FAILED } from '../utils/constant.utils';
 import {
   getCaptureBooking,
+  getCaptureResult,
   getCompletedRefunds,
+  getOpenRefundTransactions,
   getPendingCaptureTransactions,
-  getPendingRefundTransactions,
   getSuccessCaptureTransactions,
   getSuccessTransaction,
 } from '../utils/payment.utils';
@@ -24,10 +25,9 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
     validateECTransactionId(resourceId);
     const ecTransaction = await initEasyCreditClient().getMerchantTransaction(resourceId);
 
-    await Promise.all([
-      handleRefundNotifications(ecTransaction),
-      handleCaptureNotifications(ecTransaction, resourceId),
-    ]);
+    // Both update the same payment; in parallel the second write fails on the version.
+    await handleRefundNotifications(ecTransaction);
+    await handleCaptureNotifications(ecTransaction, resourceId);
   } catch (error: unknown) {
     log.error('Error in handling EasyCredit notification', { resourceId, error });
     throw error;
@@ -51,13 +51,13 @@ const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransaction
   }
 
   const ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
-  const ctPendingRefunds = getPendingRefundTransactions(ctPayment);
+  const ctOpenRefunds = getOpenRefundTransactions(ctPayment);
 
-  if (ctPendingRefunds?.length === 0) {
-    log.info('No pending refund transactions to update', { paymentId: ctPayment.id });
+  if (ctOpenRefunds?.length === 0) {
+    log.info('No open refund transactions to update', { paymentId: ctPayment.id });
     return;
   }
-  const updateActions = mapUpdateActionForRefunds(ctPendingRefunds, ecCompletedRefunds);
+  const updateActions = mapUpdateActionForRefunds(ctOpenRefunds, ecCompletedRefunds);
 
   if (updateActions?.length > 0) {
     await updatePayment(ctPayment, updateActions);
@@ -65,6 +65,19 @@ const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransaction
       paymentId: ctPayment.id,
     });
   }
+
+  const openRefundIds = new Set(ctOpenRefunds.map(({ id }) => id));
+  ecCompletedRefunds
+    .filter(
+      (booking) => booking.status === EASYCREDIT_BOOKING_STATUS_FAILED && openRefundIds.has(booking.bookingId ?? ''),
+    )
+    .forEach((booking) =>
+      log.warn('EasyCredit refund failed, CommerceTools transaction state updated to Failure.', {
+        paymentId: ctPayment.id,
+        transactionId: booking.bookingId,
+        reason: booking.message?.messageEN,
+      }),
+    );
 };
 
 /**
@@ -93,10 +106,16 @@ const handleCaptureNotifications = async (
     return;
   }
 
-  // A retried capture leaves the earlier FAILED booking behind, so one DONE booking means captured.
-  const captureState = ecCaptureBookings.some((booking) => booking.status === EASYCREDIT_REFUND_STATUS_DONE)
-    ? CTTransactionState.Success
-    : CTTransactionState.Failure;
+  const captureResult = getCaptureResult(ecCaptureBookings);
+
+  if (!captureResult) {
+    log.info('EasyCredit capture is still being processed', { paymentId });
+    return;
+  }
+
+  const captureState =
+    captureResult.status === EASYCREDIT_BOOKING_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure;
+  const failureReason = captureResult.message?.messageEN;
 
   const ctPayment = await getPaymentById(paymentId);
   const ctSuccessCaptures = getSuccessCaptureTransactions(ctPayment);
@@ -128,7 +147,12 @@ const handleCaptureNotifications = async (
       return;
     }
     const updatedPayment = await createCaptureTransactionFromAuthorized(ctPayment, ctAuthorizedTransactions);
-    await completePendingCapture(updatedPayment, getPendingCaptureTransactions(updatedPayment)[0], captureState);
+    await completePendingCapture(
+      updatedPayment,
+      getPendingCaptureTransactions(updatedPayment)[0],
+      captureState,
+      failureReason,
+    );
   } else {
     const pendingCapture = ctPendingCaptureTransactions[0];
     if (pendingCapture.interactionId !== resourceId) {
@@ -138,7 +162,7 @@ const handleCaptureNotifications = async (
       });
       return;
     }
-    await completePendingCapture(ctPayment, pendingCapture, captureState);
+    await completePendingCapture(ctPayment, pendingCapture, captureState, failureReason);
   }
 };
 
@@ -147,17 +171,7 @@ const createCaptureTransactionFromAuthorized = async (
   authorizedTransaction: Transaction,
 ): Promise<Payment> => {
   return await updatePayment(ctPayment, [
-    {
-      action: 'addTransaction',
-      transaction: {
-        type: CTTransactionType.Charge,
-        state: CTTransactionState.Pending,
-        amount: authorizedTransaction.amount,
-        interactionId: authorizedTransaction.interactionId,
-        timestamp: new Date().toISOString(),
-        custom: authorizedTransaction.custom,
-      },
-    },
+    { action: 'addTransaction', transaction: mapPendingChargeTransaction(authorizedTransaction) },
   ]);
 };
 
@@ -165,6 +179,7 @@ const completePendingCapture = async (
   ctPayment: Payment,
   pendingCapture: Transaction,
   state: CTTransactionState.Success | CTTransactionState.Failure,
+  failureReason?: string,
 ): Promise<Payment> => {
   const logContext = { transactionId: pendingCapture.id, paymentId: ctPayment.id };
   if (state === CTTransactionState.Success) {
@@ -173,7 +188,10 @@ const completePendingCapture = async (
       logContext,
     );
   } else {
-    log.error('EasyCredit capture failed, CommerceTools transaction state updated to Failure.', logContext);
+    log.error('EasyCredit capture failed, CommerceTools transaction state updated to Failure.', {
+      ...logContext,
+      reason: failureReason,
+    });
   }
 
   return await updatePayment(ctPayment, [

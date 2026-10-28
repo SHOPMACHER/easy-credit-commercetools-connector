@@ -1,5 +1,6 @@
 /* eslint-disable no-global-assign */
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
+import { ECOutcomeUnknownError } from '../../src/client/easycredit.errors';
 import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../../src/utils/constant.utils';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { ECTransaction } from '../../src/types/payment.types';
@@ -375,7 +376,8 @@ describe('initEasyCreditClient', () => {
       message: 'Refund failed',
     },
   ])('$name', ({ call, url, body, code, message }) => {
-    it('should POST to the merchant API and resolve on 202', async () => {
+    it('should POST to the merchant API with a timeout and resolve on 202', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
       jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
 
       await expect(call(easyCreditClient)).resolves.toBeUndefined();
@@ -386,7 +388,9 @@ describe('initEasyCreditClient', () => {
           Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
         },
         body: JSON.stringify(body),
+        signal: expect.any(AbortSignal),
       });
+      expect(timeoutSpy).toHaveBeenCalledWith(10000);
     });
 
     it('should throw an Errorx keeping the easyCredit status, title and violations', async () => {
@@ -399,6 +403,8 @@ describe('initEasyCreditClient', () => {
 
       const promise = call(easyCreditClient);
       await expect(promise).rejects.toBeInstanceOf(Errorx);
+      // A 4xx is a clear rejection.
+      await expect(promise).rejects.not.toBeInstanceOf(ECOutcomeUnknownError);
       await expect(promise).rejects.toMatchObject({
         code: 'Booking not allowed',
         message: 'Booking not allowed',
@@ -410,26 +416,34 @@ describe('initEasyCreditClient', () => {
     it('should fall back to its own code on a non-JSON error body', async () => {
       jest.mocked(fetch).mockResolvedValueOnce(new Response('<html></html>', { status: 503 }));
 
-      await expect(call(easyCreditClient)).rejects.toMatchObject({ code, message, httpErrorStatus: 503 });
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, message, httpErrorStatus: 503 });
     });
 
     it.each([200, 204])('should map a %s response to a 502, never a 2xx error', async (status) => {
       jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status }));
 
-      await expect(call(easyCreditClient)).rejects.toMatchObject({ code, httpErrorStatus: 502 });
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, httpErrorStatus: 502 });
     });
 
-    it('should map a network error to a 502', async () => {
+    it('should map a network error to a 502 with an unknown outcome', async () => {
       jest.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));
 
-      await expect(call(easyCreditClient)).rejects.toMatchObject({ code, message, httpErrorStatus: 502 });
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, message, httpErrorStatus: 502 });
       expect(log.error).toHaveBeenCalledTimes(1);
     });
 
-    it('should map a timeout to a 504', async () => {
+    it('should map a timeout to a 504 with an unknown outcome', async () => {
       jest.mocked(fetch).mockRejectedValueOnce(new DOMException('aborted', 'TimeoutError'));
 
-      await expect(call(easyCreditClient)).rejects.toMatchObject({ code, httpErrorStatus: 504 });
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, httpErrorStatus: 504 });
     });
   });
 
@@ -555,6 +569,7 @@ describe('initEasyCreditClient', () => {
             'Content-Type': 'application/json',
             Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
           },
+          signal: expect.any(AbortSignal),
         },
       );
 

@@ -418,6 +418,18 @@ describe('paymentsRoute', () => {
       expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.trackingNumber);
     });
 
+    it('should reject a tracking number longer than 50 characters', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: { trackingNumber: 'x'.repeat(51) },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(handleCapturePayment).not.toHaveBeenCalled();
+    });
+
     it('should pass the easyCredit capture error on instead of a 204', async () => {
       (handleCapturePayment as jest.Mock).mockRejectedValue(
         new Errorx({ code: 'Booking not allowed', message: 'Booking not allowed', httpErrorStatus: 409 }) as never,

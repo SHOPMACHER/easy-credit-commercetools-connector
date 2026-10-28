@@ -13,6 +13,8 @@ export const VERSION_STRING = `${LIBRARY_NAME}/${LIBRARY_VERSION}`;
 
 export const EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS = 10000;
 
+export const EASYCREDIT_REQUEST_TIMEOUT_MS = 10000;
+
 export const EASYCREDIT_WEBSHOP_INFO_RETRY_MS = 30000;
 
 export const MAX_WEBSHOP_CACHE_TTL_SECONDS = 3600;
@@ -25,9 +27,9 @@ export const EASYCREDIT_CONNECTOR_URL = 'easycredit-connector-url';
 
 export const EASYCREDIT_REFUND_BOOKING_TYPE = 'RefundBooking';
 
-export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
+export const EASYCREDIT_BOOKING_STATUS_DONE = 'DONE';
 
-export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
+export const EASYCREDIT_BOOKING_STATUS_FAILED = 'FAILED';
 
 export const EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-technical-transaction-id';
 

@@ -1,15 +1,16 @@
 import {
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
-  EASYCREDIT_REFUND_STATUS_DONE,
-  EASYCREDIT_REFUND_STATUS_FAILED,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
 import {
   CTTransactionState,
+  CTTransactionType,
   ECBooking,
   ECCreatePaymentResponse,
   ECTransaction,
@@ -23,7 +24,7 @@ import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetoo
 import { convertCentsToEur, eurToCents } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
-import { PaymentUpdateAction } from '@commercetools/platform-sdk';
+import { PaymentUpdateAction, TransactionDraft } from '@commercetools/platform-sdk';
 import { signRedirectUrl } from './redirect.utils';
 
 // successUrl lets the cancel route send the shopper to the success page when the payment turns out to be authorized.
@@ -146,6 +147,19 @@ export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
   currencyCode: 'EUR',
 });
 
+export const mapPendingChargeTransaction = (authorization: Transaction): TransactionDraft => ({
+  type: CTTransactionType.Charge,
+  state: CTTransactionState.Pending,
+  amount: authorization.amount,
+  interactionId: authorization.interactionId,
+  timestamp: new Date().toISOString(),
+  // Only the technical id: the interest fields belong to the Authorization transaction.
+  custom: authorization.custom && {
+    ...authorization.custom,
+    fields: { easyCreditTechnicalTransactionId: authorization.custom.fields.easyCreditTechnicalTransactionId },
+  },
+});
+
 export const mapUpdateActionForRefunds = (
   ctPendingRefunds: Transaction[],
   ecCompletedRefunds: ECBooking[],
@@ -159,13 +173,13 @@ export const mapUpdateActionForRefunds = (
 
     if (
       ecRefund &&
-      (ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE || ecRefund.status === EASYCREDIT_REFUND_STATUS_FAILED)
+      (ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE || ecRefund.status === EASYCREDIT_BOOKING_STATUS_FAILED)
     ) {
       updateActions.push({
         action: 'changeTransactionState',
         transactionId: ctRefundTransaction.id,
         state:
-          ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
+          ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
       });
     }
   }

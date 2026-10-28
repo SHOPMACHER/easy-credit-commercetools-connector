@@ -6,6 +6,7 @@ import {
   mapCTCartToCTPayment,
   mapCTCartToECPayment,
   mapLineItem,
+  mapPendingChargeTransaction,
   mapUpdateActionForRefunds,
 } from '../../src/utils/map.utils'; // Adjust the import path as necessary
 import {
@@ -293,6 +294,41 @@ describe('Payment Mapping', () => {
   describe('mapAmountToCTTransactionAmount', () => {
     it('should round euros to cents instead of flooring', () => {
       expect(mapAmountToCTTransactionAmount(19.99)).toEqual({ centAmount: 1999, currencyCode: 'EUR' });
+    });
+  });
+
+  describe('mapPendingChargeTransaction', () => {
+    const authorization = {
+      id: 'auth-1',
+      type: CTTransactionType.Authorization,
+      state: CTTransactionState.Success,
+      interactionId: 'ABC123',
+      amount: { type: 'centPrecision', centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
+      custom: {
+        type: { typeId: 'type', id: 'type-1' },
+        fields: { easyCreditTechnicalTransactionId: 'tech-1', easyCreditInterest: 17.05, easyCreditTotalValue: 267.05 },
+      },
+    } as unknown as Transaction;
+
+    it('should map a pending Charge from the Authorization', () => {
+      expect(mapPendingChargeTransaction(authorization)).toMatchObject({
+        type: CTTransactionType.Charge,
+        state: CTTransactionState.Pending,
+        amount: authorization.amount,
+        interactionId: 'ABC123',
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('should copy only the technical transaction id, not the interest fields', () => {
+      expect(mapPendingChargeTransaction(authorization).custom).toStrictEqual({
+        type: { typeId: 'type', id: 'type-1' },
+        fields: { easyCreditTechnicalTransactionId: 'tech-1' },
+      });
+    });
+
+    it('should leave custom out when the Authorization has none', () => {
+      expect(mapPendingChargeTransaction({ ...authorization, custom: undefined }).custom).toBeUndefined();
     });
   });
 

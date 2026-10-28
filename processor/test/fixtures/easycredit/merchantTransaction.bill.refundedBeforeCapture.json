@@ -1,0 +1,62 @@
+{
+  "bookings": [
+    {
+      "bookingType": "RefundBooking",
+      "amount": 100.0,
+      "bookingId": "refund-before-capture",
+      "created": "2026-10-28T04:39:52+01:00",
+      "message": null,
+      "status": "DONE",
+      "type": "REFUND",
+      "uuid": "64e4b401-67a7-469f-9ec0-41c76e997544"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:40:01+01:00",
+      "message": {
+        "messageDE": "Ein unerwarteter Fehler ist aufgetreten.",
+        "messageEN": "An undefined error occurred."
+      },
+      "status": "PENDING",
+      "type": "NOTIFY",
+      "uuid": "6682e376-0ab5-4b6e-be02-ff2b445fdc6c"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:41:01+01:00",
+      "message": null,
+      "status": "PENDING",
+      "type": "NOTIFY",
+      "uuid": "5aa2a168-e137-4b74-bf36-8043e0ec9a18"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:40:36+01:00",
+      "message": null,
+      "status": "DONE",
+      "type": "CAPTURE",
+      "uuid": "a813e8c4-5b1d-4836-b70f-89d490a616d6"
+    }
+  ],
+  "expirationDateTime": null,
+  "orderDetails": {
+    "clearingDate": null,
+    "currentOrderValue": 449.0,
+    "orderDate": "2026-10-28",
+    "orderId": "payment-bill-2",
+    "originalOrderValue": 549.0
+  },
+  "refundDetails": [
+    {
+      "reason": "REVOCATION_PARTIAL",
+      "refundAmount": 100.0,
+      "refundBookingDate": "2026-10-28",
+      "refundDate": "2026-10-28",
+      "refundEntryDate": "2026-10-28"
+    }
+  ],
+  "refundsTotalValue": 100.0,
+  "status": "IN_BILLING",
+  "transactionId": "VFQ2FV",
+  "webshopId": "webshop-1"
+}
