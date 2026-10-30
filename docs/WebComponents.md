@@ -152,9 +152,9 @@ This guide provides instructions on how to integrate and display the connector's
 
 No numbered release contains this integration yet, so neither a commit nor the package version tells whether a deployed processor supports it. Check the processor instead: with a valid session, `GET /payments/payment-method/{cartId}?paymentType=UNKNOWN` returns `400 InvalidField` on a supported processor, while an older processor ignores the parameter and answers with the installment checks.
 
-When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Existing callers that only use `mount()` and `submit()` need no additional call for installment. For bill payment, call `isAvailable()` before displaying the payment option.
+In TypeScript, `isAvailable` is an optional member of `CheckoutComponent`, so custom implementations and typed test doubles written for earlier versions compile unchanged. Components returned by the supplied builder always implement it. As the builder is typed with `CheckoutComponent`, call it as `isAvailable?.()` and treat a missing method as unavailable. Existing callers that only use `mount()` and `submit()` need no additional call for installment. For bill payment, call `isAvailable()` before displaying the payment option. A custom implementation that adds the method must follow the availability rules above.
 
-For a test double, choose the result for the scenario under test:
+A test double that covers availability can choose the result for the scenario under test:
 
 ```ts
 const availableCheckout: CheckoutComponent = {
@@ -190,7 +190,7 @@ const unavailableCheckout: CheckoutComponent = {
         paymentType,
       });
 
-      if (!(await checkoutComponent.isAvailable())) {
+      if (!(await checkoutComponent.isAvailable?.())) {
         continue; // do not offer this payment method
       }
 

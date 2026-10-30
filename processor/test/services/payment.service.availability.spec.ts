@@ -324,11 +324,8 @@ describe('payment type availability', () => {
       ]);
     });
 
-    it.each([
-      ['the webshop endpoint rejects the credentials', () => getWebshopInfoMock.mockRejectedValue(unauthorized())],
-      ['the webshop endpoint returns null', () => getWebshopInfoMock.mockResolvedValue(null)],
-    ])('should return EasyCreditUnavailable if %s', async (_, setup) => {
-      setup();
+    it('should return EasyCreditUnavailable if the webshop endpoint rejects the credentials', async () => {
+      getWebshopInfoMock.mockRejectedValue(unauthorized());
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
 
@@ -364,11 +361,21 @@ describe('payment type availability', () => {
       }
     });
 
-    it.each([
-      ['a network error', () => new TypeError('fetch failed')],
-      ['a 500 response', () => new Errorx({ code: 'Server Error', message: 'Server Error', httpErrorStatus: 500 })],
-    ])('should offer installment with the default limits on %s', async (_, error) => {
-      getWebshopInfoMock.mockRejectedValue(error());
+    const webshopInfoFailures: [string, () => void][] = [
+      ['a network error', () => getWebshopInfoMock.mockRejectedValue(new TypeError('fetch failed'))],
+      [
+        'a 500 response',
+        () =>
+          getWebshopInfoMock.mockRejectedValue(
+            new Errorx({ code: 'Server Error', message: 'Server Error', httpErrorStatus: 500 }),
+          ),
+      ],
+      ['a null webshop info', () => getWebshopInfoMock.mockResolvedValue(null)],
+      ['a non-JSON body', () => getWebshopInfoMock.mockRejectedValue(new SyntaxError('Unexpected token <'))],
+    ];
+
+    it.each(webshopInfoFailures)('should offer installment with the default limits on %s', async (_, setup) => {
+      setup();
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
 
@@ -379,6 +386,42 @@ describe('payment type availability', () => {
         BILL_PAYMENT: { enabled: false, available: false },
       });
     });
+
+    it.each(webshopInfoFailures)('should reject bill payment as not available on %s', async (_, setup) => {
+      setup();
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+
+      await expect(getErrorCodes(handlePaymentMethod('cart123', BILL))).resolves.toEqual([
+        { code: 'PaymentTypeNotAvailable', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it.each([
+      [
+        'installment',
+        undefined,
+        multipleShippingCart([{ ...address, streetName: 'Nebenstr.' }]),
+        100,
+        ['AddressesUnmatched', 'InvalidAmount'],
+      ],
+      [
+        'bill payment',
+        BILL,
+        { ...mockCart(500), billingAddress: { ...address, company: 'ACME GmbH' } } as unknown as Cart,
+        40,
+        ['CorporateCustomerNotAllowed', 'InvalidAmount'],
+      ],
+    ])(
+      'should report the cart errors before the availability errors for %s',
+      async (_, paymentType, cart, amountInEur, codes) => {
+        jest.mocked(getCartById).mockResolvedValue(withCentAmount(cart, amountInEur * 100));
+
+        await expect(getErrorCodes(handlePaymentMethod('cart123', paymentType))).resolves.toEqual(
+          codes.map((code) => ({ code, httpErrorStatus: 400 })),
+        );
+        expect(getWebshopInfoMock).toHaveBeenCalled();
+      },
+    );
 
     it('should keep installment available if easyCredit sends null bill payment fields', async () => {
       getWebshopInfoMock.mockResolvedValue({
@@ -499,7 +542,7 @@ describe('payment type availability', () => {
       expect(createPayment).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentMethodInfo: expect.objectContaining({
-            method: 'INSTALLMENT_PAYMENT',
+            method: 'easycredit',
             name: { de: 'easyCredit Ratenkauf' },
           }),
         }),
@@ -512,9 +555,7 @@ describe('payment type availability', () => {
       await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
-      expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [
-        { action: 'freezeCart', strategy: 'HardFreeze' },
-      ]);
+      expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [{ action: 'freezeCart' }]);
     });
 
     describe.each([
@@ -600,7 +641,10 @@ describe('payment type availability', () => {
         process.env.BILL_PAYMENT_ENABLED = original;
       }
 
-      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
+      // The easyCredit page must not offer a switch to a disabled bill payment.
+      expect(createECPaymentMock).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: false }),
+      );
     });
 
     it('should not create an easyCredit transaction for a cart that only bill payment could pay', async () => {
@@ -731,7 +775,7 @@ describe('payment type availability', () => {
       ]);
       // The freeze failed, so the cart is still active and must not be unfrozen.
       expect(updateCart).toHaveBeenCalledTimes(1);
-      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart', strategy: 'HardFreeze' }]);
+      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart' }]);
       expect(createPayment).not.toHaveBeenCalled();
       expect(createECPaymentMock).not.toHaveBeenCalled();
     });
@@ -754,6 +798,30 @@ describe('payment type availability', () => {
 
       await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
         { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should report the cart errors and the exclusion together', async () => {
+      jest.mocked(getCartById).mockResolvedValue({
+        ...mockCart(500, { lineItems: [voucherItem] }),
+        billingAddress: { ...address, company: 'ACME GmbH' },
+      } as unknown as Cart);
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'CorporateCustomerNotAllowed', httpErrorStatus: 400 },
+        { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should report only a failed lookup, without the cart errors', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      jest.mocked(getCartById).mockResolvedValue({
+        ...mockCart(500),
+        billingAddress: { ...address, company: 'ACME GmbH' },
+      } as unknown as Cart);
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentCheckFailed', httpErrorStatus: 503 },
       ]);
     });
 

@@ -205,32 +205,44 @@ describe('Payment Mapping', () => {
       expect(result.paymentType).toBe('BILL_PAYMENT');
     });
 
-    it('sends paymentSwitchPossible true for both payment types', async () => {
-      const mockCart = {
-        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
-        lineItems: [],
-        billingAddress: {},
-        shippingAddress: {},
-      } as unknown as Cart;
+    it.each([
+      [false, '0'],
+      [true, '1'],
+    ])(
+      'sends paymentSwitchPossible %s for both payment types if BILL_PAYMENT_ENABLED is %s',
+      async (expected, flag) => {
+        const mockCart = {
+          totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+          lineItems: [],
+          billingAddress: {},
+          shippingAddress: {},
+        } as unknown as Cart;
 
-      // @ts-expect-error mocked
-      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+        // @ts-expect-error mocked
+        (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
 
-      for (const paymentType of [
-        ECTransactionPaymentType.ECTransactionInstallmentPayment,
-        ECTransactionPaymentType.ECTransactionBillPayment,
-      ]) {
-        const result = await mapCTCartToECPayment(
-          mockCart,
-          { id: 'payment123' } as Payment,
-          { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
-          { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
-          paymentType,
-        );
+        const original = process.env.BILL_PAYMENT_ENABLED;
+        process.env.BILL_PAYMENT_ENABLED = flag;
+        try {
+          for (const paymentType of [
+            ECTransactionPaymentType.ECTransactionInstallmentPayment,
+            ECTransactionPaymentType.ECTransactionBillPayment,
+          ]) {
+            const result = await mapCTCartToECPayment(
+              mockCart,
+              { id: 'payment123' } as Payment,
+              { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+              { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+              paymentType,
+            );
 
-        expect(result).toMatchObject({ paymentType, paymentSwitchPossible: true });
-      }
-    });
+            expect(result).toMatchObject({ paymentType, paymentSwitchPossible: expected });
+          }
+        } finally {
+          process.env.BILL_PAYMENT_ENABLED = original;
+        }
+      },
+    );
   });
 
   describe('mapCTCartToCTPayment', () => {
@@ -261,7 +273,7 @@ describe('Payment Mapping', () => {
         },
         paymentMethodInfo: {
           paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-          method: 'INSTALLMENT_PAYMENT',
+          method: 'easycredit',
           name: { de: 'easyCredit Ratenkauf' },
         },
       });
@@ -272,7 +284,7 @@ describe('Payment Mapping', () => {
 
       expect(result.paymentMethodInfo).toEqual({
         paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-        method: 'INSTALLMENT_PAYMENT',
+        method: 'easycredit',
         name: { de: 'easyCredit Ratenkauf' },
       });
     });
@@ -306,7 +318,12 @@ describe('Payment Mapping', () => {
       amount: { type: 'centPrecision', centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
       custom: {
         type: { typeId: 'type', id: 'type-1' },
-        fields: { easyCreditTechnicalTransactionId: 'tech-1', easyCreditInterest: 17.05, easyCreditTotalValue: 267.05 },
+        fields: {
+          easyCreditTechnicalTransactionId: 'tech-1',
+          easyCreditInterest: 17.05,
+          easyCreditTotalValue: 267.05,
+          shopReference: 'ref-1',
+        },
       },
     } as unknown as Transaction;
 
@@ -320,10 +337,10 @@ describe('Payment Mapping', () => {
       });
     });
 
-    it('should copy only the technical transaction id, not the interest fields', () => {
+    it('should copy every custom field except the interest fields', () => {
       expect(mapPendingChargeTransaction(authorization).custom).toStrictEqual({
         type: { typeId: 'type', id: 'type-1' },
-        fields: { easyCreditTechnicalTransactionId: 'tech-1' },
+        fields: { easyCreditTechnicalTransactionId: 'tech-1', shopReference: 'ref-1' },
       });
     });
 

@@ -101,6 +101,10 @@ export const getSuccessCaptureTransactions = (payment: Payment): Transaction[] =
   );
 };
 
+// Installment keeps the method of earlier releases, so only bill payment gets a value of its own.
+export const toPaymentMethod = (paymentType: ECTransactionPaymentType): string =>
+  paymentType === ECTransactionPaymentType.ECTransactionBillPayment ? paymentType : EASYCREDIT_PAYMENT_METHOD;
+
 export const getPaymentType = (payment: Payment): ECTransactionPaymentType =>
   payment.paymentMethodInfo?.method === ECTransactionPaymentType.ECTransactionBillPayment
     ? ECTransactionPaymentType.ECTransactionBillPayment

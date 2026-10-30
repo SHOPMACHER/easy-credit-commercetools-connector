@@ -17,6 +17,7 @@ import {
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
 import { mapPendingChargeTransaction, mapUpdateActionForRefunds } from '../../src/utils/map.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Errorx } from '@commercetools/connect-payments-sdk';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
@@ -610,5 +611,37 @@ describe('refund notification result', () => {
         reason: 'The Refund amount is too high for this transaction.',
       },
     );
+  });
+
+  it('still completes the capture and passes the error on when the refund lookup fails', async () => {
+    const refund = { bookingType: 'RefundBooking', type: 'REFUND', status: 'DONE', bookingId: 'refund-1' };
+    const capture = { bookingType: 'ApiBooking', type: 'CAPTURE', status: 'DONE' };
+    const pendingCapture = {
+      id: 'capture-transaction1',
+      type: CTTransactionType.Charge,
+      state: CTTransactionState.Pending,
+      interactionId: 'ABC123',
+    };
+    const payment = { id: 'payment123', transactions: [pendingCapture] };
+    const notFound = new Errorx({ code: 'ResourceNotFound', message: 'Payment not found', httpErrorStatus: 404 });
+    (initEasyCreditClient as jest.Mock).mockReturnValue({
+      getMerchantTransaction: jest
+        .fn()
+        // @ts-expect-error mocked
+        .mockResolvedValue({ orderDetails: { orderId: 'payment123' }, bookings: [refund, capture] }),
+    });
+    (getCompletedRefunds as jest.Mock).mockReturnValue([refund]);
+    // @ts-expect-error mocked
+    (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockRejectedValue(notFound);
+    (getCaptureBooking as jest.Mock).mockReturnValue([capture]);
+    // @ts-expect-error mocked
+    (getPaymentById as jest.Mock).mockResolvedValue(payment);
+    (getPendingCaptureTransactions as jest.Mock).mockReturnValue([pendingCapture]);
+
+    await expect(handleEasyCreditNotification('ABC123')).rejects.toBe(notFound);
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Success },
+    ]);
   });
 });

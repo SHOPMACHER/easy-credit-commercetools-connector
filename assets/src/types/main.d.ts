@@ -57,7 +57,8 @@ export interface CheckoutComponent {
 
   submit(): void;
 
-  isAvailable(): Promise<boolean>;
+  // Optional so that implementations written for earlier versions still compile; the supplied components have it.
+  isAvailable?(): Promise<boolean>;
 }
 
 export interface SummaryComponent {

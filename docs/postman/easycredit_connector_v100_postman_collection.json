@@ -477,104 +477,6 @@
 							],
 							"cookie": [],
 							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\"\n        }\n    ]\n}"
-						},
-						{
-							"name": "easyCredit timeout (refund stays Pending, do not resend)",
-							"originalRequest": {
-								"auth": {
-									"type": "oauth2",
-									"oauth2": [
-										{
-											"key": "addTokenTo",
-											"value": "header",
-											"type": "string"
-										}
-									]
-								},
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n    \"amount\": 5\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
-									"host": [
-										"{{connector_url}}"
-									],
-									"path": [
-										"payments",
-										"{{payment_id}}",
-										"refund"
-									]
-								},
-								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
-							},
-							"status": "Gateway Timeout",
-							"code": 504,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "{\n    \"message\": \"Refund failed\",\n    \"statusCode\": 504,\n    \"errors\": [\n        {\n            \"code\": \"RefundFailed\",\n            \"message\": \"Refund failed\"\n        }\n    ]\n}"
-						},
-						{
-							"name": "Connector credentials rejected",
-							"originalRequest": {
-								"auth": {
-									"type": "oauth2",
-									"oauth2": [
-										{
-											"key": "addTokenTo",
-											"value": "header",
-											"type": "string"
-										}
-									]
-								},
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n    \"amount\": 5\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
-									"host": [
-										"{{connector_url}}"
-									],
-									"path": [
-										"payments",
-										"{{payment_id}}",
-										"refund"
-									]
-								},
-								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
-							},
-							"status": "Bad Gateway",
-							"code": 502,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "{\n    \"message\": \"A service behind the connector rejected its credentials\",\n    \"statusCode\": 502,\n    \"errors\": [\n        {\n            \"code\": \"UpstreamAuthenticationFailed\",\n            \"message\": \"A service behind the connector rejected its credentials\"\n        }\n    ]\n}"
 						}
 					]
 				},
@@ -782,7 +684,7 @@
 							"body": ""
 						},
 						{
-							"name": "Authorization timeout",
+							"name": "Authorization timeout (waitForAuthorization: true)",
 							"originalRequest": {
 								"method": "POST",
 								"header": [

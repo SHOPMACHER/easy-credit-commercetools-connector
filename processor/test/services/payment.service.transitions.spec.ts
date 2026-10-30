@@ -312,10 +312,20 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('R3 transitions, payment 
       expect(writes()).toEqual(expected);
     });
 
-    it('writes Initial -> Pending after the POST', async () => {
-      client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockResolvedValue(ec('AUTHORIZED'));
+    it('writes Initial -> Pending after the POST and leaves Success to the callback', async () => {
+      client.getPayment.mockResolvedValue(ec('PREAUTHORIZED'));
 
       const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+
+      expect(err).toBeUndefined();
+      expect(client.getPayment).toHaveBeenCalledTimes(1);
+      expect(writes()).toEqual(['Pending']);
+    });
+
+    it('writes Initial -> Pending -> Success with waitForAuthorization', async () => {
+      client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockResolvedValue(ec('AUTHORIZED'));
+
+      const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
       expect(err).toBeUndefined();
       expect(writes()).toEqual(['Pending', 'Success']);
