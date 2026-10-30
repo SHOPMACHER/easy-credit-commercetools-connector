@@ -11,6 +11,7 @@ Planned as `1.1.0` of the processor and the enabler. Deploy both from the same b
 Existing installment integrations keep working without code or configuration changes, and pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. A few responses change where the previous version answered wrongly, see [Fixed](#fixed):
 
 - A capture that easyCredit rejects or does not answer returns an error instead of `204`. Before, the `204` hid a capture that never happened.
+- An authorization request that easyCredit rejects returns the easyCredit error instead of `204`. Before, the `204` and the `Pending` transaction hid an authorization that never happened.
 - `POST /payments` refuses carts that easyCredit rejects later (`InvalidAddress`, `AddressesUnmatched` for `additionalStreetInfo`) and a second payment while an earlier one is still open (`PaymentInProgress`).
 - `GET /payments/{paymentId}` leaves out `decision` fields that easyCredit sends as `null` instead of returning `0` or `{}`.
 
