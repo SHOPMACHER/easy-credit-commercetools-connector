@@ -1,11 +1,11 @@
 import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType, ECBooking, ECTransactionPaymentType } from '../types/payment.types';
 import {
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
-  EASYCREDIT_REFUND_STATUS_DONE,
-  EASYCREDIT_REFUND_STATUS_FAILED,
 } from './constant.utils';
 
 export const getPendingTransaction = (payment: Payment): Transaction | undefined => {
@@ -26,9 +26,25 @@ export const getTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
 };
 
-export const getInitialRefundTransaction = (payment: Payment): Transaction | undefined => {
+// The update is version-locked, so the one ID missing before it is the transaction this request added; CT does not specify the array order.
+export const getAddedTransaction = (
+  before: Payment,
+  after: Payment,
+  type: CTTransactionType,
+  state: CTTransactionState,
+): Transaction | undefined => {
+  const existingIds = new Set(before.transactions.map((transaction) => transaction.id));
+
+  return after.transactions.find(
+    (transaction) => !existingIds.has(transaction.id) && transaction.type === type && transaction.state === state,
+  );
+};
+
+export const getActiveCaptureTransaction = (payment: Payment): Transaction | undefined => {
   return payment.transactions.find(
-    (transaction) => transaction.type === CTTransactionType.Refund && transaction.state === CTTransactionState.Initial,
+    (transaction) =>
+      transaction.type === CTTransactionType.Charge &&
+      (transaction.state === CTTransactionState.Pending || transaction.state === CTTransactionState.Success),
   );
 };
 
@@ -38,9 +54,12 @@ export const getPayment = (cart: Cart) => {
   });
 };
 
-export const getPendingRefundTransactions = (payment: Payment): Transaction[] => {
+// An Initial refund was possibly booked at easyCredit even though its Pending write failed.
+export const getOpenRefundTransactions = (payment: Payment): Transaction[] => {
   return payment.transactions.filter(
-    (transaction) => transaction.type === CTTransactionType.Refund && transaction.state === CTTransactionState.Pending,
+    (transaction) =>
+      transaction.type === CTTransactionType.Refund &&
+      (transaction.state === CTTransactionState.Initial || transaction.state === CTTransactionState.Pending),
   );
 };
 
@@ -49,17 +68,25 @@ export const getCompletedRefunds = (ecBookings: ECBooking[]) => {
     (item) =>
       item.bookingType === EASYCREDIT_REFUND_BOOKING_TYPE &&
       item.bookingId &&
-      (item.status === EASYCREDIT_REFUND_STATUS_DONE || item.status === EASYCREDIT_REFUND_STATUS_FAILED),
+      (item.status === EASYCREDIT_BOOKING_STATUS_DONE || item.status === EASYCREDIT_BOOKING_STATUS_FAILED),
   );
 };
 
 export const getCaptureBooking = (ecBookings: ECBooking[]) => {
-  return ecBookings.filter(
-    (item) =>
-      item.bookingType === EASYCREDIT_CAPTURE_BOOKING_TYPE &&
-      item.type === 'CAPTURE' &&
-      (item.status === EASYCREDIT_REFUND_STATUS_DONE || item.status === EASYCREDIT_REFUND_STATUS_FAILED),
+  return ecBookings.filter((item) => item.bookingType === EASYCREDIT_CAPTURE_BOOKING_TYPE && item.type === 'CAPTURE');
+};
+
+// A DONE booking is final. Otherwise the newest booking decides, as a retried capture leaves the earlier FAILED one behind.
+export const getCaptureResult = (captureBookings: ECBooking[]): ECBooking | undefined => {
+  const done = captureBookings.find(({ status }) => status === EASYCREDIT_BOOKING_STATUS_DONE);
+  if (done) {
+    return done;
+  }
+  const latest = captureBookings.reduce<ECBooking | undefined>(
+    (newest, booking) => (!newest || Date.parse(booking.created) > Date.parse(newest.created) ? booking : newest),
+    undefined,
   );
+  return latest?.status === EASYCREDIT_BOOKING_STATUS_FAILED ? latest : undefined;
 };
 
 export const getPendingCaptureTransactions = (payment: Payment): Transaction[] => {
@@ -73,6 +100,10 @@ export const getSuccessCaptureTransactions = (payment: Payment): Transaction[] =
     (transaction) => transaction.type === CTTransactionType.Charge && transaction.state === CTTransactionState.Success,
   );
 };
+
+// Installment keeps the method of earlier releases, so only bill payment gets a value of its own.
+export const toPaymentMethod = (paymentType: ECTransactionPaymentType): string =>
+  paymentType === ECTransactionPaymentType.ECTransactionBillPayment ? paymentType : EASYCREDIT_PAYMENT_METHOD;
 
 export const getPaymentType = (payment: Payment): ECTransactionPaymentType =>
   payment.paymentMethodInfo?.method === ECTransactionPaymentType.ECTransactionBillPayment

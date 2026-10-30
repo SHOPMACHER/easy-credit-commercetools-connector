@@ -1,10 +1,10 @@
 import { describe, expect, test } from '@jest/globals';
 import {
   EASYCREDIT_BASE_API_URL,
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_PARTNER_BASE_API_URL,
   EASYCREDIT_REFUND_BOOKING_TYPE,
-  EASYCREDIT_REFUND_STATUS_DONE,
-  EASYCREDIT_REFUND_STATUS_FAILED,
   LIBRARY_NAME,
   LIBRARY_VERSION,
   VERSION_STRING,
@@ -42,13 +42,13 @@ describe('Test constant.utils.ts', () => {
     expect(EASYCREDIT_REFUND_BOOKING_TYPE).toBe('RefundBooking');
   });
 
-  test('should return the correct {EASYCREDIT_REFUND_STATUS_DONE} constant', () => {
-    expect(EASYCREDIT_REFUND_STATUS_DONE).toBeDefined();
-    expect(EASYCREDIT_REFUND_STATUS_DONE).toBe('DONE');
+  test('should return the correct {EASYCREDIT_BOOKING_STATUS_DONE} constant', () => {
+    expect(EASYCREDIT_BOOKING_STATUS_DONE).toBeDefined();
+    expect(EASYCREDIT_BOOKING_STATUS_DONE).toBe('DONE');
   });
 
-  test('should return the correct {EASYCREDIT_REFUND_STATUS_FAILED} constant', () => {
-    expect(EASYCREDIT_REFUND_STATUS_FAILED).toBeDefined();
-    expect(EASYCREDIT_REFUND_STATUS_FAILED).toBe('FAILED');
+  test('should return the correct {EASYCREDIT_BOOKING_STATUS_FAILED} constant', () => {
+    expect(EASYCREDIT_BOOKING_STATUS_FAILED).toBeDefined();
+    expect(EASYCREDIT_BOOKING_STATUS_FAILED).toBe('FAILED');
   });
 });

@@ -363,7 +363,21 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(204);
       expect(response.body).toBe('');
-      expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId);
+      expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId, undefined);
+    });
+
+    it('should pass waitForAuthorization to the handler', async () => {
+      (handleAuthorizeECPayment as jest.Mock).mockResolvedValue(undefined as never);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/authorize',
+        payload: { waitForAuthorization: true },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(handleAuthorizeECPayment).toHaveBeenCalledWith('payment123', true);
     });
 
     it('should declare a 504 response schema on the authorize route', () => {
@@ -417,6 +431,59 @@ describe('paymentsRoute', () => {
       expect(response.body).toBe('');
       expect(handleCapturePayment).toHaveBeenCalledWith(paymentId, mockRequest.trackingNumber);
     });
+
+    it('should reject a tracking number longer than 50 characters', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: { trackingNumber: 'x'.repeat(51) },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(handleCapturePayment).not.toHaveBeenCalled();
+    });
+
+    it('should pass the easyCredit capture error on instead of a 204', async () => {
+      (handleCapturePayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 'Booking not allowed', message: 'Booking not allowed', httpErrorStatus: 409 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: {},
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        message: 'Booking not allowed',
+        statusCode: 409,
+        errors: [{ code: 'Booking not allowed', message: 'Booking not allowed' }],
+      });
+    });
+
+    it('should keep the numeric code of a commercetools 404', async () => {
+      // The commercetools SDK reports the status as code, so no response schema may coerce it to a string.
+      (handleCapturePayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 404 as unknown as string, message: 'Payment not found', httpErrorStatus: 404 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: {},
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        message: 'Payment not found',
+        statusCode: 404,
+        errors: [{ code: 404, message: 'Payment not found' }],
+      });
+    });
   });
 
   describe('POST /payments/:paymentId/refund', () => {
@@ -443,6 +510,26 @@ describe('paymentsRoute', () => {
       expect(response.statusCode).toBe(202);
       expect(response.json()).toStrictEqual(mockPayment);
       expect(handleRefundPayment).toHaveBeenCalledWith(paymentId, mockRequest.amount);
+    });
+
+    it('should pass an error raised before the easyCredit refund on instead of a 202', async () => {
+      (handleRefundPayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 'ConcurrentModification', message: 'Version mismatch', httpErrorStatus: 409 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/refund',
+        payload: { amount: 2 },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        message: 'Version mismatch',
+        statusCode: 409,
+        errors: [{ code: 'ConcurrentModification', message: 'Version mismatch' }],
+      });
     });
   });
 });

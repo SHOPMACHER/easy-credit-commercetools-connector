@@ -113,7 +113,7 @@ Rules for rendering:
 
 - Render the interest only after the shopper returned from easyCredit, when the easyCredit `status` is `PREAUTHORIZED` or `AUTHORIZED`. While it is `OPEN`, easyCredit reports installment values even for a bill payment, so they are only a preview.
 - Render it only if the payment is an installment payment (`paymentType` is `INSTALLMENT_PAYMENT`) and `interest` is present. For `BILL_PAYMENT` the field is omitted, so show no interest line.
-- Read the `Authorization` custom fields only when `paymentMethodInfo.method` of the payment is `INSTALLMENT_PAYMENT` (or the legacy `easycredit`). The connector removes the fields on a switch to pay by invoice, but that write is best effort, so a stale value can remain until the next Get Payment, Authorize Payment or callback.
+- Read the `Authorization` custom fields only when `paymentMethodInfo.method` of the payment is not `BILL_PAYMENT` (installment payments have `easycredit`). The connector removes the fields on a switch to pay by invoice, but that write is best effort, so a stale value can remain until the next Get Payment, Authorize Payment or callback.
 - Show `totalValue` as the amount the shopper repays in total. It equals `orderValue + interest`. Do not derive it from the cart total, which excludes the interest.
 - Units differ: `interest`, `totalValue` and `orderValue` are decimal EUR amounts (`17.05`), while commercetools cart and order amounts are cent amounts (`1705`).
 - The custom fields only exist after the connector has read the easyCredit transaction (this call, [Authorize Payment](./AuthorizePayment.md) or the callback). A payment that never got that far, or a deployment that did not run the post-deploy script again, has none. Fall back to this call.
@@ -121,7 +121,7 @@ Rules for rendering:
 
 ```ts
 const method = payment.paymentMethodInfo.method;
-const isInstallment = method === 'INSTALLMENT_PAYMENT' || method === 'easycredit';
+const isInstallment = method !== 'BILL_PAYMENT';
 const authorization = payment.transactions.find((transaction) => transaction.type === 'Authorization');
 const fields = isInstallment ? authorization?.custom?.fields : undefined;
 const interest = fields?.easyCreditInterest;
@@ -132,7 +132,7 @@ const totalValue = fields?.easyCreditTotalValue;
 
 This is a `GET`, but it can write to commercetools. The rules are the ones of [Authorize Payment](./AuthorizePayment.md#sync-the-final-payment-type). They only apply if the easyCredit status is `PREAUTHORIZED` or `AUTHORIZED` and the CT transaction is not `Failure`; otherwise the call changes nothing.
 
-- If the final type differs from the stored one, `paymentMethodInfo.method` and `paymentMethodInfo.name` of the CT payment are updated (`INSTALLMENT_PAYMENT` with `easyCredit Ratenkauf`, `BILL_PAYMENT` with `easyCredit Rechnung`).
+- If the final type differs from the stored one, `paymentMethodInfo.method` and `paymentMethodInfo.name` of the CT payment are updated (`easycredit` with `easyCredit Ratenkauf` for installment, `BILL_PAYMENT` with `easyCredit Rechnung`).
 - If the shopper switched while the easyCredit status is `PREAUTHORIZED` and the CT transaction is `Initial`, the cart is validated for the final type first. If a deterministic rule fails (for example `BILL_PAYMENT_ENABLED` is not `1`, the cart total is outside the limits, the cart has excluded items or the customer is a company), the CT transaction is set to `Failure`, the cart is unfrozen and the call returns the validation error (`400`, see [Create Payment](./CreatePayment.md#error-response-400)). Other errors (for example `503`) are returned and leave the transaction untouched.
 - For installment payments `easyCreditInterest` and `easyCreditTotalValue` are written on the transaction when they differ from the stored values. A switch to pay by invoice removes them. Deployments that did not run the post-deploy script again lack these fields: the write then fails with a logged warning and the response is not affected.
 - If easyCredit sends no payment type for a `BILL_PAYMENT` payment, the call fails with `502 PaymentTypeUnknown` and writes nothing, but only while the easyCredit status is `PREAUTHORIZED` and the CT transaction is `Initial`, the state in which the payment can still be authorized. In every other state the stored type is kept, the error is logged, the interest fields are recorded for the stored type and the call succeeds. A value that is not `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` is treated the same way as an absent type.

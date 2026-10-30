@@ -507,6 +507,36 @@ describe('webshop.service', () => {
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+      ['an invalid webshop info', { ...webshopInfo, installmentPaymentActive: 'yes' }],
+      ['a non-JSON body', undefined],
+    ])('should offer installment with the default limits after %s', async (_, response) => {
+      if (response) {
+        getWebshopInfoMock.mockResolvedValue(response);
+      } else {
+        getWebshopInfoMock.mockRejectedValue(new SyntaxError('Unexpected token < in JSON'));
+      }
+
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual({
+        INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: false, available: false },
+      });
+    });
+
+    it('should not override a disabled installment after an invalid response', async () => {
+      jest.useFakeTimers({ now: 0 });
+      getWebshopInfoMock.mockResolvedValueOnce({ ...webshopInfo, installmentPaymentActive: false });
+      await getPaymentTypesAvailability(500);
+
+      getWebshopInfoMock.mockResolvedValue({ ...webshopInfo, installmentPaymentActive: 'yes' });
+      jest.setSystemTime(300001);
+
+      await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({
+        code: 'EasyCreditUnavailable',
+        httpErrorStatus: 503,
+      });
+    });
+
     it.each<[keyof ECWebshopInfo, boolean]>([
       ['availability', false],
       ['availability', true],

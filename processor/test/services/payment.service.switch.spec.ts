@@ -35,6 +35,8 @@ const setBillPaymentEnabled = (value: '0' | '1') => {
 const PAYMENT_ID = 'payment-1';
 const INSTALLMENT = 'INSTALLMENT_PAYMENT';
 const BILL = 'BILL_PAYMENT';
+// Installment payments keep the method of earlier releases.
+const INSTALLMENT_METHOD = 'easycredit';
 
 const buildPayment = (method: string, txState = 'Initial', storedFields: Record<string, number> = {}) => ({
   id: PAYMENT_ID,
@@ -63,7 +65,7 @@ const billActions = [
   { action: 'setMethodInfoName', name: { de: 'easyCredit Rechnung' } },
 ];
 const installmentActions = [
-  { action: 'setMethodInfoMethod', method: INSTALLMENT },
+  { action: 'setMethodInfoMethod', method: INSTALLMENT_METHOD },
   { action: 'setMethodInfoName', name: { de: 'easyCredit Ratenkauf' } },
 ];
 
@@ -134,7 +136,7 @@ describe('handleGetPayment payment type sync', () => {
     expect(result.paymentType).toBe(BILL);
   });
 
-  it('records INSTALLMENT_PAYMENT when easyCredit says installment and CT stores bill', async () => {
+  it('records the easycredit method when easyCredit says installment and CT stores bill', async () => {
     mock(getPaymentById).mockResolvedValue(buildPayment(BILL));
     client.getPayment.mockResolvedValue(ecPayment('AUTHORIZED', INSTALLMENT));
 
@@ -188,7 +190,7 @@ describe('handleGetPayment payment type sync', () => {
     },
   );
 
-  it('does not rewrite a legacy easycredit method when easyCredit says installment', async () => {
+  it('does not rewrite the easycredit method when easyCredit says installment', async () => {
     mock(getPaymentById).mockResolvedValue(buildPayment('easycredit'));
     client.getPayment.mockResolvedValue(ecPayment('AUTHORIZED', INSTALLMENT));
 
@@ -951,7 +953,7 @@ describe('handleCreatePayment discarding stale attempts', () => {
   const installmentCart = (ids: string[]) =>
     staleCart(ids, { totalPrice: { centAmount: INSTALLMENT_CENTS, currencyCode: 'EUR', fractionDigits: 2 } });
 
-  const stale = (id: string, txState: string, method = INSTALLMENT, paymentInterface = 'easycredit') => ({
+  const stale = (id: string, txState: string, method = INSTALLMENT_METHOD, paymentInterface = 'easycredit') => ({
     ...buildPayment(method, txState),
     id,
     paymentMethodInfo: { paymentInterface, method },
@@ -960,9 +962,12 @@ describe('handleCreatePayment discarding stale attempts', () => {
     mock(getPaymentById).mockImplementation(async (id: string) => payments.find((payment) => payment.id === id));
 
   const create = (type: string) => handleCreatePayment('cart-1', redirectLinks, customer, type as any);
+  const removeActions = (...ids: string[]) =>
+    ids.map((id) => ({ action: 'removePayment', payment: { typeId: 'payment', id } }));
+  // staleCart is frozen with HardFreeze, and the re-freeze keeps the cart's own strategy.
   const discardActions = (...ids: string[]) => [
     { action: 'unfreezeCart' },
-    ...ids.map((id) => ({ action: 'removePayment', payment: { typeId: 'payment', id } })),
+    ...removeActions(...ids),
     { action: 'freezeCart', strategy: 'HardFreeze' },
   ];
   const addPaymentActions = [{ action: 'addPayment', payment: { typeId: 'payment', id: 'new-1' } }];
@@ -1004,7 +1009,7 @@ describe('handleCreatePayment discarding stale attempts', () => {
   it('installment to bill: an Initial attempt is failed and removed in one cart update, a new payment is created', async () => {
     const cart = staleCart([OLD]);
     mock(getCartById).mockResolvedValue(cart);
-    givenPayments(stale(OLD, 'Initial', INSTALLMENT));
+    givenPayments(stale(OLD, 'Initial', INSTALLMENT_METHOD));
 
     await create(BILL);
 
@@ -1031,15 +1036,35 @@ describe('handleCreatePayment discarding stale attempts', () => {
     expect(createPayment).toHaveBeenCalledTimes(1);
   });
 
-  it('skips the unfreeze action when the cart is not frozen', async () => {
+  it('only removes the stale attempts when the cart is not frozen, and freezes it afterwards', async () => {
     const cart = staleCart([OLD], { cartState: 'Active', freezeStrategy: undefined });
     mock(getCartById).mockResolvedValue(cart);
     givenPayments(stale(OLD, 'Initial'));
 
     await create(BILL);
 
-    expect(updateCart).toHaveBeenNthCalledWith(1, cart, discardActions(OLD).slice(1));
+    expect(updateCart).toHaveBeenNthCalledWith(1, cart, removeActions(OLD));
+    expect(updateCart).toHaveBeenNthCalledWith(2, cart, [{ action: 'freezeCart' }]);
   });
+
+  it.each(['SoftFreeze', 'HardFreeze', undefined])(
+    're-freezes a cart frozen with %s with its own strategy, and does not freeze it again',
+    async (freezeStrategy) => {
+      const cart = staleCart([OLD], { freezeStrategy });
+      mock(getCartById).mockResolvedValue(cart);
+      givenPayments(stale(OLD, 'Initial'));
+
+      await create(BILL);
+
+      expect(updateCart).toHaveBeenCalledTimes(2);
+      expect(updateCart).toHaveBeenNthCalledWith(1, cart, [
+        { action: 'unfreezeCart' },
+        ...removeActions(OLD),
+        { action: 'freezeCart', strategy: freezeStrategy },
+      ]);
+      expect(updateCart).toHaveBeenNthCalledWith(2, cart, addPaymentActions);
+    },
+  );
 
   it('discards every stale attempt in one cart update', async () => {
     const cart = staleCart([OLD, 'old-2']);

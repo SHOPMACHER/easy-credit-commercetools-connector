@@ -274,13 +274,18 @@ export type ECGetMerchantTransactionResponse = {
   };
 };
 
+export type ECBookingMessage = {
+  messageDE: string;
+  messageEN: string;
+};
+
 export type ECBooking = {
   bookingType: string;
   uuid: string;
-  created: Date;
+  created: string;
   type: string;
   status: string;
-  message?: string;
+  message?: ECBookingMessage | null;
   amount?: number;
   bookingId?: string;
 };

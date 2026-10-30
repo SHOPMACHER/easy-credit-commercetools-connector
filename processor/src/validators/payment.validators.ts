@@ -3,7 +3,7 @@ import { compareAddress } from '../utils/commerceTools.utils';
 import { convertCentsToEur } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
 import {
-  getInitialRefundTransaction,
+  getAddedTransaction,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
@@ -272,8 +272,8 @@ export const validateTransaction = (payment: Payment) => {
   }
 };
 
-export const validateInitialRefundTransaction = (payment: Payment): Transaction => {
-  const transaction = getInitialRefundTransaction(payment);
+export const validateInitialRefundTransaction = (before: Payment, after: Payment): Transaction => {
+  const transaction = getAddedTransaction(before, after, CTTransactionType.Refund, CTTransactionState.Initial);
 
   if (!transaction) {
     throw new Errorx({

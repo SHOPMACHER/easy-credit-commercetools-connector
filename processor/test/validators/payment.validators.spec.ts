@@ -29,6 +29,7 @@ jest.mock('../../src/utils/app.utils', () => ({
 }));
 
 jest.mock('../../src/utils/payment.utils', () => ({
+  ...(jest.requireActual('../../src/utils/payment.utils') as object),
   getPendingTransaction: jest.fn(),
   getSuccessTransaction: jest.fn(),
   getTransaction: jest.fn(),

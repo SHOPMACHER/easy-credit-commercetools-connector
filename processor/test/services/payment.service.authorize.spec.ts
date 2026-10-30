@@ -223,7 +223,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
         client.getPayment.mockResolvedValue(ec(status));
 
         await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
-          code: 'TransactionNotAuthorized',
+          code: 'TransactionNotPreauthorized',
           httpErrorStatus: 400,
         });
 
@@ -236,7 +236,9 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
         setup({ cart: buildCart('Active') });
         client.getPayment.mockResolvedValue(ec('DECLINED'));
 
-        await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotAuthorized' });
+        await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
+          code: 'TransactionNotPreauthorized',
+        });
 
         expect(writes()).toEqual(['Failure']);
         expect(updateCart).not.toHaveBeenCalled();
@@ -247,22 +249,51 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
         client.getPayment.mockResolvedValue(ec('DECLINED'));
 
         await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
-          code: 'TransactionNotAuthorized',
+          code: 'TransactionNotPreauthorized',
           httpErrorStatus: 400,
         });
 
         expect(writes()).toEqual(['Failure']);
       });
+
+      it('returns without a new POST and without polling when Pending and PREAUTHORIZED', async () => {
+        setup({ state: 'Pending' });
+        client.getPayment.mockResolvedValue(ec('PREAUTHORIZED'));
+
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+
+        expect(err).toBeUndefined();
+        expect(client.getPayment).toHaveBeenCalledTimes(1);
+        expect(client.authorizePayment).not.toHaveBeenCalled();
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(ctState).toBe('Pending');
+      });
     });
 
     describe('initial authorization (Initial + PREAUTHORIZED)', () => {
-      it('checks the amount, POSTs once, writes Pending, then polls', async () => {
+      it('checks the amount, POSTs once, writes Pending and returns without polling', async () => {
+        client.getPayment.mockResolvedValue(ec('PREAUTHORIZED'));
+
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+
+        expect(err).toBeUndefined();
+        expect(client.getPayment).toHaveBeenCalledTimes(1);
+        expect(client.authorizePayment).toHaveBeenCalledTimes(1);
+        expect(client.authorizePayment).toHaveBeenCalledWith(TECH_ID, PAYMENT_ID, expect.any(AbortSignal));
+        expect(writes()).toEqual(['Pending']);
+        expect(mock(client.authorizePayment).mock.invocationCallOrder[0]).toBeLessThan(
+          mock(updatePayment).mock.invocationCallOrder[0],
+        );
+        expect(updateCart).not.toHaveBeenCalled();
+      });
+
+      it('checks the amount, POSTs once, writes Pending, then polls with waitForAuthorization', async () => {
         client.getPayment
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValue(ec('AUTHORIZED'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toBeUndefined();
         expect(client.authorizePayment).toHaveBeenCalledTimes(1);
@@ -367,14 +398,14 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           expect(divergenceLogs()).toHaveLength(0);
         });
 
-        it('treats a concurrent Pending write as success and keeps polling', async () => {
+        it('treats a concurrent Pending write as success and keeps polling with waitForAuthorization', async () => {
           client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockResolvedValue(ec('AUTHORIZED'));
           client.authorizePayment.mockImplementation(async () => {
             ctState = 'Pending'; // a concurrent authorize already wrote Pending
             return true;
           });
 
-          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
           expect(err).toBeUndefined();
           expect(writes()).toEqual(['Success']);
@@ -382,12 +413,12 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
         });
 
         it('does not log the discard on the normal path', async () => {
-          client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockResolvedValue(ec('AUTHORIZED'));
+          client.getPayment.mockResolvedValue(ec('PREAUTHORIZED'));
 
           const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
 
           expect(err).toBeUndefined();
-          expect(writes()).toEqual(['Pending', 'Success']);
+          expect(writes()).toEqual(['Pending']);
           expect(sentButDiscardedLogs()).toHaveLength(0);
         });
       });
@@ -497,7 +528,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValue(ec('AUTHORIZED', 90));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toMatchObject({ code: 'AmountMismatch', httpErrorStatus: 400 });
         expect(writes()).toEqual(['Pending', 'Failure']);
@@ -505,7 +536,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
       });
     });
 
-    describe('polling', () => {
+    describe('polling (waitForAuthorization)', () => {
       beforeEach(() => setup({ state: 'Pending' }));
 
       it('resumes polling without a new POST when Pending and PREAUTHORIZED', async () => {
@@ -514,7 +545,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValue(ec('AUTHORIZED'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toBeUndefined();
         expect(client.authorizePayment).not.toHaveBeenCalled();
@@ -527,7 +558,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValueOnce(ec('AUTHORIZED'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toBeUndefined();
         expect(client.getPayment).toHaveBeenCalledTimes(3);
@@ -540,9 +571,9 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockResolvedValueOnce(ec('PREAUTHORIZED'))
           .mockResolvedValue(ec(status));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
-        expect(err).toMatchObject({ code: 'TransactionNotAuthorized', httpErrorStatus: 400 });
+        expect(err).toMatchObject({ code: 'TransactionNotPreauthorized', httpErrorStatus: 400 });
         expect(writes()).toEqual(['Failure']);
         expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
       });
@@ -554,7 +585,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockRejectedValueOnce(new Errorx({ code: 'Boom', message: 'upstream 503', httpErrorStatus: 503 }))
           .mockResolvedValue(ec('AUTHORIZED'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toBeUndefined();
         expect(writes()).toEqual(['Success']);
@@ -574,7 +605,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           .mockRejectedValueOnce(failure)
           .mockResolvedValue(ec('AUTHORIZED'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toBeUndefined();
         expect(client.getPayment).toHaveBeenCalledTimes(3);
@@ -587,7 +618,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
           const permanent = new Errorx({ code: 'Permanent', message: 'nope', httpErrorStatus });
           client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockRejectedValue(permanent);
 
-          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID), 5000);
+          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true), 5000);
 
           expect(err).toBe(permanent);
           expect(client.getPayment).toHaveBeenCalledTimes(2);
@@ -606,7 +637,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
             .mockResolvedValueOnce(ec('PREAUTHORIZED'))
             .mockResolvedValueOnce(ec('AUTHORIZED'));
 
-          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+          const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
           expect(err).toBeUndefined();
           expect(client.getPayment.mock.calls[0]).toEqual([TECH_ID, expect.any(AbortSignal)]);
@@ -625,7 +656,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
         try {
           const start = Date.now();
           let settled = false;
-          const result = handleAuthorizeECPayment(PAYMENT_ID).then(
+          const result = handleAuthorizeECPayment(PAYMENT_ID, true).then(
             () => undefined,
             (e: unknown) => {
               settled = true;
@@ -654,7 +685,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
       it('times out with 504 when every poll errors, leaving the transaction Pending', async () => {
         client.getPayment.mockResolvedValueOnce(ec('PREAUTHORIZED')).mockRejectedValue(new Error('network down'));
 
-        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+        const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
         expect(err).toMatchObject({ code: 'AuthorizationTimeout', httpErrorStatus: 504 });
         expect(updatePayment).not.toHaveBeenCalled();
@@ -760,6 +791,62 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('payment type %s', (metho
 
       expect(writes()).toEqual(['Failure']);
       expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+    });
+
+    it('sets Success when the shop already ordered the cart after the 204', async () => {
+      setup({ state: 'Pending', cart: buildCart('Ordered') });
+      client.getPayment.mockResolvedValue(ec('AUTHORIZED'));
+
+      await handleAuthorizePayment(PAYMENT_ID);
+
+      expect(writes()).toEqual(['Success']);
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('fails with AmountMismatch when the ordered cart total differs', async () => {
+      setup({ state: 'Pending', cart: buildCart('Ordered', 12000) });
+      client.getPayment.mockResolvedValue(ec('AUTHORIZED'));
+
+      await expect(handleAuthorizePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'AmountMismatch' });
+
+      expect(writes()).toEqual(['Failure']);
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('sets Success when the cart is gone and transaction and easyCredit amounts agree', async () => {
+      setup({ state: 'Pending' });
+      mock(getCartByPaymentId).mockRejectedValue(
+        new Errorx({ code: 'CartNotFound', message: 'Cart not found.', httpErrorStatus: 404 }),
+      );
+      client.getPayment.mockResolvedValue(ec('AUTHORIZED'));
+
+      await handleAuthorizePayment(PAYMENT_ID);
+
+      expect(writes()).toEqual(['Success']);
+    });
+
+    it('fails with AmountMismatch when the cart is gone and the easyCredit amount differs', async () => {
+      setup({ state: 'Pending' });
+      mock(getCartByPaymentId).mockRejectedValue(
+        new Errorx({ code: 'CartNotFound', message: 'Cart not found.', httpErrorStatus: 404 }),
+      );
+      client.getPayment.mockResolvedValue(ec('AUTHORIZED', 90));
+
+      await expect(handleAuthorizePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'AmountMismatch' });
+
+      expect(writes()).toEqual(['Failure']);
+    });
+
+    it('keeps the transaction Pending when the cart lookup fails for another reason', async () => {
+      setup({ state: 'Pending' });
+      mock(getCartByPaymentId).mockRejectedValue(
+        new Errorx({ code: 'ServiceUnavailable', message: 'down', httpErrorStatus: 503 }),
+      );
+      client.getPayment.mockResolvedValue(ec('AUTHORIZED'));
+
+      await expect(handleAuthorizePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 503 });
+
+      expect(updatePayment).not.toHaveBeenCalled();
     });
 
     it.each(['DECLINED', 'EXPIRED'])('fails the transaction, unfreezes the cart and throws on %s', async (status) => {
@@ -882,7 +969,7 @@ describe('easyCredit AUTHORIZED but commercetools not Success (divergence log)',
       .mockResolvedValueOnce(ec('PREAUTHORIZED'))
       .mockResolvedValue(ec('AUTHORIZED', 90));
 
-    const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
+    const err = await settle(handleAuthorizeECPayment(PAYMENT_ID, true));
 
     expect(err).toMatchObject({ code: 'AmountMismatch' });
     expectDivergenceLogged();
@@ -919,7 +1006,7 @@ describe('easyCredit AUTHORIZED but commercetools not Success (divergence log)',
     setup({ state: 'Pending' });
     client.getPayment.mockResolvedValue(ec('DECLINED'));
 
-    await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotAuthorized' });
+    await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotPreauthorized' });
 
     expect(divergenceLogs()).toHaveLength(0);
   });
@@ -1131,30 +1218,25 @@ describe('payment type sync before authorizing', () => {
   describe('handleAuthorizeECPayment', () => {
     it('records a switched type before authorizing', async () => {
       setup({ method: BILL });
-      client.getPayment
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, INSTALLMENT))
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, INSTALLMENT))
-        .mockResolvedValue(ec('AUTHORIZED', 100, INSTALLMENT));
+      client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, INSTALLMENT));
 
       const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
 
       expect(err).toBeUndefined();
+      // Installment keeps the legacy method value.
       expect(mock(updatePayment).mock.calls[methodWriteIndex()][1][0]).toEqual({
         action: 'setMethodInfoMethod',
-        method: INSTALLMENT,
+        method: 'easycredit',
       });
       expect(mock(updatePayment).mock.invocationCallOrder[methodWriteIndex()]).toBeLessThan(
         mock(client.authorizePayment).mock.invocationCallOrder[0],
       );
-      expect(writes()).toEqual(['Pending', 'Success']);
+      expect(writes()).toEqual(['Pending']);
     });
 
     it('authorizes after switching from installment to a valid bill payment', async () => {
       setup({ method: INSTALLMENT });
-      client.getPayment
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, BILL))
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, BILL))
-        .mockResolvedValue(ec('AUTHORIZED', 100, BILL));
+      client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, BILL));
 
       const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
 
@@ -1167,7 +1249,7 @@ describe('payment type sync before authorizing', () => {
       expect(mock(updatePayment).mock.invocationCallOrder[methodWriteIndex()]).toBeLessThan(
         mock(client.authorizePayment).mock.invocationCallOrder[0],
       );
-      expect(writes()).toEqual(['Pending', 'Success']);
+      expect(writes()).toEqual(['Pending']);
     });
 
     it('sends no authorization request when the switched type fails validation', async () => {
@@ -1401,16 +1483,13 @@ describe('payment type sync before authorizing', () => {
 
     it('authorizes an installment payment as before when the addresses differ', async () => {
       setup({ method: INSTALLMENT, cart: billCart({ shippingAddress: { ...address, streetName: 'Anders' } }) });
-      client.getPayment
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, INSTALLMENT))
-        .mockResolvedValueOnce(ec('PREAUTHORIZED', 100, INSTALLMENT))
-        .mockResolvedValue(ec('AUTHORIZED', 100, INSTALLMENT));
+      client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, INSTALLMENT));
 
       const err = await settle(handleAuthorizeECPayment(PAYMENT_ID));
 
       expect(err).toBeUndefined();
       expect(client.authorizePayment).toHaveBeenCalledTimes(1);
-      expect(writes()).toEqual(['Pending', 'Success']);
+      expect(writes()).toEqual(['Pending']);
     });
 
     it('reads the cart once on the way to the authorization request', async () => {
