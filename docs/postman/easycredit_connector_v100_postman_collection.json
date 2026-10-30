@@ -483,7 +483,7 @@
 				{
 					"name": "Create EasyCredit transaction (payment)",
 					"request": {
-						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop, and is only offered to private persons. The type is stored on the CT payment as paymentMethodInfo.method with a German paymentMethodInfo.name, and the cart is frozen with HardFreeze. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), BillPaymentExcludedItems (BILL_PAYMENT with a voucher or another excluded cart item), BillPaymentCheckFailed (503, BILL_PAYMENT while the excluded product types cannot be loaded), InvalidAddress (incomplete billing address), CorporateCustomerNotAllowed (BILL_PAYMENT only), plus the address and currency codes. See docs/CreatePayment.md.",
+						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop, and is only offered to private persons. The CT payment gets paymentMethodInfo.method easycredit for installment (as in earlier versions) or BILL_PAYMENT, with a German paymentMethodInfo.name. A cart that is not frozen yet is frozen with the default strategy (SoftFreeze); a cart that is already frozen keeps its strategy. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), BillPaymentExcludedItems (BILL_PAYMENT with a voucher or another excluded cart item), BillPaymentCheckFailed (503, BILL_PAYMENT while the excluded product types cannot be loaded), InvalidAddress (incomplete billing address), CorporateCustomerNotAllowed (BILL_PAYMENT only), plus the address and currency codes. See docs/CreatePayment.md.",
 						"method": "POST",
 						"header": [
 							{
@@ -640,7 +640,7 @@
 								"authorize"
 							]
 						},
-						"description": "Authorizes the easyCredit transaction of the payment and waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. 204 means the CT transaction is Success and is the only signal to create the order. Errors: TransactionNotPreauthorized (400), TransactionNotAuthorized (400, DECLINED or EXPIRED, cart unfrozen), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). A permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
+						"description": "Authorizes the easyCredit transaction of the payment. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. By default the call returns 204 once the authorization request is sent: the CT transaction is then Pending and the easyCredit callback sets it to Success, as in earlier versions. With the optional body {\"waitForAuthorization\": true} the call waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED; 204 then means the CT transaction is Success and is the signal to create the order. Errors: TransactionNotPreauthorized (400, also for DECLINED or EXPIRED, then the transaction is Failure and the cart unfrozen), TransactionNotAuthorized (400, the attempt was failed concurrently after the request was sent), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). With waitForAuthorization, a permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
 					},
 					"response": [
 						{
@@ -709,6 +709,15 @@
 										"{{payment_id}}",
 										"authorize"
 									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"waitForAuthorization\": true\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
 								}
 							},
 							"status": "Gateway Timeout",
