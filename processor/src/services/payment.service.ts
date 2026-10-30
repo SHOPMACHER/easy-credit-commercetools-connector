@@ -44,6 +44,7 @@ import {
   getPaymentType,
   getSuccessTransaction,
   getTransaction,
+  toPaymentMethod,
 } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { ECOutcomeUnknownError } from '../client/easycredit.errors';
@@ -124,9 +125,12 @@ const assertPaymentTypeEnabled = (paymentType: ECTransactionPaymentType) => {
   }
 };
 
-const validateCartData = (cart: Cart, paymentType: ECTransactionPaymentType, ecConfig: { webShopId: string }) => {
-  const errors: Errorx[] = [];
-
+const collectCartDataErrors = (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType,
+  ecConfig: { webShopId: string },
+  errors: Errorx[],
+) => {
   validateAddresses(cart.billingAddress, getShippingAddress(cart), ecConfig, errors);
   validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
 
@@ -136,6 +140,12 @@ const validateCartData = (cart: Cart, paymentType: ECTransactionPaymentType, ecC
     validateShippingDestinations(cart.billingAddress, shippingDestinations, ecConfig, errors);
     validatePrivateCustomer(cart, shippingDestinations, ecConfig, errors);
   }
+};
+
+const validateCartData = (cart: Cart, paymentType: ECTransactionPaymentType, ecConfig: { webShopId: string }) => {
+  const errors: Errorx[] = [];
+
+  collectCartDataErrors(cart, paymentType, ecConfig, errors);
 
   if (errors.length > 0) {
     throw new MultiErrorx(errors);
@@ -194,18 +204,9 @@ export const handlePaymentMethod = async (
 };
 
 // Handle payment creation logic
-// HardFreeze keeps discounts and shipping fixed; a cart frozen softly must be unfrozen first.
-const hardFreezeCart = async (cart: Cart): Promise<Cart> => {
-  const isFrozen = cart.cartState === CTCartState.Frozen;
-  if (isFrozen && cart.freezeStrategy === 'HardFreeze') {
-    return cart;
-  }
-
-  return updateCart(cart, [
-    ...(isFrozen ? [{ action: 'unfreezeCart' as const }] : []),
-    { action: 'freezeCart', strategy: 'HardFreeze' },
-  ]);
-};
+// Default strategy, and a cart the shop froze keeps its own. A total changed afterwards fails the authorization with AmountMismatch.
+const freezeCart = async (cart: Cart): Promise<Cart> =>
+  cart.cartState === CTCartState.Frozen ? cart : updateCart(cart, [{ action: 'freezeCart' }]);
 
 // Without a transaction the payment is an orphan on the cart. Unfreeze first, as removePayment on a frozen cart is undocumented.
 const unfreezeAfterFailedCreate = async (cart: Cart, orphanPaymentId?: string): Promise<void> => {
@@ -240,10 +241,10 @@ export const handleCreatePayment = async (
     const { centAmount, currencyCode } = cart.totalPrice;
     const itemIds = getItemIds(cart);
 
-    // After validation, so a rejected request leaves the cart untouched. It re-freezes with HardFreeze, and the
-    // re-validation below covers an unfreeze that repriced the cart.
+    // After validation, so a rejected request leaves the cart untouched. The re-validation below covers an unfreeze
+    // that repriced the cart.
     cart = await discardStaleAttempts(cart);
-    cart = await hardFreezeCart(cart);
+    cart = await freezeCart(cart);
     shouldUnfreezeCart = true;
 
     // Freezing can reprice the cart or add a 0 € gift line item, so the checks above may no longer hold.
@@ -323,7 +324,7 @@ const paymentTypeUnknownError = () =>
   });
 
 const methodInfoActions = (paymentType: ECTransactionPaymentType): PaymentUpdateAction[] => [
-  { action: 'setMethodInfoMethod', method: paymentType },
+  { action: 'setMethodInfoMethod', method: toPaymentMethod(paymentType) },
   { action: 'setMethodInfoName', name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] } },
 ];
 
@@ -711,10 +712,12 @@ const discardStaleAttempts = async (cart: Cart): Promise<Cart> => {
     }
   }
 
+  const isFrozen = cart.cartState === CTCartState.Frozen;
+
   return updateCart(cart, [
-    ...(cart.cartState === CTCartState.Frozen ? [{ action: 'unfreezeCart' as const }] : []),
+    ...(isFrozen ? [{ action: 'unfreezeCart' as const }] : []),
     ...discarded.map((id) => ({ action: 'removePayment' as const, payment: { typeId: 'payment' as const, id } })),
-    { action: 'freezeCart', strategy: 'HardFreeze' },
+    ...(isFrozen ? [{ action: 'freezeCart' as const, strategy: cart.freezeStrategy }] : []),
   ]);
 };
 
@@ -742,18 +745,35 @@ const logLateAuthorization = async (paymentId: string, technicalTransactionId: s
   }
 };
 
-// The cart must still be frozen and cart, transaction and easyCredit amounts must agree. Returns the cart it read.
-// With expectedFrom, only a transaction that is still in that state is failed.
+const getEcCents = (ecPayment: ECGetPaymentResponse): number | undefined => {
+  const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
+  return ecValue === undefined ? undefined : eurToCents(ecValue);
+};
+
+const failWithAmountMismatch = async (
+  paymentId: string,
+  detail: string,
+  expectedFrom?: CTTransactionState,
+): Promise<never> => {
+  await failTransaction(paymentId, expectedFrom);
+  throw new Errorx({
+    code: 'AmountMismatch',
+    message: 'Der Warenkorb wurde nach der Zahlungsfreigabe geaendert. Die Zahlung wurde abgebrochen.',
+    httpErrorStatus: 400,
+    privateMessage: `AmountMismatch: ${detail}`,
+  });
+};
+
+// Before the authorization request: the cart must still be frozen and cart, transaction and easyCredit amounts must
+// agree. Returns the cart it read. With expectedFrom, only a transaction that is still in that state is failed.
 const assertAmountMatches = async (
   paymentId: string,
   ecPayment: ECGetPaymentResponse,
   expectedFrom?: CTTransactionState,
 ): Promise<Cart> => {
   const cart = await getCartByPaymentId(paymentId);
-  const payment = await getPaymentById(paymentId);
-  const transaction = getTransaction(payment) as Transaction;
-  const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
-  const ecCents = ecValue === undefined ? undefined : eurToCents(ecValue);
+  const transaction = getTransaction(await getPaymentById(paymentId)) as Transaction;
+  const ecCents = getEcCents(ecPayment);
 
   if (
     cart.cartState !== CTCartState.Frozen ||
@@ -761,16 +781,39 @@ const assertAmountMatches = async (
     cart.totalPrice.centAmount !== transaction.amount.centAmount ||
     cart.totalPrice.centAmount !== ecCents
   ) {
-    await failTransaction(paymentId, expectedFrom);
-    throw new Errorx({
-      code: 'AmountMismatch',
-      message: 'Der Warenkorb wurde nach der Zahlungsfreigabe geaendert. Die Zahlung wurde abgebrochen.',
-      httpErrorStatus: 400,
-      privateMessage: `AmountMismatch: cart ${cart.cartState} ${cart.totalPrice.centAmount}, transaction ${transaction.amount.centAmount}, easyCredit ${ecCents}`,
-    });
+    await failWithAmountMismatch(
+      paymentId,
+      `cart ${cart.cartState} ${cart.totalPrice.centAmount}, transaction ${transaction.amount.centAmount}, easyCredit ${ecCents}`,
+      expectedFrom,
+    );
   }
 
   return cart;
+};
+
+// Once easyCredit authorized, the default mode has already answered 204: the shop may have ordered or deleted the cart.
+// A deleted cart leaves transaction against easyCredit, which the pre-request check tied to the frozen cart.
+const assertAuthorizedAmountMatches = async (paymentId: string, ecPayment: ECGetPaymentResponse): Promise<void> => {
+  const cart = await getCartByPaymentId(paymentId).catch((error: unknown) => {
+    if ((error as Partial<Errorx>)?.code === 'CartNotFound') {
+      return undefined;
+    }
+    throw error;
+  });
+  const transaction = getTransaction(await getPaymentById(paymentId)) as Transaction;
+  const ecCents = getEcCents(ecPayment);
+  const cartMatches =
+    !cart ||
+    ((cart.cartState === CTCartState.Frozen || cart.cartState === CTCartState.Ordered) &&
+      cart.totalPrice.centAmount === transaction.amount.centAmount);
+
+  if (!cartMatches || ecCents === undefined || transaction.amount.centAmount !== ecCents) {
+    const cartDetail = cart ? `${cart.cartState} ${cart.totalPrice.centAmount}` : 'missing';
+    await failWithAmountMismatch(
+      paymentId,
+      `cart ${cartDetail}, transaction ${transaction.amount.centAmount}, easyCredit ${ecCents}`,
+    );
+  }
 };
 
 // A frozen cart still accepts address and company updates, so the bill rules can break after init.
@@ -800,7 +843,7 @@ const finalizeSuccess = async (
     if (current.state === CTTransactionState.Success) {
       return;
     }
-    await assertAmountMatches(paymentId, ecPayment);
+    await assertAuthorizedAmountMatches(paymentId, ecPayment);
     if (!(await setTransactionState(paymentId, CTTransactionState.Success))) {
       throw notAuthorizedError();
     }
@@ -847,7 +890,7 @@ const pollUntilAuthorized = async (paymentId: string, technicalTransactionId: st
     }
     if (ecPayment && AUTHORIZATION_DECLINED_STATUSES.includes(ecPayment.status)) {
       await failTransaction(paymentId);
-      throw notAuthorizedError();
+      throw notPreauthorizedError();
     }
     await new Promise((resolve) =>
       setTimeout(resolve, Math.min(EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS, deadline - Date.now())),
@@ -873,7 +916,7 @@ const requestAuthorization = async (
   }
   await initEasyCreditClient().authorizePayment(technicalTransactionId, paymentId, AbortSignal.timeout(remaining));
   // The request is out, but the transaction was Initial until now: a concurrent create or switch may have discarded
-  // it. A fast callback may have written Success already; the poll below then finishes at once.
+  // it. A fast callback may have written Success already, which a waiting caller's poll then sees at once.
   if (!(await setTransactionState(paymentId, CTTransactionState.Pending, CTTransactionState.Initial))) {
     const currentState = getTransaction(await getPaymentById(paymentId))?.state;
     if (currentState !== CTTransactionState.Success) {
@@ -886,7 +929,8 @@ const requestAuthorization = async (
   }
 };
 
-export const handleAuthorizeECPayment = async (paymentId: string): Promise<void> => {
+// Without waitForAuthorization it answers once the request is sent, and the easyCredit callback sets Success.
+export const handleAuthorizeECPayment = async (paymentId: string, waitForAuthorization = false): Promise<void> => {
   try {
     const deadline = Date.now() + EASYCREDIT_AUTHORIZATION_TIMEOUT_MS;
     const payment = await getPaymentById(paymentId);
@@ -918,7 +962,7 @@ export const handleAuthorizeECPayment = async (paymentId: string): Promise<void>
     }
     if (AUTHORIZATION_DECLINED_STATUSES.includes(ecPayment.status)) {
       await failTransaction(paymentId);
-      throw notAuthorizedError();
+      throw notPreauthorizedError();
     }
     if (ecPayment.status !== ECTransactionStatus.PREAUTHORIZED) {
       throw notPreauthorizedError();
@@ -930,7 +974,9 @@ export const handleAuthorizeECPayment = async (paymentId: string): Promise<void>
       await requestAuthorization(paymentId, technicalTransactionId, ecPayment, paymentType, deadline);
     }
 
-    await pollUntilAuthorized(paymentId, technicalTransactionId, deadline);
+    if (waitForAuthorization) {
+      await pollUntilAuthorized(paymentId, technicalTransactionId, deadline);
+    }
   } catch (error: unknown) {
     log.error('Error in authorizing EasyCredit Payment', error);
     throw error;
@@ -1090,16 +1136,21 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
   }
 };
 
-// The caller's token was already accepted, so a 401 or 403 here means easyCredit or commercetools rejected the connector's credentials.
-const toUpstreamAuthError = (error: unknown): unknown =>
-  error instanceof Errorx && (error.httpErrorStatus === 401 || error.httpErrorStatus === 403)
-    ? new Errorx({
-        code: 'UpstreamAuthenticationFailed',
-        message: 'A service behind the connector rejected its credentials',
-        httpErrorStatus: 502,
-        cause: error,
-      })
-    : error;
+// Nothing was sent to easyCredit yet, so a network error or timeout of the status read is a plain gateway error, not a 500.
+const toCaptureLookupError = (error: unknown): unknown => {
+  if (error instanceof Errorx) {
+    return error;
+  }
+  // DOMException is not always an Error instance across realms, so match on the name only.
+  const name = (error as { name?: string } | null)?.name;
+  const timedOut = name === 'AbortError' || name === 'TimeoutError';
+  return new Errorx({
+    code: 'CaptureFailed',
+    message: 'Capture failed',
+    httpErrorStatus: timedOut ? 504 : 502,
+    cause: error,
+  });
+};
 
 const MAX_STATE_UPDATE_ATTEMPTS = 3;
 
@@ -1154,123 +1205,117 @@ const addPendingCharge = async (payment: Payment, authorization: Transaction): P
 };
 
 export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
-  try {
-    const payment = await getPaymentById(paymentId);
+  const payment = await getPaymentById(paymentId);
 
-    validatePayment(payment);
-    validateSuccessTransaction(payment);
+  validatePayment(payment);
+  validateSuccessTransaction(payment);
 
-    // A repeated request, for example a shipping event sent twice, succeeds without capturing again.
-    if (getActiveCaptureTransaction(payment)) {
-      log.info('Payment already captured, capture request ignored', { paymentId });
-      return;
-    }
-
-    const transaction = getSuccessTransaction(payment) as Transaction;
-    const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
-
-    const easyCreditTransaction = await initEasyCreditClient().getPayment(
-      ecTechnicalTransactionId,
-      AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS),
-    );
-
-    if (easyCreditTransaction.status !== ECTransactionStatus.AUTHORIZED) {
-      throw new Errorx({
-        code: 'TransactionIsNotAuthorized',
-        message: 'You are not allow to capture a payment without Easy Credit AUTHORIZED transaction.',
-        httpErrorStatus: 400,
-      });
-    }
-
-    // Added before easyCredit is called, so an early notification finds the Charge and a parallel capture hits the version lock.
-    const chargedPayment = await addPendingCharge(payment, transaction);
-    if (!chargedPayment) {
-      return;
-    }
-    const charge = getAddedTransaction(
-      payment,
-      chargedPayment,
-      CTTransactionType.Charge,
-      CTTransactionState.Pending,
-    ) as Transaction;
-
-    try {
-      await initEasyCreditClient().capturePayment(
-        easyCreditTransaction.decision.transactionId,
-        paymentId,
-        trackingNumber,
-      );
-    } catch (error) {
-      // easyCredit captures a transaction only once, so a retry after Failure is safe even if it received this request.
-      await markTransactionAsFailed(chargedPayment, charge);
-      throw error;
-    }
-
-    log.info('Capture payment initiated successfully', { paymentId });
-  } catch (error) {
-    throw toUpstreamAuthError(error);
+  // A repeated request, for example a shipping event sent twice, succeeds without capturing again.
+  if (getActiveCaptureTransaction(payment)) {
+    log.info('Payment already captured, capture request ignored', { paymentId });
+    return;
   }
+
+  const transaction = getSuccessTransaction(payment) as Transaction;
+  const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
+
+  const easyCreditTransaction = await initEasyCreditClient()
+    .getPayment(ecTechnicalTransactionId, AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS))
+    .catch((error: unknown) => {
+      throw toCaptureLookupError(error);
+    });
+
+  if (easyCreditTransaction.status !== ECTransactionStatus.AUTHORIZED) {
+    throw new Errorx({
+      code: 'TransactionIsNotAuthorized',
+      message: 'You are not allow to capture a payment without Easy Credit AUTHORIZED transaction.',
+      httpErrorStatus: 400,
+    });
+  }
+
+  // Added before easyCredit is called, so an early notification finds the Charge and a parallel capture hits the version lock.
+  const chargedPayment = await addPendingCharge(payment, transaction);
+  if (!chargedPayment) {
+    return;
+  }
+  const charge = getAddedTransaction(
+    payment,
+    chargedPayment,
+    CTTransactionType.Charge,
+    CTTransactionState.Pending,
+  ) as Transaction;
+
+  try {
+    await initEasyCreditClient().capturePayment(
+      easyCreditTransaction.decision.transactionId,
+      paymentId,
+      trackingNumber,
+    );
+  } catch (error) {
+    // easyCredit captures a transaction only once, so a retry after Failure is safe even if it received this request.
+    await markTransactionAsFailed(chargedPayment, charge);
+    throw error;
+  }
+
+  log.info('Capture payment initiated successfully', { paymentId });
 };
 
+// The response is 202 with the payment either way; the refund transaction state carries the outcome.
 export const handleRefundPayment = async (paymentId: string, refundAmount: number): Promise<Payment> => {
+  const payment = await getPaymentById(paymentId);
+
+  validatePaymentAmount(payment, refundAmount);
+  validatePayment(payment);
+  validateSuccessTransaction(payment);
+
+  const ecTransactionId = getSuccessTransaction(payment)?.interactionId as string;
+
+  const updatedCTPayment = await updatePayment(payment, [
+    {
+      action: 'addTransaction',
+      transaction: {
+        type: CTTransactionType.Refund,
+        state: CTTransactionState.Initial,
+        amount: mapAmountToCTTransactionAmount(refundAmount),
+      },
+    },
+  ]);
+
+  const initialRefundTransaction = validateInitialRefundTransaction(payment, updatedCTPayment);
+
+  const refundPayload: ECRefundPayload = {
+    value: refundAmount,
+    bookingId: initialRefundTransaction.id,
+  };
+
+  let state = CTTransactionState.Pending;
   try {
-    const payment = await getPaymentById(paymentId);
-
-    validatePaymentAmount(payment, refundAmount);
-    validatePayment(payment);
-    validateSuccessTransaction(payment);
-
-    const ecTransactionId = getSuccessTransaction(payment)?.interactionId as string;
-
-    const updatedCTPayment = await updatePayment(payment, [
-      {
-        action: 'addTransaction',
-        transaction: {
-          type: CTTransactionType.Refund,
-          state: CTTransactionState.Initial,
-          amount: mapAmountToCTTransactionAmount(refundAmount),
-        },
-      },
-    ]);
-
-    const initialRefundTransaction = validateInitialRefundTransaction(payment, updatedCTPayment);
-
-    const refundPayload: ECRefundPayload = {
-      value: refundAmount,
-      bookingId: initialRefundTransaction.id,
-    };
-
-    try {
-      await initEasyCreditClient().refundPayment(ecTransactionId, refundPayload);
-    } catch (error) {
-      if (error instanceof ECOutcomeUnknownError) {
-        // easyCredit may still book the refund, so it stays open for the notification instead of inviting a second one.
-        await changeTransactionState(updatedCTPayment, initialRefundTransaction, CTTransactionState.Pending).catch(
-          (updateError) =>
-            log.error('Failed to mark refund transaction as pending', {
-              paymentId,
-              transactionId: initialRefundTransaction.id,
-              error: updateError,
-            }),
-        );
-      } else {
-        await markTransactionAsFailed(updatedCTPayment, initialRefundTransaction);
-      }
-      throw error;
-    }
-
-    // easyCredit accepted the refund, so an error here must not invite a second one; the notification also completes an Initial refund.
-    return await changeTransactionState(updatedCTPayment, initialRefundTransaction, CTTransactionState.Pending).catch(
-      (updateError) => {
-        log.error('Refund accepted by easyCredit, but its Pending state was not saved', {
-          paymentId,
-          transactionId: initialRefundTransaction.id,
-          error: updateError,
-        });
-        return updatedCTPayment;
-      },
-    );
+    await initEasyCreditClient().refundPayment(ecTransactionId, refundPayload);
   } catch (error) {
-    throw toUpstreamAuthError(error);
+    // easyCredit may still book a refund with an unknown outcome, so it stays open for the notification.
+    if (!(error instanceof ECOutcomeUnknownError)) {
+      state = CTTransactionState.Failure;
+    }
+    log.error('easyCredit did not accept the refund', {
+      paymentId,
+      transactionId: initialRefundTransaction.id,
+      state,
+      error,
+    });
+  }
+
+  try {
+    return await changeTransactionState(updatedCTPayment, initialRefundTransaction, state);
+  } catch (updateError) {
+    // Nothing was booked for a failed refund, so the caller may retry; an open one must not invite a second refund.
+    if (state === CTTransactionState.Failure) {
+      throw updateError;
+    }
+    log.error('The refund is open at easyCredit, but its Pending state was not saved', {
+      paymentId,
+      transactionId: initialRefundTransaction.id,
+      error: updateError,
+    });
+    return updatedCTPayment;
   }
 };

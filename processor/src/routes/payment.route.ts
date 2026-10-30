@@ -147,8 +147,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { paymentId } = request.params;
+      const { waitForAuthorization } = request.body ?? {};
 
-      await handleAuthorizeECPayment(paymentId);
+      await handleAuthorizeECPayment(paymentId, waitForAuthorization);
 
       reply.code(204).send();
     },
@@ -167,10 +168,6 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         response: {
           204: CapturePaymentResponseSchema,
           400: ErrorResponse,
-          404: ErrorResponse,
-          409: ErrorResponse,
-          502: ErrorResponse,
-          504: ErrorResponse,
         },
       },
     },
@@ -197,10 +194,6 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         response: {
           202: RefundPaymentResponseSchema,
           400: ErrorResponse,
-          404: ErrorResponse,
-          409: ErrorResponse,
-          502: ErrorResponse,
-          504: ErrorResponse,
         },
       },
     },

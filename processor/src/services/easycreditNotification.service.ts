@@ -25,9 +25,12 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
     validateECTransactionId(resourceId);
     const ecTransaction = await initEasyCreditClient().getMerchantTransaction(resourceId);
 
-    // Both update the same payment; in parallel the second write fails on the version.
-    await handleRefundNotifications(ecTransaction);
+    // Both update the same payment, so they run one after the other; a failed refund update must not block the capture.
+    const [refunds] = await Promise.allSettled([handleRefundNotifications(ecTransaction)]);
     await handleCaptureNotifications(ecTransaction, resourceId);
+    if (refunds.status === 'rejected') {
+      throw refunds.reason;
+    }
   } catch (error: unknown) {
     log.error('Error in handling EasyCredit notification', { resourceId, error });
     throw error;

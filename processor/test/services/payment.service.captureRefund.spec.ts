@@ -192,16 +192,42 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       ]);
     });
 
-    it.each([401, 403])('answers 502 when easyCredit rejects the connector credentials with %s', async (status) => {
+    it.each([
+      ['a timeout', new DOMException('aborted', 'TimeoutError'), 504],
+      ['a network error', new TypeError('fetch failed'), 502],
+    ])('answers %s of the status read with CaptureFailed and adds no Charge', async (_name, error, status) => {
+      mock(getPaymentById).mockResolvedValue(buildPayment(method));
+      client.getPayment.mockRejectedValue(error);
+
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
+        code: 'CaptureFailed',
+        httpErrorStatus: status,
+        cause: error,
+      });
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(client.capturePayment).not.toHaveBeenCalled();
+    });
+
+    it.each([401, 403])('passes a %s of the status read on and adds no Charge', async (status) => {
       const authError = new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: status });
       mock(getPaymentById).mockResolvedValue(buildPayment(method));
       client.getPayment.mockRejectedValue(authError);
 
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
-        code: 'UpstreamAuthenticationFailed',
-        httpErrorStatus: 502,
-        cause: authError,
-      });
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(authError);
+      expect(updatePayment).not.toHaveBeenCalled();
+    });
+
+    it.each([401, 403])('sets the Charge to Failure and passes a %s of the capture on', async (status) => {
+      const authError = new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: status });
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      addOnUpdate(payment, 'charge-new');
+      client.capturePayment.mockRejectedValue(authError);
+
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(authError);
+      expect(updateActions()[1]).toEqual([
+        { action: 'changeTransactionState', transactionId: 'charge-new', state: 'Failure' },
+      ]);
     });
 
     it('allows a new capture after a failed one', async () => {
@@ -257,47 +283,84 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       expect(client.refundPayment).toHaveBeenCalledWith(EC_TX_ID, { value: 10, bookingId: 'refund-new' });
     });
 
-    it('TEBA-223: sets the refund to Failure and passes the easyCredit error on', async () => {
+    it('TEBA-223: sets the refund to Failure and answers with the payment when easyCredit rejects it', async () => {
       const payment = buildPayment(method);
+      const failed = { ...payment, version: 5 };
       mock(getPaymentById).mockResolvedValue(payment);
-      addOnUpdate(payment, 'refund-new');
-      client.refundPayment.mockRejectedValue(ecError);
-
-      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toBe(ecError);
-      expect(updateActions()[1]).toEqual([
-        { action: 'changeTransactionState', transactionId: 'refund-new', state: 'Failure' },
-      ]);
-    });
-
-    it('keeps the easyCredit error when marking the refund as failed fails too', async () => {
-      const payment = buildPayment(method);
-      mock(getPaymentById).mockResolvedValue(payment);
-      addOnUpdate(payment, 'refund-new');
       mock(updatePayment)
         .mockImplementationOnce(async (current: typeof payment) => ({
           ...current,
           transactions: [...current.transactions, { id: 'refund-new', type: 'Refund', state: 'Initial' }],
         }))
-        .mockRejectedValueOnce(new Error('ConcurrentModification'));
+        .mockResolvedValueOnce(failed);
       client.refundPayment.mockRejectedValue(ecError);
 
-      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toBe(ecError);
+      await expect(handleRefundPayment(PAYMENT_ID, 10)).resolves.toBe(failed);
+      expect(updateActions()[1]).toEqual([
+        { action: 'changeTransactionState', transactionId: 'refund-new', state: 'Failure' },
+      ]);
       expect(log.error).toHaveBeenCalledWith(
-        'Failed to mark transaction as failed',
-        expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'refund-new', type: 'Refund' }),
+        'easyCredit did not accept the refund',
+        expect.objectContaining({
+          paymentId: PAYMENT_ID,
+          transactionId: 'refund-new',
+          state: 'Failure',
+          error: ecError,
+        }),
       );
     });
 
-    it('keeps the refund Pending and passes the error on when the easyCredit outcome is unknown', async () => {
+    it('passes the update error on when the Failure state cannot be saved, as nothing was booked', async () => {
+      const payment = buildPayment(method);
+      const updateError = new Errorx({ code: 'General', message: 'CT down', httpErrorStatus: 503 });
+      mock(getPaymentById).mockResolvedValue(payment);
+      mock(updatePayment)
+        .mockImplementationOnce(async (current: typeof payment) => ({
+          ...current,
+          transactions: [...current.transactions, { id: 'refund-new', type: 'Refund', state: 'Initial' }],
+        }))
+        .mockRejectedValueOnce(updateError);
+      client.refundPayment.mockRejectedValue(ecError);
+
+      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toBe(updateError);
+    });
+
+    it('keeps the refund Pending and answers with the payment when the easyCredit outcome is unknown', async () => {
       const payment = buildPayment(method);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new');
       client.refundPayment.mockRejectedValue(timeoutError);
 
-      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toBe(timeoutError);
+      const result = await handleRefundPayment(PAYMENT_ID, 10);
+
       expect(updateActions()[1]).toEqual([
         { action: 'changeTransactionState', transactionId: 'refund-new', state: 'Pending' },
       ]);
+      expect(result.transactions.find((t: Tx) => t.id === 'refund-new')).toMatchObject({ type: 'Refund' });
+      expect(log.error).toHaveBeenCalledWith(
+        'easyCredit did not accept the refund',
+        expect.objectContaining({ paymentId: PAYMENT_ID, state: 'Pending', error: timeoutError }),
+      );
+    });
+
+    it('answers with the Initial refund when the outcome is unknown and the Pending state cannot be saved', async () => {
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      mock(updatePayment)
+        .mockImplementationOnce(async (current: typeof payment) => ({
+          ...current,
+          transactions: [...current.transactions, { id: 'refund-new', type: 'Refund', state: 'Initial' }],
+        }))
+        .mockRejectedValueOnce(new Errorx({ code: 'General', message: 'CT down', httpErrorStatus: 503 }));
+      client.refundPayment.mockRejectedValue(timeoutError);
+
+      const result = await handleRefundPayment(PAYMENT_ID, 10);
+
+      expect(result.transactions.find((t: Tx) => t.id === 'refund-new')).toMatchObject({ state: 'Initial' });
+      expect(log.error).toHaveBeenCalledWith(
+        'The refund is open at easyCredit, but its Pending state was not saved',
+        expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'refund-new' }),
+      );
     });
 
     describe('when a parallel request changed the payment after easyCredit accepted the refund', () => {
@@ -360,7 +423,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
 
         expect(result.transactions.find((t: Tx) => t.id === 'refund-new')).toMatchObject({ state: 'Initial' });
         expect(log.error).toHaveBeenCalledWith(
-          'Refund accepted by easyCredit, but its Pending state was not saved',
+          'The refund is open at easyCredit, but its Pending state was not saved',
           expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'refund-new' }),
         );
       });
@@ -382,27 +445,34 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         // One add and three state writes.
         expect(updatePayment).toHaveBeenCalledTimes(4);
         expect(log.error).toHaveBeenCalledWith(
-          'Refund accepted by easyCredit, but its Pending state was not saved',
+          'The refund is open at easyCredit, but its Pending state was not saved',
           expect.objectContaining({ error: conflictError }),
         );
       });
     });
 
-    it('answers 502 when easyCredit rejects the connector credentials', async () => {
+    it.each([401, 403])('sets the refund to Failure and answers with the payment on a %s', async (status) => {
       const payment = buildPayment(method);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new');
       client.refundPayment.mockRejectedValue(
-        new Errorx({ code: 'Forbidden', message: 'Forbidden', httpErrorStatus: 403 }),
+        new Errorx({ code: 'Forbidden', message: 'Forbidden', httpErrorStatus: status }),
       );
 
-      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toMatchObject({
-        code: 'UpstreamAuthenticationFailed',
-        httpErrorStatus: 502,
-      });
+      const result = await handleRefundPayment(PAYMENT_ID, 10);
+
       expect(updateActions()[1]).toEqual([
         { action: 'changeTransactionState', transactionId: 'refund-new', state: 'Failure' },
       ]);
+      expect(result.transactions.find((t: Tx) => t.id === 'refund-new')).toMatchObject({ type: 'Refund' });
+    });
+
+    it('passes a version conflict on adding the refund on without calling easyCredit', async () => {
+      mock(getPaymentById).mockResolvedValue(buildPayment(method));
+      mock(updatePayment).mockRejectedValue(conflictError);
+
+      await expect(handleRefundPayment(PAYMENT_ID, 10)).rejects.toBe(conflictError);
+      expect(client.refundPayment).not.toHaveBeenCalled();
     });
 
     it.each([0, -1, 100.01])('TEBA-223: rejects the refund amount %s without calling easyCredit', async (amount) => {

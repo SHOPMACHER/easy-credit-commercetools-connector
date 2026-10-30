@@ -257,6 +257,31 @@ describe('Payment handlers', () => {
       expect(validatePrivateCustomer).not.toHaveBeenCalled();
     });
 
+    it('should report only a failed availability check, without the cart errors', async () => {
+      // @ts-expect-error mocked
+      (getCartById as jest.Mock).mockResolvedValue({
+        totalPrice: { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 },
+      });
+      (validatePaymentTypeAvailability as jest.Mock).mockImplementationOnce(
+        (amount, availability, ecConfig, errors) => {
+          // @ts-expect-error mocked
+          errors.push(new Errorx({ httpErrorStatus: 503, code: 'BillPaymentCheckFailed', message: 'Check failed' }));
+        },
+      );
+      (validatePrivateCustomer as jest.Mock).mockImplementationOnce((cart, shippingAddress, ecConfig, errors) => {
+        // @ts-expect-error mocked
+        errors.push(new Errorx({ httpErrorStatus: 400, code: 'CorporateCustomerNotAllowed', message: 'Corporate' }));
+      });
+
+      const error = await handlePaymentMethod('cart123', ECTransactionPaymentType.ECTransactionBillPayment).catch(
+        (e: unknown) => e,
+      );
+
+      expect((error as MultiErrorx).errors.map(({ code }) => code)).toEqual(['BillPaymentCheckFailed']);
+      expect(validateAddresses).not.toHaveBeenCalled();
+      expect(validatePrivateCustomer).not.toHaveBeenCalled();
+    });
+
     it('should report cart errors for an available bill payment', async () => {
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue({
@@ -443,7 +468,7 @@ describe('Payment handlers', () => {
       );
 
       expect(result).toEqual(mockECPayment);
-      expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'freezeCart', strategy: 'HardFreeze' }]);
+      expect(updateCart).toHaveBeenCalledWith(mockCart, [{ action: 'freezeCart' }]);
       expect(createPayment).toHaveBeenCalled();
     });
 
@@ -665,7 +690,7 @@ describe('Payment handlers', () => {
       const frozenCart = { ...activeCart, cartState: 'Frozen', freezeStrategy: 'HardFreeze' };
       const ctPayment = { id: 'payment123' };
       const positiveECPayment = { transactionInformation: { decision: { decisionOutcome: 'POSITIVE' } } };
-      const freezeActions = [{ action: 'freezeCart', strategy: 'HardFreeze' }];
+      const freezeActions = [{ action: 'freezeCart' }];
       const cleanupActions = [
         { action: 'unfreezeCart' },
         { action: 'removePayment', payment: { typeId: 'payment', id: 'payment123' } },
@@ -742,30 +767,23 @@ describe('Payment handlers', () => {
         );
       });
 
-      it('should HardFreeze an active cart', async () => {
+      it('should freeze an active cart with the default strategy', async () => {
         await handleCreatePayment('cart123', redirectLinks, customerRelationship);
 
         expect(updateCart).toHaveBeenNthCalledWith(1, activeCart, freezeActions);
       });
 
       it.each([
+        ['HardFreeze', frozenCart],
         ['SoftFreeze', { ...activeCart, cartState: 'Frozen', freezeStrategy: 'SoftFreeze' }],
         ['a missing strategy', { ...activeCart, cartState: 'Frozen' }],
-      ])('should unfreeze and HardFreeze in one update for a cart frozen with %s', async (_, cart) => {
+      ])('should not freeze again a cart frozen with %s', async (_, cart) => {
         (getCartById as jest.Mock).mockResolvedValue(cart as never);
 
         await handleCreatePayment('cart123', redirectLinks, customerRelationship);
 
-        expect(updateCart).toHaveBeenNthCalledWith(1, cart, [{ action: 'unfreezeCart' }, ...freezeActions]);
-      });
-
-      it('should not freeze again a cart that is already HardFrozen', async () => {
-        (getCartById as jest.Mock).mockResolvedValue(frozenCart as never);
-
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
-
         expect(updateCart).toHaveBeenCalledTimes(1);
-        expect(updateCart).toHaveBeenCalledWith(frozenCart, [
+        expect(updateCart).toHaveBeenCalledWith(cart, [
           { action: 'addPayment', payment: { typeId: 'payment', id: 'payment123' } },
         ]);
       });
