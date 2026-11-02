@@ -8,12 +8,17 @@ Planned as `1.1.0` of the processor and the enabler. Deploy both from the same b
 
 ### Upgrade notes
 
-Existing installment integrations keep working without code or configuration changes, and pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. A few responses change where the previous version answered wrongly, see [Fixed](#fixed):
+Pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. Existing installment integrations need no code or configuration changes, but check these points:
+
+- Installment now reads the easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`) for its limits, with the same credentials. If easyCredit rejects that request (for example `401` or `404`), `GET /payments/payment-method/{cartId}` and `POST /payments` answer `503 EasyCreditUnavailable` instead of offering installment. Check that the webshop ID and API password are accepted by that endpoint before upgrading. See [Changed](#changed).
+
+A few responses change where the previous version answered wrongly, see [Fixed](#fixed):
 
 - A capture that easyCredit rejects or does not answer returns an error instead of `204`. Before, the `204` hid a capture that never happened.
 - An authorization request that easyCredit rejects returns the easyCredit error instead of `204`. Before, the `204` and the `Pending` transaction hid an authorization that never happened.
 - `POST /payments` refuses carts that easyCredit rejects later (`InvalidAddress`, `AddressesUnmatched` for `additionalStreetInfo`) and a second payment while an earlier one is still open (`PaymentInProgress`).
 - `GET /payments/{paymentId}` leaves out `decision` fields that easyCredit sends as `null` instead of returning `0` or `{}`.
+- A refund with more than two decimal places, or above the payment amount minus the refunds that did not fail, returns `400 InvalidRefundAmount`. Before, the amount was sent to easyCredit unrounded, and an over-refund was accepted and failed later.
 
 ### Added
 
@@ -29,7 +34,7 @@ Existing installment integrations keep working without code or configuration cha
 
 - The installment limits come from the easyCredit webshop configuration instead of the fixed 200 € to 10,000 €. If easyCredit cannot be reached or sends an invalid configuration, the last valid configuration or the fixed limits are used. `503 EasyCreditUnavailable` with a `Retry-After` header is returned only if easyCredit rejects the webshop request itself (for example `401` or `404`), or reported installment as deactivated and cannot be reached since.
 - `InvalidAmount` formats amounts the German way, for example `10.000€`.
-- A repeated capture of a payment with a `Pending` or `Success` `Charge` returns `204` without calling easyCredit again.
+- A repeated capture of a payment with a `Success` `Charge` returns `204` without calling easyCredit again. With a `Pending` `Charge`, the easyCredit capture bookings decide: a `DONE` booking completes the `Charge`, a capture still in progress returns `204`, and a `FAILED` booking or no booking 15 minutes after the `Charge` sets it to `Failure` and captures again.
 - `POST /payments/{paymentId}/authorize` returns `204` for a payment that is already authorized, instead of `400 TransactionNotPreauthorized`.
 - The notification also completes Refund transactions that are still `Initial`, and logs the easyCredit reason of a failed capture or refund.
 - easyCredit errors with a body that is not JSON keep the easyCredit HTTP status instead of becoming a `500`.
@@ -41,7 +46,8 @@ Existing installment integrations keep working without code or configuration cha
 - A capture that easyCredit rejects returns the easyCredit status and error, and a capture that easyCredit does not answer within 10 seconds or cannot be reached returns `504` or `502` with the code `CaptureFailed`. Before, both returned `204` and no `Charge` was written, so the payment was never collected. The `Charge` is set to `Failure` and the capture can be requested again.
 - The `Charge` transaction is added in state `Pending` before easyCredit is called, so an early notification finds it.
 - A `FAILED` capture booking from easyCredit sets the `Charge` to `Failure` instead of `Success`. Charges written by earlier versions are not changed: a `Success` Charge from before this release can belong to a failed capture, and it cannot be captured again through the API. Compare with the easyCredit merchant portal if in doubt.
-- An earlier `FAILED` capture booking no longer fails the `Charge` of a capture that was requested again.
+- An earlier `FAILED` capture booking no longer fails the `Charge` of a capture that was requested again, also before easyCredit lists the booking of the new capture.
+- A `Pending` `Charge` whose notification never arrives no longer blocks the capture forever, see [Changed](#changed).
 - `trackingNumber` is limited to the 50 characters easyCredit accepts. A longer value returns `400 InvalidJsonInput` instead of a rejected capture.
 
 **Refund** (`POST /payments/{paymentId}/refund`)
@@ -50,7 +56,8 @@ Existing installment integrations keep working without code or configuration cha
 - Each refund request uses its own Refund transaction as easyCredit `bookingId`. Before, a refund stuck in `Initial` made later requests change the wrong transaction.
 - A refund that easyCredit accepted no longer stays `Initial` when another request changed the payment at the same time.
 - A notification that completes a refund and the capture together no longer fails with a version conflict and leaves the refunds `Pending`.
-- Refund amounts are rounded to cents instead of cut off.
+- The refund amount sent to easyCredit is the same as the amount of the Refund transaction. Before, `10.005` was stored as `1001` cents but sent as `10.005`, and `0.001` created a Refund of `0` cents.
+- A refund above the amount that earlier refunds left is rejected before easyCredit is called.
 
 **Authorize** (`POST /payments/{paymentId}/authorize`)
 
