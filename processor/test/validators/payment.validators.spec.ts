@@ -5,16 +5,15 @@ import {
   validateECTransactionId,
   validateInitialOrPendingTransaction,
   validatePayment,
-  validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePendingTransaction,
   validatePrivateCustomer,
+  validateRefundAmount,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
-import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -22,10 +21,6 @@ import { CTTransactionState, CTTransactionType, PaymentTypeExclusion } from '../
 
 jest.mock('../../src/utils/commerceTools.utils', () => ({
   compareAddress: jest.fn(),
-}));
-
-jest.mock('../../src/utils/app.utils', () => ({
-  convertCentsToEur: jest.fn(),
 }));
 
 jest.mock('../../src/utils/payment.utils', () => ({
@@ -493,32 +488,54 @@ describe('Validation Functions', () => {
     });
   });
 
-  describe('validatePaymentAmount', () => {
-    it('should throw error if payment amount is smaller than the refund one', () => {
-      (getTransaction as jest.Mock).mockReturnValue({});
-      (convertCentsToEur as jest.Mock).mockReturnValue(10);
-      const payment: Payment = {
-        amountPlanned: {
-          centAmount: 1000,
-          fractionDigits: 2,
-        },
-      } as unknown as Payment;
+  describe('validateRefundAmount', () => {
+    const refund = (state: CTTransactionState, centAmount: number) => ({
+      type: CTTransactionType.Refund,
+      state,
+      amount: { centAmount, currencyCode: 'EUR', fractionDigits: 2 },
+    });
+    const paymentWith = (...transactions: object[]) =>
+      ({
+        amountPlanned: { centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
+        transactions: [{ type: CTTransactionType.Authorization, state: CTTransactionState.Success }, ...transactions],
+      }) as unknown as Payment;
 
-      expect(() => validatePaymentAmount(payment, 300)).toThrow(
-        'The refund amount cannot be greater than the payment amount and must be greater than 0',
+    it.each([
+      [19.99, 1999],
+      [0.07, 7],
+      [100, 10000],
+    ])('should return %s as %s cents', (amount, cents) => {
+      expect(validateRefundAmount(paymentWith(), amount)).toBe(cents);
+    });
+
+    it.each([10.005, 0.001, 19.999])('should reject %s, which has more than two decimal places', (amount) => {
+      expect(() => validateRefundAmount(paymentWith(), amount)).toThrow(
+        'The refund amount must not have more than two decimal places',
       );
     });
 
-    it('should not throw error if payment amount is greater than or equal the refund one', () => {
-      (getTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
-      const payment: Payment = {
-        amountPlanned: {
-          centAmount: 1000,
-          fractionDigits: 2,
-        },
-      } as unknown as Payment;
+    it.each([0, -1])('should reject %s', (amount) => {
+      expect(() => validateRefundAmount(paymentWith(), amount)).toThrow('The refund amount must be greater than 0');
+    });
 
-      expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
+    it('should reject an amount above the payment amount', () => {
+      expect(() => validateRefundAmount(paymentWith(), 100.01)).toThrow(
+        'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
+      );
+    });
+
+    it('should count Initial, Pending and Success refunds but not failed ones', () => {
+      const payment = paymentWith(
+        refund(CTTransactionState.Initial, 1000),
+        refund(CTTransactionState.Pending, 2000),
+        refund(CTTransactionState.Success, 3000),
+        refund(CTTransactionState.Failure, 4000),
+      );
+
+      expect(validateRefundAmount(payment, 40)).toBe(4000);
+      expect(() => validateRefundAmount(payment, 40.01)).toThrow(
+        expect.objectContaining({ code: 'InvalidRefundAmount', httpErrorStatus: 400 }),
+      );
     });
   });
 

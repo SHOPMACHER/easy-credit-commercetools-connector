@@ -3,6 +3,7 @@ import {
   getActiveCaptureTransaction,
   getAddedTransaction,
   getCaptureBooking,
+  getCaptureBookingsSince,
   getCaptureResult,
   getCompletedRefunds,
   getOpenRefundTransactions,
@@ -342,6 +343,35 @@ describe('Payment Utility Functions', () => {
     it('getCaptureResult should return undefined without bookings', () => {
       expect(getCaptureResult([])).toBeUndefined();
     });
+
+    it('getCaptureResult should ignore a FAILED booking dated before the Charge', () => {
+      expect(getCaptureResult([capture('FAILED', '2026-10-28T04:00:00Z')], '2026-10-28T05:00:00Z')).toBeUndefined();
+    });
+
+    it('getCaptureResult should keep a DONE booking dated before the Charge', () => {
+      const done = capture('DONE', '2026-10-28T04:00:00Z');
+
+      expect(getCaptureResult([done], '2026-10-28T05:00:00Z')).toBe(done);
+    });
+
+    it('getCaptureBookingsSince should allow one minute of clock skew', () => {
+      const bookings = [
+        capture('FAILED', '2026-10-28T04:58:59Z'),
+        capture('PENDING', '2026-10-28T04:59:00Z'),
+        capture('PENDING', '2026-10-28T05:00:01Z'),
+      ];
+
+      expect(getCaptureBookingsSince(bookings, '2026-10-28T05:00:00Z')).toStrictEqual(bookings.slice(1));
+    });
+
+    it.each([undefined, '', 'not a date'])(
+      'getCaptureBookingsSince should keep all bookings for the Charge date %p',
+      (date) => {
+        const bookings = [capture('FAILED', '2026-10-28T04:00:00Z')];
+
+        expect(getCaptureBookingsSince(bookings, date)).toStrictEqual(bookings);
+      },
+    );
   });
 
   describe('getPaymentType', () => {

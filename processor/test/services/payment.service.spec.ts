@@ -16,15 +16,21 @@ import {
   validateInitialOrPendingTransaction,
   validateInitialRefundTransaction,
   validatePayment,
-  validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePrivateCustomer,
+  validateRefundAmount,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
-import { getPaymentType, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
+import {
+  getPaymentType,
+  getPendingCaptureTransactions,
+  getSuccessCaptureTransactions,
+  getSuccessTransaction,
+  getTransaction,
+} from '../../src/utils/payment.utils';
 import { Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
 import {
   CTTransactionState,
@@ -63,7 +69,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateSuccessTransaction: jest.fn(),
   validateTransaction: jest.fn(),
   validateInitialOrPendingTransaction: jest.fn(),
-  validatePaymentAmount: jest.fn(),
+  validateRefundAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
@@ -1009,6 +1015,8 @@ describe('Payment handlers', () => {
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (getSuccessTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
+      (getSuccessCaptureTransactions as jest.Mock).mockReturnValue([]);
+      (getPendingCaptureTransactions as jest.Mock).mockReturnValue([]);
       // @ts-expect-error mocked
       (updatePayment as jest.Mock).mockResolvedValue(mockPayment);
 
@@ -1067,7 +1075,7 @@ describe('Payment handlers', () => {
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
       });
-      (validatePaymentAmount as jest.Mock).mockReturnValue(true);
+      (validateRefundAmount as jest.Mock).mockReturnValue(1000);
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (validateInitialRefundTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);

@@ -1,6 +1,7 @@
 import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType, ECBooking, ECTransactionPaymentType } from '../types/payment.types';
 import {
+  EASYCREDIT_BOOKING_CLOCK_SKEW_MS,
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
@@ -76,13 +77,19 @@ export const getCaptureBooking = (ecBookings: ECBooking[]) => {
   return ecBookings.filter((item) => item.bookingType === EASYCREDIT_CAPTURE_BOOKING_TYPE && item.type === 'CAPTURE');
 };
 
-// A DONE booking is final. Otherwise the newest booking decides, as a retried capture leaves the earlier FAILED one behind.
-export const getCaptureResult = (captureBookings: ECBooking[]): ECBooking | undefined => {
+// Bookings dated before the Charge belong to an earlier capture attempt. Without a Charge date all bookings count.
+export const getCaptureBookingsSince = (captureBookings: ECBooking[], chargedAt?: string): ECBooking[] => {
+  const from = Date.parse(chargedAt ?? '') - EASYCREDIT_BOOKING_CLOCK_SKEW_MS;
+  return Number.isNaN(from) ? captureBookings : captureBookings.filter(({ created }) => !(Date.parse(created) < from));
+};
+
+// A DONE booking is final. Otherwise the newest booking of this Charge decides, as a retried capture leaves the earlier FAILED one behind.
+export const getCaptureResult = (captureBookings: ECBooking[], chargedAt?: string): ECBooking | undefined => {
   const done = captureBookings.find(({ status }) => status === EASYCREDIT_BOOKING_STATUS_DONE);
   if (done) {
     return done;
   }
-  const latest = captureBookings.reduce<ECBooking | undefined>(
+  const latest = getCaptureBookingsSince(captureBookings, chargedAt).reduce<ECBooking | undefined>(
     (newest, booking) => (!newest || Date.parse(booking.created) > Date.parse(newest.created) ? booking : newest),
     undefined,
   );
