@@ -18,16 +18,19 @@ import {
   CTTransactionType,
   ECBooking,
   ECCreatePaymentResponse,
+  ECGetPaymentResponse,
   ECTransaction,
   ECTransactionCustomerRelationship,
+  ECTransactionOrderDetailsAddress,
   ECTransactionOrderDetailsShoppingCartInformation,
   ECTransactionPaymentType,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  ECTransactionUpdate,
   PaymentResponse,
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetools/connect-payments-sdk';
 import { convertCentsToEur, eurToCents } from './app.utils';
-import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
+import { Address, BaseAddress, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 import { PaymentUpdateAction, TransactionDraft } from '@commercetools/platform-sdk';
 import { readConfiguration } from './config.utils';
@@ -60,6 +63,50 @@ export const mapLineItem = (lineItem: LineItem) => ({
   ],
 });
 
+const HOUSE_NUMBER = /^\d+[a-zA-Z]?(?:[-/]\d+[a-zA-Z]?)?$/;
+
+// easyCredit sends street and house number in one line. A trailing house number (25, 25a, 3-5) is split off,
+// anything else stays in streetName; mapAddress joins both back into the same line.
+export const splitStreet = (address: string): Pick<BaseAddress, 'streetName' | 'streetNumber'> => {
+  const parts = address.trim().split(/\s+/);
+  const last = parts.at(-1) ?? '';
+
+  return parts.length > 1 && HOUSE_NUMBER.test(last)
+    ? { streetName: parts.slice(0, -1).join(' '), streetNumber: last }
+    : { streetName: parts.join(' ') };
+};
+
+// easyCredit sends empty strings for fields the shopper left out; they are not written to commercetools.
+const nonEmpty = (value: string | null | undefined): string | undefined =>
+  value === '' || value === null ? undefined : value;
+
+// Data minimization: name, phone and address only. The email goes to the cart, not to the address.
+export const mapECAddressToCTAddress = (
+  ecAddress: Partial<ECTransactionOrderDetailsAddress>,
+  customer: ECGetPaymentResponse['transaction']['customer'],
+): BaseAddress => {
+  const phone = nonEmpty(customer?.contact?.mobilePhoneNumber);
+
+  return {
+    firstName: nonEmpty(ecAddress.firstName) ?? nonEmpty(customer?.firstName),
+    lastName: nonEmpty(ecAddress.lastName) ?? nonEmpty(customer?.lastName),
+    ...splitStreet(ecAddress.address ?? ''),
+    additionalStreetInfo: nonEmpty(ecAddress.additionalAddressInformation),
+    postalCode: nonEmpty(ecAddress.zip),
+    city: nonEmpty(ecAddress.city),
+    country: ecAddress.country ?? '',
+    phone,
+    mobile: phone,
+  };
+};
+
+// The part of the order details that PATCH can change.
+export const mapCTCartToECUpdate = (cart: Cart): ECTransactionUpdate => ({
+  orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
+  numberOfProductsInShoppingCart: cart.lineItems.length,
+  shoppingCartInformation: cart.lineItems.map(mapLineItem) as ECTransactionOrderDetailsShoppingCartInformation[],
+});
+
 export type ExpressOptions = {
   express?: boolean;
 };
@@ -82,16 +129,14 @@ export const mapCTCartToECPayment = async (
 
   return {
     orderDetails: {
-      orderValue: convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits),
+      ...mapCTCartToECUpdate(cart),
       orderId: payment.id,
-      numberOfProductsInShoppingCart: cart.lineItems.length,
       withoutFlexprice: false,
       // Express leaves customer and addresses out, the shopper enters them on the easyCredit payment page.
       ...(!express && {
         invoiceAddress: mapAddress(cart.billingAddress as Address),
         shippingAddress: mapAddress(shippingAddress as Address),
       }),
-      shoppingCartInformation: cart.lineItems.map(mapLineItem) as ECTransactionOrderDetailsShoppingCartInformation[],
     },
     ...(!express && {
       customer: {

@@ -87,10 +87,20 @@ const buildCart = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as unknown as Cart;
 
-const preauthorized = (paymentType = 'INSTALLMENT_PAYMENT') => ({
+// The address the shopper entered on the easyCredit page, in the easyCredit format of `address`.
+const ecAddress = {
+  firstName: 'Max',
+  lastName: 'Mustermann',
+  address: 'Hauptstr. 1',
+  zip: '10115',
+  city: 'Berlin',
+  country: 'DE',
+};
+
+const preauthorized = (paymentType = 'INSTALLMENT_PAYMENT', shippingAddress?: Record<string, string>) => ({
   status: 'PREAUTHORIZED',
   decision: { orderValue: 500, decisionOutcome: 'POSITIVE' },
-  transaction: { paymentType },
+  transaction: { paymentType, orderDetails: { orderValue: 500, shippingAddress } },
 });
 
 const failureWrite = [{ action: 'changeTransactionState', transactionId: 'tx-1', state: 'Failure' }];
@@ -296,18 +306,19 @@ describe('express payment lifecycle', () => {
     it('should authorize once the express return set a valid address', async () => {
       givenPayment(buildPayment());
       givenCart(buildCart({ billingAddress: address, shippingAddress: address }));
-      client.getPayment.mockResolvedValue(preauthorized());
+      client.getPayment.mockResolvedValue(preauthorized('INSTALLMENT_PAYMENT', ecAddress));
 
       await handleAuthorizeECPayment(PAYMENT_ID);
 
       expect(client.authorizePayment).toHaveBeenCalledWith('tech-1', PAYMENT_ID, expect.anything());
     });
 
-    it('should run the address checks for an express installment payment and fail on a definitive error', async () => {
+    it('should run the cart rules for an express installment payment and fail on a definitive error', async () => {
       givenPayment(buildPayment());
-      const cart = buildCart({ billingAddress: address, shippingAddress: { ...address, city: 'Hamburg' } });
+      const foreign = { ...address, country: 'AT' };
+      const cart = buildCart({ billingAddress: foreign, shippingAddress: foreign });
       givenCart(cart);
-      client.getPayment.mockResolvedValue(preauthorized());
+      client.getPayment.mockResolvedValue(preauthorized('INSTALLMENT_PAYMENT', { ...ecAddress, country: 'AT' }));
 
       await expect(getErrorCodes(handleAuthorizeECPayment(PAYMENT_ID))).resolves.toEqual(['AddressesUnmatched']);
 
@@ -316,15 +327,13 @@ describe('express payment lifecycle', () => {
       expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
     });
 
-    it('should fail with InvalidBillingAddress when the express return only set the shipping address', async () => {
+    it('should fail with ExpressAddressMismatch when the cart has only the shipping address', async () => {
       givenPayment(buildPayment());
       const cart = buildCart({ shippingAddress: address });
       givenCart(cart);
-      client.getPayment.mockResolvedValue(preauthorized());
+      client.getPayment.mockResolvedValue(preauthorized('INSTALLMENT_PAYMENT', ecAddress));
 
-      await expect(getErrorCodes(handleAuthorizeECPayment(PAYMENT_ID))).resolves.toEqual(
-        expect.arrayContaining(['InvalidBillingAddress']),
-      );
+      await expect(getErrorCodes(handleAuthorizeECPayment(PAYMENT_ID))).resolves.toEqual(['ExpressAddressMismatch']);
 
       expect(client.authorizePayment).not.toHaveBeenCalled();
       expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
@@ -403,6 +412,18 @@ describe('express payment lifecycle', () => {
         ['DECLINED', () => client.getPayment.mockResolvedValue({ status: 'DECLINED' })],
         ['EXPIRED', () => client.getPayment.mockResolvedValue({ status: 'EXPIRED' })],
         ['gone at easyCredit', () => client.getPayment.mockRejectedValue(goneError)],
+        [
+          'expired (400 on the decision)',
+          () =>
+            client.getPayment.mockRejectedValue(
+              new Errorx({
+                code: 'CONSTRAINT_VIOLATION',
+                message: 'expired',
+                httpErrorStatus: 400,
+                fields: [{ field: 'decision', message: 'invalid' }],
+              }),
+            ),
+        ],
       ])('should end an attempt that is %s and remove the placeholder', async (_, givenStatus) => {
         givenPayment(buildPayment());
         givenStatus();

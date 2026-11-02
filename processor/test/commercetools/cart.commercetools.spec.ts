@@ -184,7 +184,12 @@ describe('Cart Functions', () => {
 
       // @ts-expect-error test
       await expect(updateCart(cart, updateActions)).rejects.toThrow(Errorx);
-      expect(log.error).toHaveBeenCalledWith('Error in updateCart', errorResponse);
+      expect(log.error).toHaveBeenCalledWith('Error in updateCart', {
+        cartId: cart.id,
+        code: 'UpdateError',
+        statusCode: 409,
+        message: 'Update failed',
+      });
     });
   });
 });

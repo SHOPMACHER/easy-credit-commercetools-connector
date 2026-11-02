@@ -87,7 +87,7 @@ Pass 1 only reads, so a refusal changes nothing:
 | No `Authorization` transaction, or the transaction is `Failure` | Ignored. The payment stays on the cart. |
 | Transaction `Pending` or `Success` | `400 PaymentInProgress`. |
 | Transaction `Initial` and easyCredit (5 second limit) reports `AUTHORIZED` | `400 PaymentInProgress`. |
-| Transaction `Initial` and easyCredit answers `404` or `410` (the transaction is gone, for example because a newer one invalidated it), or any status other than `AUTHORIZED` (for example `OPEN`, `PREAUTHORIZED`, `DECLINED`, `EXPIRED`) | Stale. The connector discards it. |
+| Transaction `Initial` and easyCredit answers `404` or `410` (the transaction is gone, for example because a newer one invalidated it) or `400 CONSTRAINT_VIOLATION` on `decision` (expired), or any status other than `AUTHORIZED` (for example `OPEN`, `PREAUTHORIZED`, `DECLINED`, `EXPIRED`) | Stale. The connector discards it. |
 | Transaction `Initial` and the easyCredit lookup fails for any other reason (network error, timeout, `5xx`) | `400 PaymentInProgress`. |
 
 Pass 2 runs only if at least one attempt is stale.

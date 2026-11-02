@@ -11,6 +11,7 @@ import {
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
+  isExpressPayment,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import {
   CTTransactionState,
@@ -150,6 +151,30 @@ describe('Payment Utility Functions', () => {
 
       const result = getTransaction(payment);
       expect(result).toBeUndefined();
+    });
+    it('should prefer the replacement over a failed authorization in any order', () => {
+      const failed = { id: 'old', type: CTTransactionType.Authorization, state: CTTransactionState.Failure };
+      const replacement = { id: 'new', type: CTTransactionType.Authorization, state: CTTransactionState.Initial };
+
+      expect(getTransaction({ transactions: [failed, replacement] } as unknown as Payment)).toBe(replacement);
+      expect(getTransaction({ transactions: [replacement, failed] } as unknown as Payment)).toBe(replacement);
+    });
+
+    it('should return a failed authorization when there is no other', () => {
+      const failed = { id: 'old', type: CTTransactionType.Authorization, state: CTTransactionState.Failure };
+
+      expect(getTransaction({ transactions: [failed] } as unknown as Payment)).toBe(failed);
+    });
+  });
+
+  describe('isExpressPayment', () => {
+    it.each([
+      [{ custom: { fields: { easyCreditExpress: true } } }, true],
+      [{ custom: { fields: { easyCreditExpress: false } } }, false],
+      [{ custom: { fields: {} } }, false],
+      [{}, false],
+    ])('should read the express flag of %p', (payment, expected) => {
+      expect(isExpressPayment(payment as unknown as Payment)).toBe(expected);
     });
   });
 

@@ -12,10 +12,18 @@ import {
   ECRefundPayload,
   ECTransaction,
   ECTransactionError,
+  ECTransactionSummary,
+  ECTransactionUpdate,
 } from '../types/payment.types';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { log } from '../libs/logger';
 import { ECOutcomeUnknownError } from './easycredit.errors';
+
+// DOMException is not always an Error instance across realms, so match on the name only.
+const isAbortError = (error: unknown): boolean => {
+  const name = (error as { name?: string } | null)?.name;
+  return name === 'AbortError' || name === 'TimeoutError';
+};
 
 interface EasyCreditConfig {
   webShopId: string;
@@ -42,6 +50,12 @@ interface EasyCreditClient {
     signal?: AbortSignal,
     customHeaders?: HeadersInit,
   ): Promise<ECGetPaymentResponse>;
+  updatePayment(
+    technicalTransactionId: string,
+    payload: ECTransactionUpdate,
+    signal?: AbortSignal,
+    customHeaders?: HeadersInit,
+  ): Promise<ECTransactionSummary>;
   refundPayment(transactionId: string, payload: ECRefundPayload, customHeaders?: HeadersInit): Promise<void>;
   getMerchantTransaction(transactionId: string): Promise<ECGetMerchantTransactionResponse>;
   getWebshopInfo(): Promise<unknown>;
@@ -109,13 +123,10 @@ class EasyCreditApiClient implements EasyCreditClient {
       });
     } catch (error: unknown) {
       log.error(failure.logMessage, error);
-      // DOMException is not always an Error instance across realms, so match on the name only.
-      const name = (error as { name?: string } | null)?.name;
-      const aborted = name === 'AbortError' || name === 'TimeoutError';
       throw new ECOutcomeUnknownError({
         code: failure.code,
         message: failure.message,
-        httpErrorStatus: aborted ? 504 : 502,
+        httpErrorStatus: isAbortError(error) ? 504 : 502,
       });
     }
 
@@ -197,6 +208,33 @@ class EasyCreditApiClient implements EasyCreditClient {
       ...(signal && { signal }),
     });
     return this.handleResponse(response);
+  }
+
+  // Without a response the outcome is unknown: easyCredit may have changed the amount or not.
+  public async updatePayment(
+    technicalTransactionId: string,
+    payload: ECTransactionUpdate,
+    signal: AbortSignal = AbortSignal.timeout(EASYCREDIT_REQUEST_TIMEOUT_MS),
+    customHeaders?: HeadersInit,
+  ): Promise<ECTransactionSummary> {
+    const headers = { ...this.getDefaultHeaders(), ...customHeaders };
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseApiUrl}/payment/v3/transaction/${technicalTransactionId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(payload),
+        signal,
+      });
+    } catch (error: unknown) {
+      log.error('Failed to update the transaction', error);
+      throw new ECOutcomeUnknownError({
+        code: 'TransactionUpdateFailed',
+        message: 'Transaction update failed',
+        httpErrorStatus: isAbortError(error) ? 504 : 502,
+      });
+    }
+    return this.handleResponse(response, 'TransactionUpdateFailed', 'Transaction update failed');
   }
 
   public async refundPayment(

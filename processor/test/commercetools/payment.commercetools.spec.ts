@@ -172,7 +172,12 @@ describe('Payment Functions', () => {
 
       await expect(updatePayment(mockPayment, mockUpdateActions)).rejects.toThrow(Errorx);
 
-      expect(log.error).toHaveBeenCalledWith('Error in updatePayment', mockError);
+      expect(log.error).toHaveBeenCalledWith('Error in updatePayment', {
+        paymentId: mockPayment.id,
+        code: '400',
+        statusCode: 400,
+        message: 'Update failed',
+      });
     });
   });
 

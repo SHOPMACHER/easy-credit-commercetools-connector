@@ -27,6 +27,9 @@ Run the folders and requests in this order. For create and authorize, run one of
    - 2.10 Refund Payment. It also needs an authorized payment. You can run it before the capture.
 3. **Webhook**
    - 3.1 Cancel Payment. It cancels a payment that is not authorized. Run it instead of 2.7 to 2.10.
+4. **Express checkout** (optional, instead of 2.4 or 2.5)
+   - 4.1 Create express transaction. It overwrites `payment_id`. Then do the [manual easyCredit step](#manual-easycredit-step) and enter the name and the address on the easyCredit page.
+   - 4.2 Express return. It takes over the customer data and the address from easyCredit onto the cart. Then continue with 2.6 and 2.7 or 2.8.
 
 ## Variables
 
@@ -106,7 +109,7 @@ Carries over: folders and order, requests, URLs, query parameters, headers, JSON
 
 Does not carry over:
 
-- The test scripts. Insomnia does not set `ctp_access_token`, `ctp_session_id` and `payment_id` for you. After request 1.1, copy `access_token` from the response into `ctp_access_token`. After request 1.2, copy `id` into `ctp_session_id`. After request 2.4 or 2.5, copy `paymentId` from the response into `payment_id`.
+- The test scripts. Insomnia does not set `ctp_access_token`, `ctp_session_id` and `payment_id` for you. After request 1.1, copy `access_token` from the response into `ctp_access_token`. After request 1.2, copy `id` into `ctp_session_id`. After request 2.4, 2.5 or 4.1, copy `paymentId` from the response into `payment_id`.
 - The descriptions of the environment variables. Read them in this file.
 
 ## More documentation
