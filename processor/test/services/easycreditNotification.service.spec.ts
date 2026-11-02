@@ -32,7 +32,7 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateSuccessTransaction: jest.fn(),
   validateTransaction: jest.fn(),
   validateInitialOrPendingTransaction: jest.fn(),
-  validatePaymentAmount: jest.fn(),
+  validateRefundAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
   validateECTransactionId: jest.fn(),
 }));
@@ -562,6 +562,31 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification res
 
     expect(updatePayment).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith('EasyCredit capture is still being processed', { paymentId: 'payment123' });
+  });
+
+  it('keeps the retried Charge Pending while easyCredit lists only the FAILED booking of the earlier capture', async () => {
+    const retried = { ...pendingCapture, timestamp: '2026-10-28T05:00:00.000Z' };
+
+    await notify([{ ...booking('FAILED'), created: '2026-10-28T05:50:00+01:00' }], [retried]);
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('EasyCredit capture is still being processed', { paymentId: 'payment123' });
+  });
+
+  it('sets the retried Charge to Failure for a FAILED booking dated after it', async () => {
+    const retried = { ...pendingCapture, timestamp: '2026-10-28T05:00:00.000Z' };
+
+    await notify(
+      [
+        { ...booking('FAILED'), created: '2026-10-28T05:00:00+01:00' },
+        { ...booking('FAILED'), created: '2026-10-28T06:00:30+01:00' },
+      ],
+      [retried],
+    );
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Failure },
+    ]);
   });
 
   it('adds no Charge for a FAILED capture booking without pending Charge', async () => {

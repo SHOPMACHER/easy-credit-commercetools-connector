@@ -50,6 +50,12 @@ export function getTransactionCustomTypeKey(): string {
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 
+// easyCredit dates the bookings, the connector the Charge, so their clocks may differ by this much.
+export const EASYCREDIT_BOOKING_CLOCK_SKEW_MS = 60000;
+
+// A Pending Charge without a capture booking after this long is treated as a capture easyCredit never received.
+export const EASYCREDIT_PENDING_CAPTURE_STALE_MS = 900000;
+
 export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
 
 export const EASYCREDIT_AUTHORIZATION_TIMEOUT_MS = 30000;

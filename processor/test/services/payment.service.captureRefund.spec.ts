@@ -19,7 +19,15 @@ jest.mock('../../src/utils/config.utils', () => ({
 }));
 
 type AnyFn = (...args: any[]) => any;
-type Tx = { id: string; type: string; state: string; interactionId?: string; amount?: object; custom?: object };
+type Tx = {
+  id: string;
+  type: string;
+  state: string;
+  interactionId?: string;
+  amount?: object;
+  custom?: object;
+  timestamp?: string;
+};
 const mock = (fn: unknown) => fn as jest.Mock<AnyFn>;
 
 const PAYMENT_ID = 'payment-1';
@@ -51,8 +59,20 @@ const timeoutError = new ECOutcomeUnknownError({
   httpErrorStatus: 504,
 });
 
+const cents = (centAmount: number) => ({ centAmount, currencyCode: 'EUR', fractionDigits: 2 });
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+const captureBooking = (status: string, created: string, message?: object) => ({
+  bookingType: 'ApiBooking',
+  type: 'CAPTURE',
+  uuid: `booking-${status}-${created}`,
+  created,
+  status,
+  message,
+});
+
 const client = {
   getPayment: jest.fn<AnyFn>(),
+  getMerchantTransaction: jest.fn<AnyFn>(),
   capturePayment: jest.fn<AnyFn>(),
   refundPayment: jest.fn<AnyFn>(),
 };
@@ -63,6 +83,13 @@ const updateActions = () => mock(updatePayment).mock.calls.map((c) => c[1] as Re
 const addOnUpdate = (payment: ReturnType<typeof buildPayment>, newId: string, position: 'end' | 'start' = 'end') =>
   mock(updatePayment).mockImplementation(async (current: typeof payment, actions: Record<string, any>[]) => {
     const add = actions.find((a) => a.action === 'addTransaction');
+    const change = actions.find((a) => a.action === 'changeTransactionState');
+    if (change) {
+      const transactions = current.transactions.map((t) =>
+        t.id === change.transactionId ? { ...t, state: change.state } : t,
+      );
+      return { ...current, transactions };
+    }
     if (!add) return current;
     const added = { id: newId, ...add.transaction };
     const transactions = position === 'end' ? [...current.transactions, added] : [added, ...current.transactions];
@@ -104,7 +131,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     });
 
     it('TEBA-222: still captures when a refund was registered before shipping', async () => {
-      const payment = buildPayment(method, [{ id: 'refund-1', type: 'Refund', state: 'Pending' }]);
+      const payment = buildPayment(method, [{ id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000) }]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'charge-new');
 
@@ -152,13 +179,131 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       expect(updatePayment).not.toHaveBeenCalled();
     });
 
-    it.each(['Pending', 'Success'])('ignores a second capture while a Charge is %s', async (state) => {
-      mock(getPaymentById).mockResolvedValue(buildPayment(method, [{ id: 'charge-1', type: 'Charge', state }]));
+    it('ignores a second capture while a Charge is Success', async () => {
+      mock(getPaymentById).mockResolvedValue(
+        buildPayment(method, [{ id: 'charge-1', type: 'Charge', state: 'Success' }]),
+      );
 
       await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
-      expect(client.getPayment).not.toHaveBeenCalled();
+      expect(client.getMerchantTransaction).not.toHaveBeenCalled();
       expect(client.capturePayment).not.toHaveBeenCalled();
       expect(updatePayment).not.toHaveBeenCalled();
+    });
+
+    describe('with a Pending Charge that no notification completed', () => {
+      const pendingCharge = (timestamp: string): Tx => ({
+        id: 'charge-1',
+        type: 'Charge',
+        state: 'Pending',
+        interactionId: EC_TX_ID,
+        timestamp,
+      });
+      const withBookings = (...bookings: object[]) =>
+        client.getMerchantTransaction.mockResolvedValue({ transactionId: EC_TX_ID, bookings });
+
+      it('sets the Charge to Success when easyCredit booked the capture', async () => {
+        mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(30))]));
+        withBookings(captureBooking('DONE', minutesAgo(29)));
+
+        await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+        expect(client.getMerchantTransaction).toHaveBeenCalledWith(EC_TX_ID);
+        expect(updateActions()).toEqual([
+          [{ action: 'changeTransactionState', transactionId: 'charge-1', state: 'Success' }],
+        ]);
+        expect(client.capturePayment).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a booking of the Charge is still open', [captureBooking('PENDING', minutesAgo(29))], 30],
+        ['easyCredit has no booking yet for a recent Charge', [], 5],
+        ['only an earlier FAILED booking exists for a recent Charge', [captureBooking('FAILED', minutesAgo(40))], 5],
+      ])('leaves the Charge Pending when %s', async (_name, bookings, age) => {
+        mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(age as number))]));
+        withBookings(...(bookings as object[]));
+
+        await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(client.capturePayment).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [
+          'easyCredit failed its capture booking',
+          [captureBooking('FAILED', minutesAgo(1), { messageEN: 'Declined' })],
+          5,
+        ],
+        ['easyCredit has no booking for it after 15 minutes', [], 16],
+        [
+          'easyCredit has only an earlier FAILED booking after 15 minutes',
+          [captureBooking('FAILED', minutesAgo(40))],
+          16,
+        ],
+      ])('sets the Charge to Failure and captures again when %s', async (_name, bookings, age) => {
+        const payment = buildPayment(method, [pendingCharge(minutesAgo(age as number))]);
+        const failed = {
+          ...payment,
+          version: 4,
+          transactions: [authorization, { ...payment.transactions[1], state: 'Failure' }],
+        };
+        mock(getPaymentById).mockResolvedValue(payment);
+        withBookings(...(bookings as object[]));
+        mock(updatePayment)
+          .mockResolvedValueOnce(failed)
+          .mockImplementationOnce(async (current: typeof payment, actions: Record<string, any>[]) => ({
+            ...current,
+            transactions: [...current.transactions, { id: 'charge-new', ...actions[0].transaction }],
+          }));
+
+        await handleCapturePayment(PAYMENT_ID, 'track-1');
+
+        expect(updateActions()[0]).toEqual([
+          { action: 'changeTransactionState', transactionId: 'charge-1', state: 'Failure' },
+        ]);
+        // The new Charge is added on the version that has the old one failed.
+        expect(mock(updatePayment).mock.calls[1][0]).toBe(failed);
+        expect(client.capturePayment).toHaveBeenCalledWith(EC_TX_ID, PAYMENT_ID, 'track-1');
+      });
+
+      it('does not capture again when a notification completed the Charge meanwhile', async () => {
+        const payment = buildPayment(method, [pendingCharge(minutesAgo(20))]);
+        mock(getPaymentById)
+          .mockResolvedValueOnce(payment)
+          .mockResolvedValueOnce(buildPayment(method, [{ ...pendingCharge(minutesAgo(20)), state: 'Success' }]));
+        withBookings();
+        mock(updatePayment).mockRejectedValueOnce(conflictError);
+
+        await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+        expect(client.capturePayment).not.toHaveBeenCalled();
+      });
+
+      it('treats a Charge without a timestamp as stale', async () => {
+        const payment = buildPayment(method, [{ ...pendingCharge(''), timestamp: undefined }]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        withBookings();
+        addOnUpdate(payment, 'charge-new');
+
+        await handleCapturePayment(PAYMENT_ID);
+
+        expect(updateActions()[0]).toEqual([
+          { action: 'changeTransactionState', transactionId: 'charge-1', state: 'Failure' },
+        ]);
+        expect(client.capturePayment).toHaveBeenCalledTimes(1);
+      });
+
+      it.each([
+        ['a timeout', new DOMException('aborted', 'TimeoutError'), 504],
+        ['a network error', new TypeError('fetch failed'), 502],
+      ])('answers %s of the booking read with CaptureFailed and keeps the Charge', async (_name, error, status) => {
+        mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(30))]));
+        client.getMerchantTransaction.mockRejectedValue(error);
+
+        await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
+          code: 'CaptureFailed',
+          httpErrorStatus: status,
+        });
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(client.capturePayment).not.toHaveBeenCalled();
+      });
     });
 
     it('ignores the capture when a parallel request added its Charge first', async () => {
@@ -262,8 +407,8 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     it('TEBA-222: uses its own booking ID while an earlier refund is still Initial', async () => {
       const payment = buildPayment(method, [
         { id: 'charge-1', type: 'Charge', state: 'Success' },
-        { id: 'refund-other', type: 'Refund', state: 'Initial' },
-        { id: 'refund-pending', type: 'Refund', state: 'Pending' },
+        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000) },
+        { id: 'refund-pending', type: 'Refund', state: 'Pending', amount: cents(1000) },
       ]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new');
@@ -274,7 +419,9 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     });
 
     it('TEBA-222: finds its refund when CT does not put it at the end', async () => {
-      const payment = buildPayment(method, [{ id: 'refund-other', type: 'Refund', state: 'Initial' }]);
+      const payment = buildPayment(method, [
+        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000) },
+      ]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new', 'start');
 
@@ -475,12 +622,43 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       expect(client.refundPayment).not.toHaveBeenCalled();
     });
 
-    it.each([0, -1, 100.01])('TEBA-223: rejects the refund amount %s without calling easyCredit', async (amount) => {
-      mock(getPaymentById).mockResolvedValue(buildPayment(method));
+    it.each([0, -1, 100.01, 10.005, 0.001])(
+      'TEBA-223: rejects the refund amount %s without calling easyCredit',
+      async (amount) => {
+        mock(getPaymentById).mockResolvedValue(buildPayment(method));
 
-      await expect(handleRefundPayment(PAYMENT_ID, amount)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
+        await expect(handleRefundPayment(PAYMENT_ID, amount)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
+        expect(client.refundPayment).not.toHaveBeenCalled();
+        expect(updatePayment).not.toHaveBeenCalled();
+      },
+    );
+
+    it('sends easyCredit the same amount that the Refund transaction holds', async () => {
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      addOnUpdate(payment, 'refund-new');
+
+      await handleRefundPayment(PAYMENT_ID, 19.99);
+
+      expect(updateActions()[0]).toEqual([
+        expect.objectContaining({
+          transaction: expect.objectContaining({ amount: { centAmount: 1999, currencyCode: 'EUR' } }),
+        }),
+      ]);
+      expect(client.refundPayment).toHaveBeenCalledWith(EC_TX_ID, { value: 19.99, bookingId: 'refund-new' });
+    });
+
+    it('rejects a refund above the amount that earlier refunds left', async () => {
+      mock(getPaymentById).mockResolvedValue(
+        buildPayment(method, [
+          { id: 'refund-1', type: 'Refund', state: 'Success', amount: cents(6000) },
+          { id: 'refund-2', type: 'Refund', state: 'Pending', amount: cents(3000) },
+          { id: 'refund-3', type: 'Refund', state: 'Failure', amount: cents(5000) },
+        ]),
+      );
+
+      await expect(handleRefundPayment(PAYMENT_ID, 10.01)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
       expect(client.refundPayment).not.toHaveBeenCalled();
-      expect(updatePayment).not.toHaveBeenCalled();
     });
   });
 });

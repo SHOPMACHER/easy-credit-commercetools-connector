@@ -30,9 +30,9 @@ import {
   validateInitialOrPendingTransaction,
   validateInitialRefundTransaction,
   validatePayment,
-  validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePrivateCustomer,
+  validateRefundAmount,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
@@ -41,7 +41,12 @@ import { createPayment, getPaymentById, updatePayment } from '../commercetools/p
 import {
   getActiveCaptureTransaction,
   getAddedTransaction,
+  getCaptureBooking,
+  getCaptureBookingsSince,
+  getCaptureResult,
   getPaymentType,
+  getPendingCaptureTransactions,
+  getSuccessCaptureTransactions,
   getSuccessTransaction,
   getTransaction,
   toPaymentMethod,
@@ -61,10 +66,12 @@ import { convertCentsToEur, eurToCents } from '../utils/app.utils';
 import {
   EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS,
   EASYCREDIT_AUTHORIZATION_TIMEOUT_MS,
+  EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
+  EASYCREDIT_PENDING_CAPTURE_STALE_MS,
   EASYCREDIT_REQUEST_TIMEOUT_MS,
   EASYCREDIT_TOTAL_VALUE_FIELD,
   getTransactionCustomTypeKey,
@@ -1204,6 +1211,45 @@ const addPendingCharge = async (payment: Payment, authorization: Transaction): P
   }
 };
 
+// Completes a Pending Charge from the easyCredit bookings, as its notification may never come.
+// Returns the payment to capture again on, or undefined while the capture is open or done.
+const settlePendingCharge = async (
+  payment: Payment,
+  charge: Transaction,
+  ecTransactionId: string,
+): Promise<Payment | undefined> => {
+  const ecTransaction = await initEasyCreditClient()
+    .getMerchantTransaction(ecTransactionId)
+    .catch((error: unknown) => {
+      throw toCaptureLookupError(error);
+    });
+  const captureBookings = getCaptureBooking(ecTransaction.bookings ?? []);
+  const result = getCaptureResult(captureBookings, charge.timestamp);
+  const logContext = { paymentId: payment.id, transactionId: charge.id };
+
+  if (result?.status === EASYCREDIT_BOOKING_STATUS_DONE) {
+    await changeTransactionState(payment, charge, CTTransactionState.Success);
+    log.info('Pending Charge completed from the easyCredit capture booking', logContext);
+    return undefined;
+  }
+
+  const age = Date.now() - Date.parse(charge.timestamp ?? '');
+  const isOpen =
+    getCaptureBookingsSince(captureBookings, charge.timestamp).length > 0 || age <= EASYCREDIT_PENDING_CAPTURE_STALE_MS;
+  if (!result && isOpen) {
+    log.info('Payment capture is still being processed, capture request ignored', logContext);
+    return undefined;
+  }
+
+  // easyCredit failed the capture or never received it, so the Charge fails and the capture is requested again.
+  log.warn('Pending Charge set to Failure before capturing again', {
+    ...logContext,
+    reason: result?.message?.messageEN,
+  });
+  const failed = await changeTransactionState(payment, charge, CTTransactionState.Failure);
+  return getActiveCaptureTransaction(failed) ? undefined : failed;
+};
+
 export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
   const payment = await getPaymentById(paymentId);
 
@@ -1211,12 +1257,22 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   validateSuccessTransaction(payment);
 
   // A repeated request, for example a shipping event sent twice, succeeds without capturing again.
-  if (getActiveCaptureTransaction(payment)) {
+  if (getSuccessCaptureTransactions(payment).length > 0) {
     log.info('Payment already captured, capture request ignored', { paymentId });
     return;
   }
 
   const transaction = getSuccessTransaction(payment) as Transaction;
+  let current = payment;
+  const pendingCharge = getPendingCaptureTransactions(payment)[0];
+  if (pendingCharge) {
+    const settled = await settlePendingCharge(payment, pendingCharge, transaction.interactionId as string);
+    if (!settled) {
+      return;
+    }
+    current = settled;
+  }
+
   const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
   const easyCreditTransaction = await initEasyCreditClient()
@@ -1234,12 +1290,12 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   }
 
   // Added before easyCredit is called, so an early notification finds the Charge and a parallel capture hits the version lock.
-  const chargedPayment = await addPendingCharge(payment, transaction);
+  const chargedPayment = await addPendingCharge(current, transaction);
   if (!chargedPayment) {
     return;
   }
   const charge = getAddedTransaction(
-    payment,
+    current,
     chargedPayment,
     CTTransactionType.Charge,
     CTTransactionState.Pending,
@@ -1264,7 +1320,7 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
 export const handleRefundPayment = async (paymentId: string, refundAmount: number): Promise<Payment> => {
   const payment = await getPaymentById(paymentId);
 
-  validatePaymentAmount(payment, refundAmount);
+  const refundCents = validateRefundAmount(payment, refundAmount);
   validatePayment(payment);
   validateSuccessTransaction(payment);
 
@@ -1276,7 +1332,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
       transaction: {
         type: CTTransactionType.Refund,
         state: CTTransactionState.Initial,
-        amount: mapAmountToCTTransactionAmount(refundAmount),
+        amount: mapAmountToCTTransactionAmount(refundCents / 100),
       },
     },
   ]);
@@ -1284,7 +1340,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
   const initialRefundTransaction = validateInitialRefundTransaction(payment, updatedCTPayment);
 
   const refundPayload: ECRefundPayload = {
-    value: refundAmount,
+    value: refundCents / 100,
     bookingId: initialRefundTransaction.id,
   };
 

@@ -109,7 +109,9 @@ const handleCaptureNotifications = async (
     return;
   }
 
-  const captureResult = getCaptureResult(ecCaptureBookings);
+  const ctPayment = await getPaymentById(paymentId);
+  const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
+  const captureResult = getCaptureResult(ecCaptureBookings, ctPendingCaptureTransactions[0]?.timestamp);
 
   if (!captureResult) {
     log.info('EasyCredit capture is still being processed', { paymentId });
@@ -120,7 +122,6 @@ const handleCaptureNotifications = async (
     captureResult.status === EASYCREDIT_BOOKING_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure;
   const failureReason = captureResult.message?.messageEN;
 
-  const ctPayment = await getPaymentById(paymentId);
   const ctSuccessCaptures = getSuccessCaptureTransactions(ctPayment);
 
   // No multiple capture processing
@@ -132,7 +133,6 @@ const handleCaptureNotifications = async (
     return;
   }
 
-  const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
   // Should change this logic on next major release
   if (ctPendingCaptureTransactions?.length === 0) {
     // Without a pending Charge there is nothing to fail, and repeated FAILED notifications must not add Charges.
