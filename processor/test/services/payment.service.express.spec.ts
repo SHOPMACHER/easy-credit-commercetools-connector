@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fastify from 'fastify';
 import { Cart, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
+import { ShippingMethod } from '@commercetools/platform-sdk';
 import {
   handleCreateExpressPayment,
   handleCreatePayment,
@@ -15,6 +16,7 @@ import { getOrderHistoryOfCustomer } from '../../src/commercetools/order.commerc
 import { getCustomerSince } from '../../src/commercetools/customer.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
+import { getMatchingShippingMethods } from '../../src/commercetools/shippingMethod.commercetools';
 import { resetPaymentTypeRestrictionCache } from '../../src/services/paymentTypeRestriction.service';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { signRedirectUrl } from '../../src/utils/redirect.utils';
@@ -35,6 +37,7 @@ jest.mock('../../src/commercetools/productType.commercetools');
 jest.mock('../../src/commercetools/customFields.commercetools');
 jest.mock('../../src/commercetools/order.commercetools');
 jest.mock('../../src/commercetools/customer.commercetools');
+jest.mock('../../src/commercetools/shippingMethod.commercetools');
 jest.mock('../../src/libs/fastify/context/context', () => ({
   ...jest.requireActual<object>('../../src/libs/fastify/context/context'),
   getCartIdFromContext: jest.fn(),
@@ -171,6 +174,7 @@ describe('express payment creation', () => {
       getPayment: getECPaymentMock,
     });
     jest.mocked(isPaymentCustomTypeReady).mockResolvedValue(true);
+    jest.mocked(getMatchingShippingMethods).mockResolvedValue([]);
   });
 
   describe('handleCreateExpressPayment', () => {
@@ -407,6 +411,76 @@ describe('express payment creation', () => {
           },
         }),
       );
+    });
+
+    describe('shipping costs at init', () => {
+      const methods = [
+        { id: 'express', isDefault: false },
+        { id: 'standard', isDefault: true },
+      ] as ShippingMethod[];
+
+      it('should set the default method for DE, so the init amount includes the shipping costs', async () => {
+        mockCreateFlow(expressCart(500));
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(getMatchingShippingMethods).toHaveBeenCalledWith(expect.objectContaining({ id: 'session-cart' }), 'DE');
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [
+          { action: 'setShippingAddress', address: { country: 'DE' } },
+          { action: 'setShippingMethod', shippingMethod: { typeId: 'shipping-method', id: 'standard' } },
+          { action: 'freezeCart' },
+        ]);
+      });
+
+      it('should match the methods against an address the cart already has', async () => {
+        mockCreateFlow(expressCart(500, { shippingAddress: address }));
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(getMatchingShippingMethods).toHaveBeenCalledWith(expect.anything(), undefined);
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [
+          { action: 'setShippingMethod', shippingMethod: { typeId: 'shipping-method', id: 'standard' } },
+          { action: 'freezeCart' },
+        ]);
+      });
+
+      it('should keep a shipping method the shopper already chose', async () => {
+        mockCreateFlow(
+          expressCart(500, {
+            shippingAddress: address,
+            shippingInfo: { shippingMethod: { typeId: 'shipping-method', id: 'express' } },
+          }),
+        );
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(getMatchingShippingMethods).not.toHaveBeenCalled();
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart' }]);
+      });
+
+      it('should freeze without a method when none matches', async () => {
+        mockCreateFlow(expressCart(500));
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [
+          { action: 'setShippingAddress', address: { country: 'DE' } },
+          { action: 'freezeCart' },
+        ]);
+      });
+
+      it('should leave the cart untouched when the methods cannot be read', async () => {
+        mockCreateFlow(expressCart(500));
+        jest
+          .mocked(getMatchingShippingMethods)
+          .mockRejectedValue(new Errorx({ code: 'General', message: 'down', httpErrorStatus: 503 }));
+
+        await expect(handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT)).rejects.toThrow('down');
+        expect(updateCart).not.toHaveBeenCalled();
+        expect(createECPaymentMock).not.toHaveBeenCalled();
+      });
     });
 
     it('should not record a placeholder when the cart already has a shipping address', async () => {
