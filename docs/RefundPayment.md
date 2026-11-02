@@ -35,7 +35,8 @@ Behavior changes for existing integrations, installment included, are listed in 
 
 - When you call the endpoint, it will start to check the following conditions:
   - The CommerceTools Payment must exist
-  - The refunding amount must be greater than 0 and at most the CommerceTools Payment `amountPlanned` (in EUR). The connector does not check the remaining refundable amount, easyCredit does (see below)
+  - The refunding amount must be greater than 0 and have at most two decimal places
+  - The refunding amount must be at most the CommerceTools Payment `amountPlanned` minus the amounts of its Refund transactions in state `Initial`, `Pending` or `Success`. A `Failure` refund does not count. Two parallel requests cannot both use the same remaining amount: the second one fails with `409` when it adds its Refund transaction
   - The CommerceTools Payment `paymentMethodInfo.paymentInterface` is `easycredit`
   - The CommerceTools Payment must have a transaction with type = `Authorization`, state = `Success` and a defined `interactionId`, which is the EasyCredit transaction ID
 
@@ -56,7 +57,9 @@ So if the connector received 202 as status code, it will update the above Initia
 
   **Do not send a `Pending` refund again**: a new request is a new refund with its own `bookingId`. Check the transaction state instead. If the `Failure` state cannot be saved, the API returns the commercetools error instead, and the refund can be sent again.
 
-- easyCredit accepts a refund of a payment that is not captured yet. A refund above the remaining refundable amount is accepted with `202` as well and fails later: the notification then changes the transaction to `Failure`.
+- easyCredit accepts a refund of a payment that is not captured yet.
+
+- A `Pending` refund stays `Pending` until the easyCredit notification arrives. The connector does not ask easyCredit for refunds without a notification.
 
 - Each request uses its own Refund transaction ID as easyCredit `bookingId`, also when another refund of the same payment is still `Initial` or `Pending`.
 
@@ -66,7 +69,7 @@ So if the connector received 202 as status code, it will update the above Initia
 
 | Status | `code` | When | Refund transaction |
 | --- | --- | --- | --- |
-| `400` | `InvalidRefundAmount` | The amount is not greater than 0 or above the payment `amountPlanned`. | none added |
+| `400` | `InvalidRefundAmount` | The amount is not greater than 0, has more than two decimal places, or is above the payment `amountPlanned` minus the refunds that did not fail. | none added |
 | `401` | `invalid_token` | The access token is missing or invalid. | none added |
 | `404` | `404`, with `ResourceNotFound` in `fields` | No payment exists for `paymentId`. | none added |
 | `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the refund transaction was added. Nothing was sent to easyCredit, so the refund can be sent again. | none added |
@@ -74,12 +77,12 @@ So if the connector received 202 as status code, it will update the above Initia
 
 ```json
 {
-    "message": "The refund amount cannot be greater than the payment amount and must be greater than 0",
+    "message": "The refund amount cannot be greater than the payment amount minus the refunds that did not fail",
     "statusCode": 400,
     "errors": [
         {
             "code": "InvalidRefundAmount",
-            "message": "The refund amount cannot be greater than the payment amount and must be greater than 0"
+            "message": "The refund amount cannot be greater than the payment amount minus the refunds that did not fail"
         }
     ]
 }
