@@ -260,13 +260,17 @@ describe('Payment Mapping', () => {
         mockCart,
         { id: 'payment123' } as Payment,
         { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
-        undefined,
+        { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0, orderDoneWithLogin: false },
         ECTransactionPaymentType.ECTransactionBillPayment,
         { express: true },
       );
 
       expect(result).not.toHaveProperty('customer');
-      expect(result).not.toHaveProperty('customerRelationship');
+      expect(result.customerRelationship).toEqual({
+        customerStatus: 'NEW_CUSTOMER',
+        numberOfOrders: 0,
+        orderDoneWithLogin: false,
+      });
       expect(result.orderDetails).toEqual({
         orderValue: 100,
         orderId: 'payment123',
@@ -342,8 +346,21 @@ describe('Payment Mapping', () => {
 
       expect(result.custom).toEqual({
         type: { typeId: 'type', key: 'easy-credit-payment' },
-        fields: { easyCreditExpress: true },
+        fields: { easyCreditExpress: true, easyCreditExpressPlaceholderAddress: false },
       });
+    });
+
+    it('should record that the connector added the placeholder address', () => {
+      const result = mapCTCartToCTPayment(
+        mockCartForPayment,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        {
+          express: true,
+          placeholderAddress: true,
+        },
+      );
+
+      expect(result.custom?.fields).toEqual({ easyCreditExpress: true, easyCreditExpressPlaceholderAddress: true });
     });
   });
 

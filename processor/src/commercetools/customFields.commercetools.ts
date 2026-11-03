@@ -2,6 +2,7 @@ import { FieldDefinition, ResourceTypeId } from '@commercetools/platform-sdk';
 import { createApiRoot } from '../client/create.client';
 import {
   EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -43,17 +44,30 @@ const TRANSACTION_FIELD_DEFINITIONS: FieldDefinition[] = [
   },
 ];
 
-const EXPRESS_FIELD_DEFINITION: FieldDefinition = {
-  name: EASYCREDIT_EXPRESS_FIELD,
-  label: {
-    en: 'EasyCredit Express Checkout',
-    de: 'EasyCredit Express Checkout',
+const PAYMENT_FIELD_DEFINITIONS: FieldDefinition[] = [
+  {
+    name: EASYCREDIT_EXPRESS_FIELD,
+    label: {
+      en: 'EasyCredit Express Checkout',
+      de: 'EasyCredit Express Checkout',
+    },
+    required: false,
+    type: {
+      name: 'Boolean',
+    },
   },
-  required: false,
-  type: {
-    name: 'Boolean',
+  {
+    name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+    label: {
+      en: 'EasyCredit Express Placeholder Address',
+      de: 'EasyCredit Express Placeholder Address',
+    },
+    required: false,
+    type: {
+      name: 'Boolean',
+    },
   },
-};
+];
 
 type CustomTypeSpec = {
   typeKey: string;
@@ -144,6 +158,34 @@ export async function createOrUpdatePaymentCustomType(typeKey: string): Promise<
     typeKey,
     resourceTypeId: 'payment',
     configKey: 'PAYMENT_CUSTOM_TYPE_KEY',
-    fieldDefinitions: [EXPRESS_FIELD_DEFINITION],
+    fieldDefinitions: PAYMENT_FIELD_DEFINITIONS,
   });
+}
+
+// Only a positive answer is cached: a type created by a later post-deploy is picked up without a restart.
+const readyPaymentCustomTypeKeys = new Set<string>();
+
+export async function isPaymentCustomTypeReady(typeKey: string): Promise<boolean> {
+  if (readyPaymentCustomTypeKeys.has(typeKey)) {
+    return true;
+  }
+
+  const {
+    body: { results: types },
+  } = await createApiRoot()
+    .types()
+    .get({ queryArgs: { where: `key = "${typeKey}"` } })
+    .execute();
+
+  const type = types[0];
+  const ready =
+    !!type &&
+    type.resourceTypeIds.includes('payment') &&
+    PAYMENT_FIELD_DEFINITIONS.every(({ name }) => type.fieldDefinitions.some((field) => field.name === name));
+
+  if (ready) {
+    readyPaymentCustomTypeKeys.add(typeKey);
+  }
+
+  return ready;
 }

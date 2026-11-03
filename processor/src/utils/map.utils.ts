@@ -4,6 +4,7 @@ import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
@@ -67,7 +68,7 @@ export const mapCTCartToECPayment = async (
   cart: Cart,
   payment: Payment,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
-  customerRelationship: ECTransactionCustomerRelationship | undefined,
+  customerRelationship: ECTransactionCustomerRelationship,
   paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
   { express = false }: ExpressOptions = {},
 ): Promise<ECTransaction> => {
@@ -108,7 +109,7 @@ export const mapCTCartToECPayment = async (
       shopSystemManufacturer: LIBRARY_NAME,
       shopSystemModuleVersion: VERSION_STRING,
     },
-    ...(customerRelationship && { customerRelationship }),
+    customerRelationship,
     redirectLinks: {
       urlDenial: buildCancelUrl(
         connectorUrlWithoutSplash,
@@ -134,7 +135,7 @@ export const mapCTCartToECPayment = async (
 export const mapCTCartToCTPayment = (
   cart: Cart,
   paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
-  { express = false }: ExpressOptions = {},
+  { express = false, placeholderAddress = false }: ExpressOptions & { placeholderAddress?: boolean } = {},
 ): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
@@ -148,7 +149,7 @@ export const mapCTCartToCTPayment = (
   ...(express && {
     custom: {
       type: { typeId: 'type', key: getPaymentCustomTypeKey() },
-      fields: { [EASYCREDIT_EXPRESS_FIELD]: true },
+      fields: { [EASYCREDIT_EXPRESS_FIELD]: true, [EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]: placeholderAddress },
     },
   }),
 });

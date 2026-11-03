@@ -14,7 +14,7 @@ import {
 
 const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
 
-async function postDeploy(_properties: Map<string, unknown>) {
+export async function postDeploy(_properties: Map<string, unknown>) {
   const applicationUrl = _properties.get(CONNECT_APPLICATION_URL_KEY);
 
   assertString(applicationUrl, CONNECT_APPLICATION_URL_KEY);
@@ -30,7 +30,7 @@ async function postDeploy(_properties: Map<string, unknown>) {
   await createOrUpdatePaymentCustomType(getPaymentCustomTypeKey());
 }
 
-async function runPostDeployScripts() {
+export async function runPostDeployScripts() {
   try {
     const properties = new Map(Object.entries(process.env));
     await postDeploy(properties);
@@ -42,4 +42,6 @@ async function runPostDeployScripts() {
   }
 }
 
-runPostDeployScripts();
+if (require.main === module) {
+  runPostDeployScripts();
+}
