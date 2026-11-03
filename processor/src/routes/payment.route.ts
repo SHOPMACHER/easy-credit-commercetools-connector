@@ -127,9 +127,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       },
     },
     async (request, reply) => {
-      const { cartId, redirectLinks, paymentType } = request.body;
+      const { cartId, redirectLinks, customerRelationship, paymentType } = request.body;
 
-      const response = await handleCreatePayment(cartId, redirectLinks, paymentType);
+      const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship, paymentType);
 
       reply.code(201).send(response);
     },

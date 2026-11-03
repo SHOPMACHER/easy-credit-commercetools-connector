@@ -111,6 +111,7 @@ export class ECCheckoutComponent implements CheckoutComponent {
       cartId: this.checkoutComponentOptions.cartId,
       paymentType: this.paymentType,
       redirectLinks: this.checkoutComponentOptions.redirectLinks,
+      customerRelationship: this.checkoutComponentOptions.customerRelationship,
     };
 
     const res = await fetch(`${this.processorUrl}/payments`, {

@@ -1,6 +1,7 @@
 import fastify from 'fastify';
 import { webhookRoute } from '../../src/routes/webhook.route';
 import { handleAuthorizePayment, handleCancelPayment } from '../../src/services/payment.service';
+import { signRedirectUrl } from '../../src/utils/redirectSignature.utils';
 import {
   AuthorityAuthorizationHook,
   JWTAuthenticationHook,
@@ -51,18 +52,45 @@ describe('webhookRoute', () => {
       expect(handleCancelPayment).toHaveBeenCalledWith(paymentId);
     });
 
-    it('should cancel payment and redirect', async () => {
+    it('should cancel payment and redirect to a signed redirect URL', async () => {
       const paymentId = '12345';
-      const redirectUrl = 'https://redirect.com';
+      const redirectUrl = 'https://shop.example.com/cart?status=1&a=b%20c';
       (handleCancelPayment as jest.Mock).mockResolvedValue(null);
 
       const response = await app.inject({
         method: 'GET',
-        url: `/webhook/${paymentId}/cancel?redirectUrl=${redirectUrl}`,
+        url: `/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl)}`,
       });
 
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toBe(redirectUrl);
+      expect(handleCancelPayment).toHaveBeenCalledWith(paymentId);
+    });
+
+    it.each([
+      ['without a signature', (url: string) => `redirectUrl=${encodeURIComponent(url)}`],
+      ['with a wrong signature', (url: string) => `redirectUrl=${encodeURIComponent(url)}&sig=wrong`],
+      [
+        'with the signature of another URL',
+        (url: string) =>
+          `redirectUrl=${encodeURIComponent(url)}&sig=${signRedirectUrl('12345', 'https://shop.example.com')}`,
+      ],
+      [
+        'with the signature of another payment',
+        (url: string) => `redirectUrl=${encodeURIComponent(url)}&sig=${signRedirectUrl('other', url)}`,
+      ],
+    ])('should cancel the payment but not redirect %s', async (_, query) => {
+      const paymentId = '12345';
+      (handleCancelPayment as jest.Mock).mockResolvedValue(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/webhook/${paymentId}/cancel?${query('https://evil.example.com')}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ paymentId });
+      expect(response.headers.location).toBeUndefined();
       expect(handleCancelPayment).toHaveBeenCalledWith(paymentId);
     });
   });
@@ -82,18 +110,45 @@ describe('webhookRoute', () => {
       expect(handleAuthorizePayment).toHaveBeenCalledWith(paymentId);
     });
 
-    it('should authorize payment and redirect', async () => {
+    it('should authorize payment and redirect to a signed redirect URL', async () => {
       const paymentId = '12345';
-      const redirectUrl = 'https://redirect.com';
+      const redirectUrl = 'https://shop.example.com/cart?status=1&a=b%20c';
       (handleAuthorizePayment as jest.Mock).mockResolvedValue(null);
 
       const response = await app.inject({
         method: 'GET',
-        url: `/webhook/${paymentId}/authorize?redirectUrl=${redirectUrl}`,
+        url: `/webhook/${paymentId}/authorize?redirectUrl=${encodeURIComponent(redirectUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl)}`,
       });
 
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toBe(redirectUrl);
+      expect(handleAuthorizePayment).toHaveBeenCalledWith(paymentId);
+    });
+
+    it.each([
+      ['without a signature', (url: string) => `redirectUrl=${encodeURIComponent(url)}`],
+      ['with a wrong signature', (url: string) => `redirectUrl=${encodeURIComponent(url)}&sig=wrong`],
+      [
+        'with the signature of another URL',
+        (url: string) =>
+          `redirectUrl=${encodeURIComponent(url)}&sig=${signRedirectUrl('12345', 'https://shop.example.com')}`,
+      ],
+      [
+        'with the signature of another payment',
+        (url: string) => `redirectUrl=${encodeURIComponent(url)}&sig=${signRedirectUrl('other', url)}`,
+      ],
+    ])('should authorize the payment but not redirect %s', async (_, query) => {
+      const paymentId = '12345';
+      (handleAuthorizePayment as jest.Mock).mockResolvedValue(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/webhook/${paymentId}/authorize?${query('https://evil.example.com')}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ paymentId });
+      expect(response.headers.location).toBeUndefined();
       expect(handleAuthorizePayment).toHaveBeenCalledWith(paymentId);
     });
   });

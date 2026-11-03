@@ -15,6 +15,7 @@ import {
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
+import { signRedirectUrl } from './redirectSignature.utils';
 import {
   CTTransactionState,
   CTTransactionType,
@@ -56,6 +57,11 @@ export const mapLineItem = (lineItem: LineItem) => ({
     },
   ],
 });
+
+// The signature lets the webhook redirect only to a link the connector itself passed to easyCredit.
+const cancelWebhookUrl = (connectorUrl: string | undefined, paymentId: string, redirectUrl: string): string =>
+  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}` +
+  `&sig=${signRedirectUrl(paymentId, redirectUrl)}`;
 
 export type ExpressOptions = {
   express?: boolean;
@@ -108,8 +114,8 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
-      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
+      urlDenial: cancelWebhookUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlDenial),
+      urlCancellation: cancelWebhookUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlCancellation),
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
