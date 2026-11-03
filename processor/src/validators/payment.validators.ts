@@ -307,9 +307,8 @@ export const validateInitialRefundTransaction = (before: Payment, after: Payment
 const invalidRefundAmountError = (message: string) =>
   new Errorx({ code: 'InvalidRefundAmount', httpErrorStatus: 400, message });
 
-// The Refund is added on the payment version read here, so a parallel refund cannot use the same remaining amount.
-// Returns the amount in cents.
-export const validateRefundAmount = (payment: Payment, refundAmount: number): number => {
+// Checked before anything is read or written, so a malformed amount costs no easyCredit call. Returns the amount in cents.
+export const validateRefundAmountFormat = (refundAmount: number): number => {
   const refundCents = eurToCents(refundAmount);
 
   // Float tolerance only: 19.99 * 100 is 1998.9999..., while 10.005 * 100 is 1000.4999...
@@ -321,6 +320,11 @@ export const validateRefundAmount = (payment: Payment, refundAmount: number): nu
     throw invalidRefundAmountError('The refund amount must be greater than 0');
   }
 
+  return refundCents;
+};
+
+// The Refund is added on the payment version read here, so a parallel refund cannot use the same remaining amount.
+export const validateRefundAmountLeft = (payment: Payment, refundCents: number): void => {
   const refundedCents = payment.transactions
     .filter(({ type, state }) => type === CTTransactionType.Refund && state !== CTTransactionState.Failure)
     .reduce((sum, { amount }) => sum + amount.centAmount, 0);
@@ -330,8 +334,6 @@ export const validateRefundAmount = (payment: Payment, refundAmount: number): nu
       'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
     );
   }
-
-  return refundCents;
 };
 
 export const validateECTransactionId = (transactionId: string) => {

@@ -1,11 +1,11 @@
 import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { CTTransactionState, CTTransactionType, ECBooking, ECTransactionPaymentType } from '../types/payment.types';
 import {
-  EASYCREDIT_BOOKING_CLOCK_SKEW_MS,
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
-  EASYCREDIT_MISSING_BOOKING_MS,
+  EASYCREDIT_CAPTURE_IN_FLIGHT_MS,
+  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
 } from './constant.utils';
@@ -74,51 +74,32 @@ export const getCompletedRefunds = (ecBookings: ECBooking[]) => {
   );
 };
 
-// A missing timestamp means a transaction from an earlier version, which is older than any booking delay.
-export const isWithoutBookingTooLong = (timestamp?: string): boolean => {
-  const age = Date.now() - Date.parse(timestamp ?? '');
-  return Number.isNaN(age) || age > EASYCREDIT_MISSING_BOOKING_MS;
-};
-
-// Open refunds that easyCredit has no booking for, long after they were sent.
-export const getExpiredRefunds = (openRefunds: Transaction[], ecBookings: ECBooking[]): Transaction[] => {
-  const bookedIds = new Set(
-    ecBookings
-      .filter(({ bookingType }) => bookingType === EASYCREDIT_REFUND_BOOKING_TYPE)
-      .map(({ bookingId }) => bookingId),
-  );
-  return openRefunds.filter(({ id, timestamp }) => !bookedIds.has(id) && isWithoutBookingTooLong(timestamp));
-};
-
 export const getCaptureBooking = (ecBookings: ECBooking[]) => {
   return ecBookings.filter((item) => item.bookingType === EASYCREDIT_CAPTURE_BOOKING_TYPE && item.type === 'CAPTURE');
 };
 
-// Bookings dated before the Charge belong to an earlier capture attempt. Without a Charge date all bookings count.
-export const getCaptureBookingsSince = (captureBookings: ECBooking[], chargedAt?: string): ECBooking[] => {
-  const from = Date.parse(chargedAt ?? '') - EASYCREDIT_BOOKING_CLOCK_SKEW_MS;
-  if (Number.isNaN(from)) {
-    return captureBookings;
-  }
-  // A booking without a readable date is kept, as it may belong to this Charge.
-  return captureBookings.filter(({ created }) => {
-    const createdAt = Date.parse(created);
-    return Number.isNaN(createdAt) || createdAt >= from;
-  });
+// Bookings listed before the Charge was added belong to an earlier capture attempt.
+export const getChargeCaptureBookings = (captureBookings: ECBooking[], charge?: Transaction): ECBooking[] => {
+  const earlier = new Set((charge?.custom?.fields?.[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] as string[]) ?? []);
+  return captureBookings.filter(({ uuid }) => !earlier.has(uuid));
 };
 
-// A DONE booking is final. Otherwise the newest booking of this Charge decides, as a retried capture leaves the earlier FAILED one behind.
-export const getCaptureResult = (captureBookings: ECBooking[], chargedAt?: string): ECBooking | undefined => {
+// A DONE booking is final. Otherwise a FAILED booking of this Charge decides, unless one of its bookings is still open.
+export const getCaptureResult = (captureBookings: ECBooking[], charge?: Transaction): ECBooking | undefined => {
   const done = captureBookings.find(({ status }) => status === EASYCREDIT_BOOKING_STATUS_DONE);
   if (done) {
     return done;
   }
-  const latest = getCaptureBookingsSince(captureBookings, chargedAt).reduce<ECBooking | undefined>(
-    (newest, booking) => (!newest || Date.parse(booking.created) > Date.parse(newest.created) ? booking : newest),
-    undefined,
-  );
-  return latest?.status === EASYCREDIT_BOOKING_STATUS_FAILED ? latest : undefined;
+  const own = getChargeCaptureBookings(captureBookings, charge);
+  if (own.some(({ status }) => status !== EASYCREDIT_BOOKING_STATUS_FAILED)) {
+    return undefined;
+  }
+  return own.at(-1);
 };
+
+// A Charge without a readable timestamp is from an earlier version, so no request is still sending its capture.
+export const isCaptureInFlight = (charge: Transaction): boolean =>
+  Date.now() - Date.parse(charge.timestamp ?? '') < EASYCREDIT_CAPTURE_IN_FLIGHT_MS;
 
 export const getPendingCaptureTransactions = (payment: Payment): Transaction[] => {
   return payment.transactions.filter(

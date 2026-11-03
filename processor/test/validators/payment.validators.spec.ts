@@ -8,7 +8,8 @@ import {
   validatePaymentTypeAvailability,
   validatePendingTransaction,
   validatePrivateCustomer,
-  validateRefundAmount,
+  validateRefundAmountFormat,
+  validateRefundAmountLeft,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
@@ -530,7 +531,27 @@ describe('Validation Functions', () => {
     });
   });
 
-  describe('validateRefundAmount', () => {
+  describe('validateRefundAmountFormat', () => {
+    it.each([
+      [19.99, 1999],
+      [0.07, 7],
+      [100, 10000],
+    ])('should return %s as %s cents', (amount, cents) => {
+      expect(validateRefundAmountFormat(amount)).toBe(cents);
+    });
+
+    it.each([10.005, 0.001, 19.999])('should reject %s, which has more than two decimal places', (amount) => {
+      expect(() => validateRefundAmountFormat(amount)).toThrow(
+        'The refund amount must not have more than two decimal places',
+      );
+    });
+
+    it.each([0, -1])('should reject %s', (amount) => {
+      expect(() => validateRefundAmountFormat(amount)).toThrow('The refund amount must be greater than 0');
+    });
+  });
+
+  describe('validateRefundAmountLeft', () => {
     const refund = (state: CTTransactionState, centAmount: number) => ({
       type: CTTransactionType.Refund,
       state,
@@ -542,26 +563,12 @@ describe('Validation Functions', () => {
         transactions: [{ type: CTTransactionType.Authorization, state: CTTransactionState.Success }, ...transactions],
       }) as unknown as Payment;
 
-    it.each([
-      [19.99, 1999],
-      [0.07, 7],
-      [100, 10000],
-    ])('should return %s as %s cents', (amount, cents) => {
-      expect(validateRefundAmount(paymentWith(), amount)).toBe(cents);
-    });
-
-    it.each([10.005, 0.001, 19.999])('should reject %s, which has more than two decimal places', (amount) => {
-      expect(() => validateRefundAmount(paymentWith(), amount)).toThrow(
-        'The refund amount must not have more than two decimal places',
-      );
-    });
-
-    it.each([0, -1])('should reject %s', (amount) => {
-      expect(() => validateRefundAmount(paymentWith(), amount)).toThrow('The refund amount must be greater than 0');
+    it('should accept the full payment amount', () => {
+      expect(() => validateRefundAmountLeft(paymentWith(), 10000)).not.toThrow();
     });
 
     it('should reject an amount above the payment amount', () => {
-      expect(() => validateRefundAmount(paymentWith(), 100.01)).toThrow(
+      expect(() => validateRefundAmountLeft(paymentWith(), 10001)).toThrow(
         'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
       );
     });
@@ -574,8 +581,8 @@ describe('Validation Functions', () => {
         refund(CTTransactionState.Failure, 4000),
       );
 
-      expect(validateRefundAmount(payment, 40)).toBe(4000);
-      expect(() => validateRefundAmount(payment, 40.01)).toThrow(
+      expect(() => validateRefundAmountLeft(payment, 4000)).not.toThrow();
+      expect(() => validateRefundAmountLeft(payment, 4001)).toThrow(
         expect.objectContaining({ code: 'InvalidRefundAmount', httpErrorStatus: 400 }),
       );
     });

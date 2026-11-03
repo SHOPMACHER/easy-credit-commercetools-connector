@@ -6,6 +6,7 @@ import {
   CTCartState,
   CTTransactionState,
   CTTransactionType,
+  ECGetMerchantTransactionResponse,
   ECGetPaymentResponse,
   ECRefundPayload,
   ECTransactionCustomerRelationship,
@@ -32,7 +33,8 @@ import {
   validatePayment,
   validatePaymentTypeAvailability,
   validatePrivateCustomer,
-  validateRefundAmount,
+  validateRefundAmountFormat,
+  validateRefundAmountLeft,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
@@ -42,15 +44,15 @@ import {
   getActiveCaptureTransaction,
   getAddedTransaction,
   getCaptureBooking,
-  getCaptureBookingsSince,
   getCaptureResult,
+  getChargeCaptureBookings,
   getOpenRefundTransactions,
   getPaymentType,
   getPendingCaptureTransactions,
   getSuccessCaptureTransactions,
   getSuccessTransaction,
   getTransaction,
-  isWithoutBookingTooLong,
+  isCaptureInFlight,
   toPaymentMethod,
 } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
@@ -70,6 +72,7 @@ import {
   EASYCREDIT_AUTHORIZATION_TIMEOUT_MS,
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS,
+  EASYCREDIT_CAPTURE_NOT_REPORTED_STATUSES,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
@@ -1199,10 +1202,14 @@ const markTransactionAsFailed = async (payment: Payment, transaction: Transactio
 };
 
 // Returns undefined if a parallel capture request added its Charge first.
-const addPendingCharge = async (payment: Payment, authorization: Transaction): Promise<Payment | undefined> => {
+const addPendingCharge = async (
+  payment: Payment,
+  authorization: Transaction,
+  earlierCaptureBookings: string[],
+): Promise<Payment | undefined> => {
   try {
     return await updatePayment(payment, [
-      { action: 'addTransaction', transaction: mapPendingChargeTransaction(authorization) },
+      { action: 'addTransaction', transaction: mapPendingChargeTransaction(authorization, earlierCaptureBookings) },
     ]);
   } catch (error) {
     if ((error as Errorx).httpErrorStatus === 409 && getActiveCaptureTransaction(await getPaymentById(payment.id))) {
@@ -1218,16 +1225,15 @@ const addPendingCharge = async (payment: Payment, authorization: Transaction): P
 const settlePendingCharge = async (
   payment: Payment,
   charge: Transaction,
-  ecTransactionId: string,
+  ecTransaction: ECGetMerchantTransactionResponse,
 ): Promise<Payment | undefined> => {
-  const ecTransaction = await initEasyCreditClient()
-    .getMerchantTransaction(ecTransactionId)
-    .catch((error: unknown) => {
-      throw toCaptureLookupError(error);
-    });
-  const captureBookings = getCaptureBooking(ecTransaction.bookings ?? []);
-  const result = getCaptureResult(captureBookings, charge.timestamp);
-  const logContext = { paymentId: payment.id, transactionId: charge.id };
+  const logContext = { paymentId: payment.id, transactionId: charge.id, ecStatus: ecTransaction.status };
+  if (!ecTransaction.bookings) {
+    log.warn('easyCredit sent the transaction without bookings, the Pending Charge stays open', logContext);
+    return undefined;
+  }
+  const captureBookings = getCaptureBooking(ecTransaction.bookings);
+  const result = getCaptureResult(captureBookings, charge);
 
   if (result?.status === EASYCREDIT_BOOKING_STATUS_DONE) {
     await changeTransactionState(payment, charge, CTTransactionState.Success);
@@ -1235,37 +1241,76 @@ const settlePendingCharge = async (
     return undefined;
   }
 
-  const isOpen =
-    getCaptureBookingsSince(captureBookings, charge.timestamp).length > 0 || !isWithoutBookingTooLong(charge.timestamp);
-  if (!result && isOpen) {
+  // Without a booking of its own, the Charge is failed only if easyCredit still waits for a capture
+  // and the request that added the Charge is past its capture call.
+  const neverReceived =
+    getChargeCaptureBookings(captureBookings, charge).length === 0 &&
+    EASYCREDIT_CAPTURE_NOT_REPORTED_STATUSES.includes(ecTransaction.status) &&
+    !isCaptureInFlight(charge);
+  if (!result && !neverReceived) {
     log.info('Payment capture is still being processed, capture request ignored', logContext);
     return undefined;
   }
 
-  // easyCredit failed the capture or never received it, so the Charge fails and the capture is requested again.
   log.warn('Pending Charge set to Failure before capturing again', {
     ...logContext,
-    reason: result?.message?.messageEN,
+    reason: result?.message?.messageEN ?? 'easyCredit has not received the capture',
   });
   const failed = await changeTransactionState(payment, charge, CTTransactionState.Failure);
   return getActiveCaptureTransaction(failed) ? undefined : failed;
 };
 
 // The notification is the usual way to complete refunds; this covers the ones it never completed.
-// A failed lookup only leaves them open, so it does not block the request.
-const settleRefunds = async (payment: Payment): Promise<Payment> => {
-  if (getOpenRefundTransactions(payment).length === 0) {
+// Without the bookings or after a failed write the refunds stay open, which does not block the request.
+const settleRefunds = async (
+  payment: Payment,
+  ecTransaction: ECGetMerchantTransactionResponse | undefined,
+): Promise<Payment> => {
+  if (!ecTransaction || getOpenRefundTransactions(payment).length === 0) {
+    return payment;
+  }
+  if (!ecTransaction.bookings) {
+    log.warn('easyCredit sent the transaction without bookings, open refunds stay open', { paymentId: payment.id });
     return payment;
   }
   try {
-    const ecTransaction = await initEasyCreditClient().getMerchantTransaction(
-      getSuccessTransaction(payment)?.interactionId as string,
-    );
-    return await settleOpenRefunds(payment, ecTransaction.bookings ?? []);
+    return await settleOpenRefunds(payment, ecTransaction.bookings);
   } catch (error) {
     log.warn('Open refunds could not be settled from the easyCredit bookings', { paymentId: payment.id, error });
     return await getPaymentById(payment.id);
   }
+};
+
+// Only open refunds need the bookings before a refund, so the read is skipped without them and a failed one is not fatal.
+const readTransactionForOpenRefunds = async (
+  payment: Payment,
+  ecTransactionId: string,
+): Promise<ECGetMerchantTransactionResponse | undefined> => {
+  if (getOpenRefundTransactions(payment).length === 0) {
+    return undefined;
+  }
+  return await initEasyCreditClient()
+    .getMerchantTransaction(ecTransactionId)
+    .catch((error: unknown) => {
+      log.warn('easyCredit bookings could not be read, open refunds stay open', { paymentId: payment.id, error });
+      return undefined;
+    });
+};
+
+// The capture bookings a new Charge must not take as its own. Without the list, an earlier capture
+// cannot be told apart from the new one, unless the payment never had a Charge.
+const getEarlierCaptureBookings = (payment: Payment, ecTransaction: ECGetMerchantTransactionResponse): string[] => {
+  if (ecTransaction.bookings) {
+    return getCaptureBooking(ecTransaction.bookings).map(({ uuid }) => uuid);
+  }
+  if (payment.transactions.some(({ type }) => type === CTTransactionType.Charge)) {
+    throw new Errorx({
+      code: 'CaptureFailed',
+      message: 'easyCredit sent the transaction without bookings, capture not sent',
+      httpErrorStatus: 502,
+    });
+  }
+  return [];
 };
 
 export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
@@ -1274,25 +1319,33 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   validatePayment(fetchedPayment);
   validateSuccessTransaction(fetchedPayment);
 
-  const payment = await settleRefunds(fetchedPayment);
-
   // A repeated request, for example a shipping event sent twice, succeeds without capturing again.
-  if (getSuccessCaptureTransactions(payment).length > 0) {
+  if (getSuccessCaptureTransactions(fetchedPayment).length > 0) {
     log.info('Payment already captured, capture request ignored', { paymentId });
     return;
   }
 
-  const transaction = getSuccessTransaction(payment) as Transaction;
+  const transaction = getSuccessTransaction(fetchedPayment) as Transaction;
+  // Read once for the open refunds, the Pending Charge and the bookings of earlier captures.
+  const ecTransaction = await initEasyCreditClient()
+    .getMerchantTransaction(transaction.interactionId as string)
+    .catch((error: unknown) => {
+      throw toCaptureLookupError(error);
+    });
+
+  const payment = await settleRefunds(fetchedPayment, ecTransaction);
+
   let current = payment;
   const pendingCharge = getPendingCaptureTransactions(payment)[0];
   if (pendingCharge) {
-    const settled = await settlePendingCharge(payment, pendingCharge, transaction.interactionId as string);
+    const settled = await settlePendingCharge(payment, pendingCharge, ecTransaction);
     if (!settled) {
       return;
     }
     current = settled;
   }
 
+  const earlierCaptureBookings = getEarlierCaptureBookings(current, ecTransaction);
   const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
   const easyCreditTransaction = await initEasyCreditClient()
@@ -1310,7 +1363,7 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   }
 
   // Added before easyCredit is called, so an early notification finds the Charge and a parallel capture hits the version lock.
-  const chargedPayment = await addPendingCharge(current, transaction);
+  const chargedPayment = await addPendingCharge(current, transaction, earlierCaptureBookings);
   if (!chargedPayment) {
     return;
   }
@@ -1338,16 +1391,20 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
 
 // The response is 202 with the payment either way; the refund transaction state carries the outcome.
 export const handleRefundPayment = async (paymentId: string, refundAmount: number): Promise<Payment> => {
+  const refundCents = validateRefundAmountFormat(refundAmount);
   const fetchedPayment = await getPaymentById(paymentId);
 
   validatePayment(fetchedPayment);
   validateSuccessTransaction(fetchedPayment);
 
-  // Settled first, so a refund that failed meanwhile no longer counts against the remaining amount.
-  const payment = await settleRefunds(fetchedPayment);
-  const refundCents = validateRefundAmount(payment, refundAmount);
+  const ecTransactionId = getSuccessTransaction(fetchedPayment)?.interactionId as string;
 
-  const ecTransactionId = getSuccessTransaction(payment)?.interactionId as string;
+  // Settled first, so a refund that failed meanwhile no longer counts against the remaining amount.
+  const payment = await settleRefunds(
+    fetchedPayment,
+    await readTransactionForOpenRefunds(fetchedPayment, ecTransactionId),
+  );
+  validateRefundAmountLeft(payment, refundCents);
 
   const updatedCTPayment = await updatePayment(payment, [
     {

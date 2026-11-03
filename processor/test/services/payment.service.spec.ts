@@ -18,13 +18,14 @@ import {
   validatePayment,
   validatePaymentTypeAvailability,
   validatePrivateCustomer,
-  validateRefundAmount,
+  validateRefundAmountFormat,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
 import {
+  getCaptureBooking,
   getOpenRefundTransactions,
   getPaymentType,
   getPendingCaptureTransactions,
@@ -73,7 +74,8 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateSuccessTransaction: jest.fn(),
   validateTransaction: jest.fn(),
   validateInitialOrPendingTransaction: jest.fn(),
-  validateRefundAmount: jest.fn(),
+  validateRefundAmountFormat: jest.fn(),
+  validateRefundAmountLeft: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
 }));
 jest.mock('../../src/utils/map.utils');
@@ -1221,7 +1223,10 @@ describe('Payment handlers', () => {
         capturePayment: jest.fn().mockResolvedValue(undefined),
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue({ status: 'REPORT_CAPTURE', bookings: [] }),
       });
+      (getCaptureBooking as jest.Mock).mockReturnValue([]);
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (getSuccessTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
@@ -1286,7 +1291,7 @@ describe('Payment handlers', () => {
         // @ts-expect-error mocked
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
       });
-      (validateRefundAmount as jest.Mock).mockReturnValue(1000);
+      (validateRefundAmountFormat as jest.Mock).mockReturnValue(1000);
       (getOpenRefundTransactions as jest.Mock).mockReturnValue([]);
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
