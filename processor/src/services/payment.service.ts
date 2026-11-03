@@ -1,5 +1,6 @@
 import { Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
+import { isPaymentCustomTypeReady } from '../commercetools/customFields.commercetools';
 import { readConfiguration } from '../utils/config.utils';
 
 import {
@@ -9,7 +10,6 @@ import {
   ECGetMerchantTransactionResponse,
   ECGetPaymentResponse,
   ECRefundPayload,
-  ECTransactionCustomerRelationship,
   ECTransactionDecision,
   ECTransactionPaymentType,
   ECTransactionRedirectLinksWithoutAuthorizationCallback,
@@ -73,16 +73,21 @@ import {
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS,
   EASYCREDIT_CAPTURE_NOT_REPORTED_STATUSES,
+  EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
   EASYCREDIT_REQUEST_TIMEOUT_MS,
   EASYCREDIT_TOTAL_VALUE_FIELD,
+  EXPRESS_PLACEHOLDER_COUNTRY,
+  getPaymentCustomTypeKey,
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { getBillPaymentExclusion } from './billPaymentRestriction.service';
 import { settleOpenRefunds } from './easycreditNotification.service';
+import { getCustomerRelationship } from './customerRelationship.service';
 
 // Callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
@@ -139,6 +144,16 @@ const collectCartDataErrors = (
 ) => {
   if (!express) {
     validateAddresses(cart.billingAddress, getShippingAddress(cart), ecConfig, errors);
+  } else if (cart.shippingMode === 'Multiple') {
+    // easyCredit returns one address, and commercetools cannot freeze a Multiple cart without item shipping details.
+    errors.push(
+      new Errorx({
+        code: 'ExpressShippingModeNotSupported',
+        httpErrorStatus: 400,
+        message: 'Der Express-Checkout unterstützt keine Lieferung an mehrere Adressen.',
+        fields: ecConfig,
+      }),
+    );
   }
   validateCurrency(cart.totalPrice.currencyCode, ecConfig, errors);
 
@@ -210,6 +225,58 @@ const assertSessionCart = (cartId: string | undefined): string => {
   return cartId;
 };
 
+// Without the payment custom type the express payment cannot be flagged, so express is refused before the cart changes.
+const assertExpressConfigured = async (): Promise<void> => {
+  const typeKey = getPaymentCustomTypeKey();
+
+  if (!(await isPaymentCustomTypeReady(typeKey))) {
+    throw new Errorx({
+      code: 'ExpressNotConfigured',
+      message: 'Der Express-Checkout ist nicht eingerichtet.',
+      privateMessage: `The payment custom type "${typeKey}" is missing or incomplete, redeploy the connector to create it`,
+      httpErrorStatus: 500,
+    });
+  }
+};
+
+const isExpressPayment = (payment: Payment): boolean => payment.custom?.fields?.[EASYCREDIT_EXPRESS_FIELD] === true;
+
+const ownsPlaceholderAddress = (payment: Payment): boolean =>
+  payment.custom?.fields?.[EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD] === true;
+
+// Only the country is set: anything else means the shop or the express return replaced the placeholder.
+const isPlaceholderAddress = (address: Cart['shippingAddress']): boolean =>
+  !!address &&
+  address.country === EXPRESS_PLACEHOLDER_COUNTRY &&
+  Object.entries(address).every(([field, value]) => field === 'country' || value === undefined || value === '');
+
+// Puts the cart back to its state before the attempt: unfrozen and, if the connector added it, without the placeholder.
+// A shipping method blocks unsetting the address; without an address before the attempt the shopper can only have set it on the placeholder.
+const releaseCartActions = (cart: Cart, ownsPlaceholder: boolean): CartUpdateAction[] => {
+  const removePlaceholder = ownsPlaceholder && isPlaceholderAddress(cart.shippingAddress);
+
+  return [
+    ...(cart.cartState === CTCartState.Frozen ? [{ action: 'unfreezeCart' as const }] : []),
+    ...(removePlaceholder && cart.shippingInfo ? [{ action: 'setShippingMethod' as const }] : []),
+    ...(removePlaceholder ? [{ action: 'setShippingAddress' as const }] : []),
+  ];
+};
+
+const releaseCart = async (cart: Cart, ownsPlaceholder: boolean): Promise<void> => {
+  const actions = releaseCartActions(cart, ownsPlaceholder);
+
+  if (actions.length > 0) {
+    await updateCart(cart, actions);
+  }
+};
+
+const expressAddressMissingError = () =>
+  new Errorx({
+    code: 'ExpressAddressMissing',
+    message: 'Die Adresse aus dem easyCredit Express-Checkout fehlt im Warenkorb.',
+    httpErrorStatus: 400,
+  });
+
 // Not logged here: the error handler already logs every error it answers with.
 export const handlePaymentMethod = async (
   cartId: string,
@@ -233,26 +300,36 @@ export const handlePaymentMethod = async (
 
 // Handle payment creation logic
 // Default strategy, and a cart the shop froze keeps its own. A total changed afterwards fails the authorization with AmountMismatch.
-const freezeCart = async (cart: Cart, { express = false }: ExpressOptions = {}): Promise<Cart> => {
+// Returns whether the connector added the placeholder, so the cleanup removes only that one.
+const freezeCart = async (
+  cart: Cart,
+  { express = false }: ExpressOptions = {},
+): Promise<{ cart: Cart; addedPlaceholder: boolean }> => {
   if (cart.cartState === CTCartState.Frozen) {
-    return cart;
+    return { cart, addedPlaceholder: false };
   }
 
   // commercetools cannot freeze a cart without shipping address; the express return replaces this placeholder.
-  const placeholderAddress: CartUpdateAction[] =
-    express && !cart.shippingAddress ? [{ action: 'setShippingAddress', address: { country: 'DE' } }] : [];
+  const addedPlaceholder = express && !cart.shippingAddress;
+  const placeholderAddress: CartUpdateAction[] = addedPlaceholder
+    ? [{ action: 'setShippingAddress', address: { country: EXPRESS_PLACEHOLDER_COUNTRY } }]
+    : [];
 
-  return updateCart(cart, [...placeholderAddress, { action: 'freezeCart' }]);
+  return { cart: await updateCart(cart, [...placeholderAddress, { action: 'freezeCart' }]), addedPlaceholder };
 };
 
 // Without a transaction the payment is an orphan on the cart. Unfreeze first, as removePayment on a frozen cart is undocumented.
-const unfreezeAfterFailedCreate = async (cart: Cart, orphanPaymentId?: string): Promise<void> => {
+const unfreezeAfterFailedCreate = async (
+  cart: Cart,
+  ownsPlaceholder: boolean,
+  orphanPaymentId?: string,
+): Promise<void> => {
   const orphanCleanup: CartUpdateAction[] = orphanPaymentId
     ? [{ action: 'removePayment', payment: { typeId: 'payment', id: orphanPaymentId } }]
     : [];
 
   try {
-    await updateCart(cart, [{ action: 'unfreezeCart' }, ...orphanCleanup]);
+    await updateCart(cart, [...releaseCartActions(cart, ownsPlaceholder), ...orphanCleanup]);
   } catch (cleanupError: unknown) {
     log.error('Failed to unfreeze the cart after a failed payment creation', cleanupError);
   }
@@ -264,16 +341,19 @@ const getItemIds = ({ lineItems, customLineItems }: Cart): string =>
 const createPaymentForCart = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
-  customerRelationship: ECTransactionCustomerRelationship | undefined,
   paymentType: ECTransactionPaymentType,
   options: ExpressOptions,
 ): Promise<PaymentResponse> => {
   let cart: Cart | null = null;
   let shouldUnfreezeCart = false;
+  let ownsPlaceholder = false;
   // Id of a payment that is attached to the cart but has no transaction written yet
   const orphan: { paymentId?: string } = {};
   try {
     assertPaymentTypeEnabled(paymentType);
+    if (options.express) {
+      await assertExpressConfigured();
+    }
     cart = await getCartById(cartId);
     await validateCart(cart, paymentType, options);
     const { centAmount, currencyCode } = cart.totalPrice;
@@ -281,8 +361,10 @@ const createPaymentForCart = async (
 
     // After validation, so a rejected request leaves the cart untouched. The re-validation below covers an unfreeze
     // that repriced the cart.
-    cart = await discardStaleAttempts(cart);
-    cart = await freezeCart(cart, options);
+    const discard = await discardStaleAttempts(cart);
+    const frozen = await freezeCart(discard.cart, options);
+    cart = frozen.cart;
+    ownsPlaceholder = frozen.addedPlaceholder || discard.inheritsPlaceholder;
     shouldUnfreezeCart = true;
 
     // Freezing can reprice the cart or add a 0 € gift line item, so the checks above may no longer hold.
@@ -294,12 +376,21 @@ const createPaymentForCart = async (
       await validateCart(cart, paymentType, options);
     }
 
-    const ctPayment = await createPayment(mapCTCartToCTPayment(cart, paymentType, options));
+    const ctPayment = await createPayment(
+      mapCTCartToCTPayment(cart, paymentType, { ...options, placeholderAddress: ownsPlaceholder }),
+    );
     cart = await updateCart(cart, [{ action: 'addPayment', payment: { typeId: 'payment', id: ctPayment.id } }]);
     orphan.paymentId = ctPayment.id;
 
     const ecPayment = await initEasyCreditClient().createPayment(
-      await mapCTCartToECPayment(cart, ctPayment, redirectLinks, customerRelationship, paymentType, options),
+      await mapCTCartToECPayment(
+        cart,
+        ctPayment,
+        redirectLinks,
+        await getCustomerRelationship(cart),
+        paymentType,
+        options,
+      ),
     );
 
     const transactionState =
@@ -346,7 +437,7 @@ const createPaymentForCart = async (
 
     // Validation failures must leave even an already frozen cart untouched.
     if (shouldUnfreezeCart && cart?.cartState === CTCartState.Frozen) {
-      await unfreezeAfterFailedCreate(cart, orphan.paymentId);
+      await unfreezeAfterFailedCreate(cart, ownsPlaceholder, orphan.paymentId);
     }
 
     throw error;
@@ -448,13 +539,18 @@ const failTransactionQuietly = async (paymentId: string, expectedFrom?: CTTransa
 
 // The shopper switched to a type nobody validated for the cart; a definitive failure fails the transaction and frees the cart.
 // Only an Initial transaction is failed: one that a concurrent authorize moved to Pending has its request in flight.
-const validateFinalType = async (paymentId: string, paymentType: ECTransactionPaymentType): Promise<void> => {
+// An express cart before the return holds the placeholder, so it is checked like at create; the authorize checks the address.
+const validateFinalType = async (payment: Payment, paymentType: ECTransactionPaymentType): Promise<void> => {
+  const paymentId = payment.id;
   let enabled = false;
 
   try {
     assertPaymentTypeEnabled(paymentType);
     enabled = true;
-    await validateCart(await getCartByPaymentId(paymentId), paymentType);
+    const cart = await getCartByPaymentId(paymentId);
+    await validateCart(cart, paymentType, {
+      express: isExpressPayment(payment) && isPlaceholderAddress(cart.shippingAddress),
+    });
   } catch (error: unknown) {
     // A switched-off type is definitive; once it is enabled only the cart errors in the whitelist are.
     if (!enabled || failsTransaction(error)) {
@@ -526,7 +622,7 @@ const syncPaymentType = async (
 
   // Only an unauthorized (Initial) transaction can still be failed; otherwise the type is just recorded.
   if (isGated) {
-    await validateFinalType(payment.id, final);
+    await validateFinalType(payment, final);
     await recordInterest(payment, ecPayment, final, await writeMethodInfo(payment, final));
     return final;
   }
@@ -557,26 +653,27 @@ const syncPaymentTypeBestEffort = async (payment: Payment, ecPayment: ECGetPayme
 export const handleCreatePayment = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
-  customerRelationship: ECTransactionCustomerRelationship,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
-): Promise<PaymentResponse> =>
-  createPaymentForCart(cartId, redirectLinks, customerRelationship, paymentType, { express: false });
+): Promise<PaymentResponse> => createPaymentForCart(cartId, redirectLinks, paymentType, { express: false });
 
 // Express handlers take the cartId from the session, never from the request.
+// Checked here too, so the shop hides the express buttons instead of failing on click.
 export const handleExpressPaymentMethod = async (
   cartId: string | undefined,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
-): Promise<GetPaymentMethodResponse> => handlePaymentMethod(assertSessionCart(cartId), paymentType, { express: true });
+): Promise<GetPaymentMethodResponse> => {
+  const sessionCartId = assertSessionCart(cartId);
+  await assertExpressConfigured();
+
+  return handlePaymentMethod(sessionCartId, paymentType, { express: true });
+};
 
 export const handleCreateExpressPayment = async (
   cartId: string | undefined,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
-  customerRelationship: ECTransactionCustomerRelationship | undefined,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
 ): Promise<PaymentResponse> =>
-  createPaymentForCart(assertSessionCart(cartId), redirectLinks, customerRelationship, paymentType, {
-    express: true,
-  });
+  createPaymentForCart(assertSessionCart(cartId), redirectLinks, paymentType, { express: true });
 
 export const handleGetPayment = async (paymentId: string): Promise<GetPaymentResponse> => {
   try {
@@ -696,10 +793,8 @@ const failTransaction = async (paymentId: string, expectedFrom?: CTTransactionSt
     return;
   }
   try {
-    const cart = await getCartByPaymentId(paymentId);
-    if (cart.cartState === CTCartState.Frozen) {
-      await updateCart(cart, [{ action: 'unfreezeCart' }]);
-    }
+    const payment = await getPaymentById(paymentId);
+    await releaseCart(await getCartByPaymentId(paymentId), ownsPlaceholderAddress(payment));
   } catch (error: unknown) {
     log.error('Error in unfreezing cart after failed authorization', error);
   }
@@ -747,8 +842,10 @@ const isStaleAttempt = async (payment: Payment): Promise<boolean> => {
 // The shopper switched the payment type in the shop checkout while the cart still holds an earlier attempt.
 // Pass 1 only reads, so a refusal mutates nothing; pass 2 fails the stale transactions and replaces them in one cart update.
 // handleCancelPayment (cancel webhook) stays as is: it also cancels Pending, while create refuses Pending.
-const discardStaleAttempts = async (cart: Cart): Promise<Cart> => {
+// A placeholder added for a discarded express attempt stays, as the cart is refrozen, and passes to the new attempt.
+const discardStaleAttempts = async (cart: Cart): Promise<{ cart: Cart; inheritsPlaceholder: boolean }> => {
   const discarded: string[] = [];
+  let placeholderOwned = false;
 
   for (const { id } of cart.paymentInfo?.payments ?? []) {
     const payment = await getPaymentById(id);
@@ -756,12 +853,13 @@ const discardStaleAttempts = async (cart: Cart): Promise<Cart> => {
     if (payment.paymentMethodInfo.paymentInterface?.toLowerCase() === EASYCREDIT_PAYMENT_METHOD) {
       if (await isStaleAttempt(payment)) {
         discarded.push(id);
+        placeholderOwned ||= ownsPlaceholderAddress(payment);
       }
     }
   }
 
   if (discarded.length === 0) {
-    return cart;
+    return { cart, inheritsPlaceholder: false };
   }
 
   for (const id of discarded) {
@@ -775,11 +873,13 @@ const discardStaleAttempts = async (cart: Cart): Promise<Cart> => {
 
   const isFrozen = cart.cartState === CTCartState.Frozen;
 
-  return updateCart(cart, [
+  const updated = await updateCart(cart, [
     ...(isFrozen ? [{ action: 'unfreezeCart' as const }] : []),
     ...discarded.map((id) => ({ action: 'removePayment' as const, payment: { typeId: 'payment' as const, id } })),
     ...(isFrozen ? [{ action: 'freezeCart' as const, strategy: cart.freezeStrategy }] : []),
   ]);
+
+  return { cart: updated, inheritsPlaceholder: placeholderOwned && isPlaceholderAddress(updated.shippingAddress) };
 };
 
 const DIVERGENCE_LOG = 'EASYCREDIT_AUTHORIZED_CT_NOT_SUCCESS';
@@ -877,13 +977,16 @@ const assertAuthorizedAmountMatches = async (paymentId: string, ecPayment: ECGet
   }
 };
 
-// A frozen cart still accepts address and company updates, so the bill rules can break after init.
-// Only runs for an Initial transaction, so a concurrent authorize that wrote Pending keeps its attempt.
-const assertBillRulesHold = async (paymentId: string, cart: Cart): Promise<void> => {
+// A frozen cart still accepts address and company updates, so the bill rules can break after init. Express skipped the
+// address checks at init, so they run here for every type. Only runs for an Initial transaction, so a concurrent
+// authorize that wrote Pending keeps its attempt.
+const assertCartRulesHold = async (
+  paymentId: string,
+  cart: Cart,
+  paymentType: ECTransactionPaymentType,
+): Promise<void> => {
   try {
-    validateCartData(cart, ECTransactionPaymentType.ECTransactionBillPayment, {
-      webShopId: readConfiguration().easyCredit.webShopId,
-    });
+    validateCartData(cart, paymentType, { webShopId: readConfiguration().easyCredit.webShopId });
   } catch (error: unknown) {
     if (failsTransaction(error)) {
       await failTransactionQuietly(paymentId, CTTransactionState.Initial);
@@ -966,10 +1069,15 @@ const requestAuthorization = async (
   ecPayment: ECGetPaymentResponse,
   paymentType: ECTransactionPaymentType,
   deadline: number,
+  express: boolean,
 ): Promise<void> => {
   const cart = await assertAmountMatches(paymentId, ecPayment, CTTransactionState.Initial);
-  if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
-    await assertBillRulesHold(paymentId, cart);
+  // Not a transaction failure: the express return may still set the address.
+  if (express && isPlaceholderAddress(cart.shippingAddress)) {
+    throw expressAddressMissingError();
+  }
+  if (express || paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
+    await assertCartRulesHold(paymentId, cart, paymentType);
   }
   const remaining = deadline - Date.now();
   if (remaining <= 0) {
@@ -1032,7 +1140,14 @@ export const handleAuthorizeECPayment = async (paymentId: string, waitForAuthori
     const paymentType = await syncPaymentType(payment, ecPayment);
 
     if (transaction.state === CTTransactionState.Initial) {
-      await requestAuthorization(paymentId, technicalTransactionId, ecPayment, paymentType, deadline);
+      await requestAuthorization(
+        paymentId,
+        technicalTransactionId,
+        ecPayment,
+        paymentType,
+        deadline,
+        isExpressPayment(payment),
+      );
     }
 
     if (waitForAuthorization) {
@@ -1092,6 +1207,12 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
 
     validatePayment(payment);
 
+    // Already failed, e.g. discarded by a newer attempt in another tab: the cart is no longer this attempt's to release.
+    if (getTransaction(payment)?.state === CTTransactionState.Failure) {
+      log.info('Cancel of an already failed easyCredit attempt, nothing to do', { paymentId });
+      return paymentId;
+    }
+
     const transaction = validateInitialOrPendingTransaction(payment);
     const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
@@ -1124,9 +1245,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
       await logLateAuthorization(paymentId, ecTechnicalTransactionId);
     }
 
-    const cart = await getCartByPaymentId(payment.id);
-
-    await updateCart(cart, [{ action: 'unfreezeCart' }]);
+    await releaseCart(await getCartByPaymentId(payment.id), ownsPlaceholderAddress(payment));
 
     return paymentId;
   } catch (error) {

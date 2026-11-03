@@ -1,11 +1,13 @@
 import {
   createOrUpdatePaymentCustomType,
   createOrUpdateTransactionCustomType,
+  isPaymentCustomTypeReady,
 } from '../../src/commercetools/customFields.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import {
   EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -275,6 +277,16 @@ describe('createOrUpdatePaymentCustomType', () => {
     type: { name: 'Boolean' },
   };
 
+  const placeholderFieldDefinition = {
+    name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+    label: {
+      en: 'EasyCredit Express Placeholder Address',
+      de: 'EasyCredit Express Placeholder Address',
+    },
+    required: false,
+    type: { name: 'Boolean' },
+  };
+
   const mockExistingType = (resourceTypeIds: string[], fieldNames: string[]) =>
     mockTypesGet.mockReturnValue({
       execute: jest.fn().mockResolvedValue({
@@ -307,7 +319,7 @@ describe('createOrUpdatePaymentCustomType', () => {
     mockWithKeyPost.mockReturnValue({ execute: jest.fn().mockResolvedValue({}) });
   });
 
-  it('should create a payment type with the express field if it does not exist', async () => {
+  it('should create a payment type with the express fields if it does not exist', async () => {
     mockTypesGet.mockReturnValue({
       execute: jest.fn().mockResolvedValue({ body: { results: [] } }),
     });
@@ -322,12 +334,12 @@ describe('createOrUpdatePaymentCustomType', () => {
           de: 'Custom type for payment resources',
         },
         resourceTypeIds: ['payment'],
-        fieldDefinitions: [expressFieldDefinition],
+        fieldDefinitions: [expressFieldDefinition, placeholderFieldDefinition],
       },
     });
   });
 
-  it('should add the express field to a shared payment type and keep its other fields', async () => {
+  it('should add the express fields to a shared payment type and keep its other fields', async () => {
     mockExistingType(['payment'], ['otherConnectorField']);
 
     await createOrUpdatePaymentCustomType(PAYMENT_TYPE_KEY);
@@ -335,14 +347,27 @@ describe('createOrUpdatePaymentCustomType', () => {
     expect(mockWithKeyPost).toHaveBeenCalledWith({
       body: {
         version: 5,
-        actions: [{ action: 'addFieldDefinition', fieldDefinition: expressFieldDefinition }],
+        actions: [
+          { action: 'addFieldDefinition', fieldDefinition: expressFieldDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: placeholderFieldDefinition },
+        ],
       },
     });
     expect(mockTypesPost).not.toHaveBeenCalled();
   });
 
-  it('should leave a payment type alone that already has the express field', async () => {
+  it('should add only the placeholder field to a type from an earlier deployment', async () => {
     mockExistingType(['payment'], [EASYCREDIT_EXPRESS_FIELD]);
+
+    await createOrUpdatePaymentCustomType(PAYMENT_TYPE_KEY);
+
+    expect(mockWithKeyPost).toHaveBeenCalledWith({
+      body: { version: 5, actions: [{ action: 'addFieldDefinition', fieldDefinition: placeholderFieldDefinition }] },
+    });
+  });
+
+  it('should leave a payment type alone that already has the express fields', async () => {
+    mockExistingType(['payment'], [EASYCREDIT_EXPRESS_FIELD, EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]);
 
     await createOrUpdatePaymentCustomType(PAYMENT_TYPE_KEY);
 
@@ -358,5 +383,58 @@ describe('createOrUpdatePaymentCustomType', () => {
         'Please use a different PAYMENT_CUSTOM_TYPE_KEY or add "payment" to the existing type.',
     );
     expect(mockWithKeyPost).not.toHaveBeenCalled();
+  });
+});
+
+describe('isPaymentCustomTypeReady', () => {
+  const mockTypesGet = jest.fn();
+
+  const mockTypes = (results: unknown[]) =>
+    mockTypesGet.mockReturnValue({ execute: jest.fn().mockResolvedValue({ body: { results } }) });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (createApiRoot as jest.Mock).mockReturnValue({ types: jest.fn(() => ({ get: mockTypesGet })) });
+  });
+
+  const completeType = {
+    resourceTypeIds: ['payment'],
+    fieldDefinitions: [{ name: EASYCREDIT_EXPRESS_FIELD }, { name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD }],
+  };
+
+  // Each test uses its own key, as a positive answer is cached per key.
+  it('should be false when post-deploy has not created the type yet', async () => {
+    mockTypes([]);
+
+    await expect(isPaymentCustomTypeReady('missing-type')).resolves.toBe(false);
+  });
+
+  it('should be false for a type without the placeholder field', async () => {
+    mockTypes([{ ...completeType, fieldDefinitions: [{ name: EASYCREDIT_EXPRESS_FIELD }] }]);
+
+    await expect(isPaymentCustomTypeReady('old-type')).resolves.toBe(false);
+  });
+
+  it('should be false for a type that is not for payments', async () => {
+    mockTypes([{ ...completeType, resourceTypeIds: ['transaction'] }]);
+
+    await expect(isPaymentCustomTypeReady('transaction-type')).resolves.toBe(false);
+  });
+
+  it('should ask again after a negative answer, so a later post-deploy is picked up', async () => {
+    mockTypes([]);
+    await isPaymentCustomTypeReady('late-type');
+    mockTypes([completeType]);
+
+    await expect(isPaymentCustomTypeReady('late-type')).resolves.toBe(true);
+    expect(mockTypesGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('should cache a ready type', async () => {
+    mockTypes([completeType]);
+
+    await isPaymentCustomTypeReady('ready-type');
+    await expect(isPaymentCustomTypeReady('ready-type')).resolves.toBe(true);
+    expect(mockTypesGet).toHaveBeenCalledTimes(1);
   });
 });

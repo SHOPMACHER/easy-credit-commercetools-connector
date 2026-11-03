@@ -101,7 +101,7 @@ type ECTransactionCustomer = {
 };
 
 export type ECTransactionCustomerRelationship = {
-  customerStatus: 'NEW_CUSTOMER' | 'EXISTING_CUSTOMER' | 'PREMIUM_CUSTOMER';
+  customerStatus?: 'NEW_CUSTOMER' | 'EXISTING_CUSTOMER' | 'PREMIUM_CUSTOMER';
   customerSince?: string;
   orderDoneWithLogin?: boolean;
   numberOfOrders: number;

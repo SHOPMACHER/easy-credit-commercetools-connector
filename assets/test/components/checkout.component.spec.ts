@@ -192,7 +192,6 @@ describe('ECCheckoutComponent', () => {
         cartId: checkoutOptions.cartId,
         paymentType: 'INSTALLMENT_PAYMENT',
         redirectLinks: checkoutOptions.redirectLinks,
-        customerRelationship: checkoutOptions.customerRelationship,
       }),
     });
     expect(checkoutOptions.onLoading).toHaveBeenCalledTimes(1);
