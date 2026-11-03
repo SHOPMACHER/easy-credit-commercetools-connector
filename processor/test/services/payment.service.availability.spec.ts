@@ -102,6 +102,7 @@ const buildApp = async () => {
     prefix: '/payments',
     sessionHeaderAuthHook: authHook,
     oauth2AuthHook: authHook,
+    authorizationHook: { authorize: () => async () => {} },
   } as unknown as Parameters<typeof paymentsRoute>[1]);
 
   return app;

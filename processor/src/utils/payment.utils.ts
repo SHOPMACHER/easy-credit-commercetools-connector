@@ -5,6 +5,7 @@ import {
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
+  EASYCREDIT_MISSING_BOOKING_MS,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
 } from './constant.utils';
@@ -71,6 +72,22 @@ export const getCompletedRefunds = (ecBookings: ECBooking[]) => {
       item.bookingId &&
       (item.status === EASYCREDIT_BOOKING_STATUS_DONE || item.status === EASYCREDIT_BOOKING_STATUS_FAILED),
   );
+};
+
+// A missing timestamp means a transaction from an earlier version, which is older than any booking delay.
+export const isWithoutBookingTooLong = (timestamp?: string): boolean => {
+  const age = Date.now() - Date.parse(timestamp ?? '');
+  return Number.isNaN(age) || age > EASYCREDIT_MISSING_BOOKING_MS;
+};
+
+// Open refunds that easyCredit has no booking for, long after they were sent.
+export const getExpiredRefunds = (openRefunds: Transaction[], ecBookings: ECBooking[]): Transaction[] => {
+  const bookedIds = new Set(
+    ecBookings
+      .filter(({ bookingType }) => bookingType === EASYCREDIT_REFUND_BOOKING_TYPE)
+      .map(({ bookingId }) => bookingId),
+  );
+  return openRefunds.filter(({ id, timestamp }) => !bookedIds.has(id) && isWithoutBookingTooLong(timestamp));
 };
 
 export const getCaptureBooking = (ecBookings: ECBooking[]) => {

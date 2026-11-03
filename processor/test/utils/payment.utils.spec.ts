@@ -1,4 +1,4 @@
-import { Cart, Payment } from '@commercetools/connect-payments-sdk';
+import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import {
   getActiveCaptureTransaction,
   getAddedTransaction,
@@ -6,12 +6,14 @@ import {
   getCaptureBookingsSince,
   getCaptureResult,
   getCompletedRefunds,
+  getExpiredRefunds,
   getOpenRefundTransactions,
   getPayment,
   getPaymentType,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
+  isWithoutBookingTooLong,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import {
   CTTransactionState,
@@ -372,6 +374,43 @@ describe('Payment Utility Functions', () => {
         expect(getCaptureBookingsSince(bookings, date)).toStrictEqual(bookings);
       },
     );
+  });
+
+  describe('refunds without easyCredit booking', () => {
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+    const refund = (id: string, timestamp?: string) =>
+      ({ id, type: CTTransactionType.Refund, state: CTTransactionState.Pending, timestamp }) as Transaction;
+    const refundBooking = (bookingId: string, bookingType = 'RefundBooking') =>
+      ({
+        bookingType,
+        type: 'REFUND',
+        status: 'PENDING',
+        created: minutesAgo(1),
+        uuid: bookingId,
+        bookingId,
+      }) as ECBooking;
+
+    it.each([
+      [minutesAgo(16), true],
+      [minutesAgo(14), false],
+      [undefined, true],
+      ['not a date', true],
+    ])('isWithoutBookingTooLong(%p) should be %p', (timestamp, expected) => {
+      expect(isWithoutBookingTooLong(timestamp)).toBe(expected);
+    });
+
+    it('getExpiredRefunds should return old refunds that no refund booking names', () => {
+      const unbooked = refund('refund-unbooked', minutesAgo(20));
+      const refunds = [
+        unbooked,
+        refund('refund-booked', minutesAgo(20)),
+        refund('refund-recent', minutesAgo(1)),
+        refund('refund-capture-id', minutesAgo(20)),
+      ];
+      const bookings = [refundBooking('refund-booked'), refundBooking('refund-capture-id', 'ApiBooking')];
+
+      expect(getExpiredRefunds(refunds, bookings)).toStrictEqual([unbooked, refunds[3]]);
+    });
   });
 
   describe('getPaymentType', () => {

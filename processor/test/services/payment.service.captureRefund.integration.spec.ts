@@ -216,6 +216,59 @@ describe('capture and refund against commercetools and easyCredit fakes', () => 
     expect(JSON.parse(requests('/refund')[0][1]?.body as string)).toEqual({ value: 25.5, bookingId: refunds()[0].id });
   });
 
+  describe('a refund that no notification completes', () => {
+    const refundBooking = (bookingId: string, status: string) => ({
+      bookingType: 'RefundBooking',
+      type: 'REFUND',
+      uuid: `refund-${bookingId}`,
+      created: new Date().toISOString(),
+      status,
+      bookingId,
+    });
+
+    it('is failed by the next refund when it timed out and easyCredit never booked it', async () => {
+      answerRefund = hang;
+      await handleRefundPayment(PAYMENT_ID, 100);
+      refunds()[0].timestamp = minutesAgo(16);
+      answerRefund = accepted;
+
+      // The full amount is free again, as the first refund was never booked.
+      await handleRefundPayment(PAYMENT_ID, 100);
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
+      expect(requests('/refund')).toHaveLength(2);
+    });
+
+    it('is completed from its booking by a capture request', async () => {
+      await handleRefundPayment(PAYMENT_ID, 30);
+      bookings = [refundBooking(refunds()[0].id, 'DONE')];
+
+      await handleCapturePayment(PAYMENT_ID);
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Success']);
+      expect(charges().map(({ state }) => state)).toEqual(['Pending']);
+    });
+
+    it('stays Pending while its booking is open, even when it is old', async () => {
+      await handleRefundPayment(PAYMENT_ID, 30);
+      refunds()[0].timestamp = minutesAgo(60);
+      bookings = [refundBooking(refunds()[0].id, 'PENDING')];
+
+      await expect(handleRefundPayment(PAYMENT_ID, 70.01)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Pending']);
+    });
+
+    it('is failed by a notification of the transaction when easyCredit never booked it', async () => {
+      await handleRefundPayment(PAYMENT_ID, 30);
+      refunds()[0].timestamp = minutesAgo(16);
+
+      await handleEasyCreditNotification(EC_TX_ID);
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Failure']);
+    });
+  });
+
   it('refunds only the amount that is left, also for parallel requests', async () => {
     await handleRefundPayment(PAYMENT_ID, 30);
 

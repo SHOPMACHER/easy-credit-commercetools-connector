@@ -53,8 +53,11 @@ export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 // easyCredit dates the bookings, the connector the Charge, so their clocks may differ by this much.
 export const EASYCREDIT_BOOKING_CLOCK_SKEW_MS = 60000;
 
-// A Pending Charge without a capture booking after this long is treated as a capture easyCredit never received.
-export const EASYCREDIT_PENDING_CAPTURE_STALE_MS = 900000;
+// A capture or refund without an easyCredit booking after this long is treated as one easyCredit never received.
+export const EASYCREDIT_MISSING_BOOKING_MS = 900000;
+
+// The scopes that may capture and refund; a token needs one of them.
+export const PAYMENT_MODIFICATION_SCOPES = ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'];
 
 export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
 

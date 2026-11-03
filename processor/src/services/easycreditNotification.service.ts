@@ -6,13 +6,14 @@ import {
   updatePayment,
 } from '../commercetools/payment.commercetools';
 import { log } from '../libs/logger';
-import { CTTransactionState, ECGetMerchantTransactionResponse } from '../types/payment.types';
+import { CTTransactionState, ECBooking, ECGetMerchantTransactionResponse } from '../types/payment.types';
 import { mapPendingChargeTransaction, mapUpdateActionForRefunds } from '../utils/map.utils';
 import { EASYCREDIT_BOOKING_STATUS_DONE, EASYCREDIT_BOOKING_STATUS_FAILED } from '../utils/constant.utils';
 import {
   getCaptureBooking,
   getCaptureResult,
   getCompletedRefunds,
+  getExpiredRefunds,
   getOpenRefundTransactions,
   getPendingCaptureTransactions,
   getSuccessCaptureTransactions,
@@ -37,50 +38,67 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
   }
 };
 
-/**
- * Processes refund notifications and updates CommerceTools payment states
- */
-const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransactionResponse): Promise<void> => {
-  const ecCompletedRefunds = getCompletedRefunds(ecTransaction.bookings);
-
-  if (ecCompletedRefunds.length === 0) {
-    return;
+// Completes open refunds from their easyCredit bookings and fails the ones easyCredit never booked.
+export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[]): Promise<Payment> => {
+  const openRefunds = getOpenRefundTransactions(payment);
+  if (openRefunds.length === 0) {
+    return payment;
   }
 
-  const firstRefundBookingId = ecCompletedRefunds[0]?.bookingId;
-  if (!firstRefundBookingId) {
-    log.error('No booking ID found for completed refund');
-    return;
+  const completedRefunds = getCompletedRefunds(ecBookings);
+  const expiredRefunds = getExpiredRefunds(openRefunds, ecBookings);
+  const updateActions = [
+    ...mapUpdateActionForRefunds(openRefunds, completedRefunds),
+    ...expiredRefunds.map(({ id }) => ({
+      action: 'changeTransactionState' as const,
+      transactionId: id,
+      state: CTTransactionState.Failure,
+    })),
+  ];
+  if (updateActions.length === 0) {
+    return payment;
   }
 
-  const ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
-  const ctOpenRefunds = getOpenRefundTransactions(ctPayment);
+  const updatedPayment = await updatePayment(payment, updateActions);
+  log.info('Refund transactions updated from the easyCredit bookings', { paymentId: payment.id });
 
-  if (ctOpenRefunds?.length === 0) {
-    log.info('No open refund transactions to update', { paymentId: ctPayment.id });
-    return;
-  }
-  const updateActions = mapUpdateActionForRefunds(ctOpenRefunds, ecCompletedRefunds);
-
-  if (updateActions?.length > 0) {
-    await updatePayment(ctPayment, updateActions);
-    log.info('Successfully updated refund transactions from EasyCredit notification', {
-      paymentId: ctPayment.id,
-    });
-  }
-
-  const openRefundIds = new Set(ctOpenRefunds.map(({ id }) => id));
-  ecCompletedRefunds
+  const openRefundIds = new Set(openRefunds.map(({ id }) => id));
+  completedRefunds
     .filter(
       (booking) => booking.status === EASYCREDIT_BOOKING_STATUS_FAILED && openRefundIds.has(booking.bookingId ?? ''),
     )
     .forEach((booking) =>
       log.warn('EasyCredit refund failed, CommerceTools transaction state updated to Failure.', {
-        paymentId: ctPayment.id,
+        paymentId: payment.id,
         transactionId: booking.bookingId,
         reason: booking.message?.messageEN,
       }),
     );
+  expiredRefunds.forEach(({ id }) =>
+    log.warn('EasyCredit has no booking for the refund, CommerceTools transaction state updated to Failure.', {
+      paymentId: payment.id,
+      transactionId: id,
+    }),
+  );
+
+  return updatedPayment;
+};
+
+// Without a completed refund the order ID still finds the payment, so refunds easyCredit never booked can be failed.
+const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransactionResponse): Promise<void> => {
+  const firstRefundBookingId = getCompletedRefunds(ecTransaction.bookings)[0]?.bookingId;
+  const paymentId = ecTransaction.orderDetails?.orderId;
+
+  let ctPayment: Payment;
+  if (firstRefundBookingId) {
+    ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
+  } else if (paymentId) {
+    ctPayment = await getPaymentById(paymentId);
+  } else {
+    return;
+  }
+
+  await settleOpenRefunds(ctPayment, ecTransaction.bookings);
 };
 
 /**

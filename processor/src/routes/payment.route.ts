@@ -50,6 +50,7 @@ import {
   RefundPaymentResponseSchema,
   RefundPaymentResponseSchemaDTO,
 } from '../dtos/payments/refundPayment.dto';
+import { PAYMENT_MODIFICATION_SCOPES } from '../utils/constant.utils';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -162,7 +163,10 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/capture',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
         body: CapturePaymentBodySchema,
         response: {
@@ -188,7 +192,10 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/refund',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
         body: RefundPaymentBodySchema,
         response: {

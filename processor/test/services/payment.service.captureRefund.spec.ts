@@ -83,10 +83,12 @@ const updateActions = () => mock(updatePayment).mock.calls.map((c) => c[1] as Re
 const addOnUpdate = (payment: ReturnType<typeof buildPayment>, newId: string, position: 'end' | 'start' = 'end') =>
   mock(updatePayment).mockImplementation(async (current: typeof payment, actions: Record<string, any>[]) => {
     const add = actions.find((a) => a.action === 'addTransaction');
-    const change = actions.find((a) => a.action === 'changeTransactionState');
-    if (change) {
+    const changes = new Map(
+      actions.filter((a) => a.action === 'changeTransactionState').map((a) => [a.transactionId, a.state]),
+    );
+    if (changes.size > 0) {
       const transactions = current.transactions.map((t) =>
-        t.id === change.transactionId ? { ...t, state: change.state } : t,
+        changes.has(t.id) ? { ...t, state: changes.get(t.id) } : t,
       );
       return { ...current, transactions };
     }
@@ -104,6 +106,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     mock(initEasyCreditClient).mockReturnValue(client);
     mock(updatePayment).mockImplementation(async (payment) => payment);
     client.getPayment.mockResolvedValue({ status: 'AUTHORIZED', decision: { transactionId: EC_TX_ID } });
+    client.getMerchantTransaction.mockResolvedValue({ transactionId: EC_TX_ID, bookings: [] });
   });
 
   describe('handleCapturePayment', () => {
@@ -131,7 +134,9 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     });
 
     it('TEBA-222: still captures when a refund was registered before shipping', async () => {
-      const payment = buildPayment(method, [{ id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000) }]);
+      const payment = buildPayment(method, [
+        { id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000), timestamp: minutesAgo(1) },
+      ]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'charge-new');
 
@@ -407,8 +412,8 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
     it('TEBA-222: uses its own booking ID while an earlier refund is still Initial', async () => {
       const payment = buildPayment(method, [
         { id: 'charge-1', type: 'Charge', state: 'Success' },
-        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000) },
-        { id: 'refund-pending', type: 'Refund', state: 'Pending', amount: cents(1000) },
+        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000), timestamp: minutesAgo(1) },
+        { id: 'refund-pending', type: 'Refund', state: 'Pending', amount: cents(1000), timestamp: minutesAgo(1) },
       ]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new');
@@ -420,7 +425,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
 
     it('TEBA-222: finds its refund when CT does not put it at the end', async () => {
       const payment = buildPayment(method, [
-        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000) },
+        { id: 'refund-other', type: 'Refund', state: 'Initial', amount: cents(1000), timestamp: minutesAgo(1) },
       ]);
       mock(getPaymentById).mockResolvedValue(payment);
       addOnUpdate(payment, 'refund-new', 'start');
@@ -633,6 +638,93 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       },
     );
 
+    describe('with open refunds that no notification completed', () => {
+      const refundBooking = (bookingId: string, status: string) => ({
+        bookingType: 'RefundBooking',
+        type: 'REFUND',
+        uuid: `uuid-${bookingId}`,
+        created: minutesAgo(30),
+        status,
+        bookingId,
+      });
+
+      it('settles them from the easyCredit bookings before checking the remaining amount', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-done', type: 'Refund', state: 'Pending', amount: cents(4000), timestamp: minutesAgo(30) },
+          { id: 'refund-unbooked', type: 'Refund', state: 'Pending', amount: cents(6000), timestamp: minutesAgo(30) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        client.getMerchantTransaction.mockResolvedValue({ bookings: [refundBooking('refund-done', 'DONE')] });
+        addOnUpdate(payment, 'refund-new');
+
+        // 60 € fit only because the refund easyCredit never booked no longer counts.
+        await handleRefundPayment(PAYMENT_ID, 60);
+
+        expect(client.getMerchantTransaction).toHaveBeenCalledWith(EC_TX_ID);
+        expect(updateActions()[0]).toEqual([
+          { action: 'changeTransactionState', transactionId: 'refund-done', state: 'Success' },
+          { action: 'changeTransactionState', transactionId: 'refund-unbooked', state: 'Failure' },
+        ]);
+        expect(client.refundPayment).toHaveBeenCalledWith(EC_TX_ID, { value: 60, bookingId: 'refund-new' });
+      });
+
+      it('leaves a recent refund without booking open', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-recent', type: 'Refund', state: 'Pending', amount: cents(6000), timestamp: minutesAgo(5) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+
+        await expect(handleRefundPayment(PAYMENT_ID, 60)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
+        expect(updatePayment).not.toHaveBeenCalled();
+      });
+
+      it('settles them on a capture request too', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-done', type: 'Refund', state: 'Pending', amount: cents(4000), timestamp: minutesAgo(30) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        client.getMerchantTransaction.mockResolvedValue({ bookings: [refundBooking('refund-done', 'DONE')] });
+        addOnUpdate(payment, 'charge-new');
+
+        await handleCapturePayment(PAYMENT_ID);
+
+        expect(updateActions()[0]).toEqual([
+          { action: 'changeTransactionState', transactionId: 'refund-done', state: 'Success' },
+        ]);
+        expect(client.capturePayment).toHaveBeenCalledTimes(1);
+      });
+
+      it('goes on with the refund on the latest payment when easyCredit cannot be read', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-open', type: 'Refund', state: 'Pending', amount: cents(4000), timestamp: minutesAgo(30) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        client.getMerchantTransaction.mockRejectedValue(new TypeError('fetch failed'));
+        addOnUpdate(payment, 'refund-new');
+
+        await handleRefundPayment(PAYMENT_ID, 10);
+
+        expect(getPaymentById).toHaveBeenCalledTimes(2);
+        expect(log.warn).toHaveBeenCalledWith(
+          'Open refunds could not be settled from the easyCredit bookings',
+          expect.objectContaining({ paymentId: PAYMENT_ID }),
+        );
+        expect(client.refundPayment).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not read easyCredit without open refunds', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-old', type: 'Refund', state: 'Success', amount: cents(1000) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        addOnUpdate(payment, 'refund-new');
+
+        await handleRefundPayment(PAYMENT_ID, 10);
+
+        expect(client.getMerchantTransaction).not.toHaveBeenCalled();
+      });
+    });
+
     it('sends easyCredit the same amount that the Refund transaction holds', async () => {
       const payment = buildPayment(method);
       mock(getPaymentById).mockResolvedValue(payment);
@@ -642,7 +734,10 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
 
       expect(updateActions()[0]).toEqual([
         expect.objectContaining({
-          transaction: expect.objectContaining({ amount: { centAmount: 1999, currencyCode: 'EUR' } }),
+          transaction: expect.objectContaining({
+            amount: { centAmount: 1999, currencyCode: 'EUR' },
+            timestamp: expect.any(String),
+          }),
         }),
       ]);
       expect(client.refundPayment).toHaveBeenCalledWith(EC_TX_ID, { value: 19.99, bookingId: 'refund-new' });
@@ -652,7 +747,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       mock(getPaymentById).mockResolvedValue(
         buildPayment(method, [
           { id: 'refund-1', type: 'Refund', state: 'Success', amount: cents(6000) },
-          { id: 'refund-2', type: 'Refund', state: 'Pending', amount: cents(3000) },
+          { id: 'refund-2', type: 'Refund', state: 'Pending', amount: cents(3000), timestamp: minutesAgo(1) },
           { id: 'refund-3', type: 'Refund', state: 'Failure', amount: cents(5000) },
         ]),
       );
