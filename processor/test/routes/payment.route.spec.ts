@@ -10,6 +10,7 @@ import {
 } from '../../src/services/payment.service';
 import {
   AuthorityAuthorizationHook,
+  ErrorAuthErrorResponse,
   Errorx,
   JWTAuthenticationHook,
   Oauth2AuthenticationHook,
@@ -30,6 +31,10 @@ jest.mock('../../src/services/payment.service', () => ({
   handleCapturePayment: jest.fn(),
   handleRefundPayment: jest.fn(),
 }));
+
+const mockAuthorize = jest.fn(async () => {});
+// Filled when the routes are registered, so clearing the mocks between tests keeps it.
+const authorizedScopes: string[][] = [];
 
 describe('paymentsRoute', () => {
   const app = fastify({ logger: false });
@@ -55,7 +60,12 @@ describe('paymentsRoute', () => {
           expect(request.headers['x-session-id']).toContain(sessionId);
         }),
       } as unknown as SessionHeaderAuthenticationHook,
-      authorizationHook: jest.fn() as unknown as AuthorityAuthorizationHook,
+      authorizationHook: {
+        authorize: jest.fn((...scopes: string[]) => {
+          authorizedScopes.push(scopes);
+          return () => mockAuthorize();
+        }),
+      } as unknown as AuthorityAuthorizationHook,
     });
   });
 
@@ -484,6 +494,40 @@ describe('paymentsRoute', () => {
         errors: [{ code: 404, message: 'Payment not found' }],
       });
     });
+  });
+
+  describe('scope check on capture and refund', () => {
+    it('should require one of the payment modification scopes on both routes only', () => {
+      expect(authorizedScopes).toEqual([
+        ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'],
+        ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'],
+      ]);
+    });
+
+    it.each([
+      ['capture', { trackingNumber: 'track-1' }, handleCapturePayment],
+      ['refund', { amount: 2 }, handleRefundPayment],
+    ])(
+      'should answer 401 without calling the %s handler when the token lacks the scopes',
+      async (path, payload, handler) => {
+        mockAuthorize.mockRejectedValueOnce(
+          new ErrorAuthErrorResponse('Not authorized', {
+            fields: { validAuthorities: ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'] },
+          }) as never,
+        );
+
+        const response = await app.inject({
+          method: 'POST',
+          url: `/payments/payment123/${path}`,
+          payload,
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        });
+
+        expect(response.statusCode).toBe(401);
+        expect(response.json()).toMatchObject({ errors: [expect.objectContaining({ code: 'invalid_token' })] });
+        expect(handler).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('POST /payments/:paymentId/refund', () => {

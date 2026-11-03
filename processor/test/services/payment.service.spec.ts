@@ -25,6 +25,7 @@ import {
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
 import {
+  getOpenRefundTransactions,
   getPaymentType,
   getPendingCaptureTransactions,
   getSuccessCaptureTransactions,
@@ -1017,6 +1018,7 @@ describe('Payment handlers', () => {
       (getSuccessTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);
       (getSuccessCaptureTransactions as jest.Mock).mockReturnValue([]);
       (getPendingCaptureTransactions as jest.Mock).mockReturnValue([]);
+      (getOpenRefundTransactions as jest.Mock).mockReturnValue([]);
       // @ts-expect-error mocked
       (updatePayment as jest.Mock).mockResolvedValue(mockPayment);
 
@@ -1076,6 +1078,7 @@ describe('Payment handlers', () => {
         getPayment: jest.fn().mockResolvedValue(mockECTransaction),
       });
       (validateRefundAmount as jest.Mock).mockReturnValue(1000);
+      (getOpenRefundTransactions as jest.Mock).mockReturnValue([]);
       (validatePayment as jest.Mock).mockReturnValue(true);
       (validateSuccessTransaction as jest.Mock).mockReturnValue(true);
       (validateInitialRefundTransaction as jest.Mock).mockReturnValue(mockPayment.transactions[0]);

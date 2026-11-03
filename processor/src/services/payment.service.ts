@@ -43,11 +43,13 @@ import {
   getCaptureBooking,
   getCaptureBookingsSince,
   getCaptureResult,
+  getOpenRefundTransactions,
   getPaymentType,
   getPendingCaptureTransactions,
   getSuccessCaptureTransactions,
   getSuccessTransaction,
   getTransaction,
+  isWithoutBookingTooLong,
   toPaymentMethod,
 } from '../utils/payment.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
@@ -70,13 +72,13 @@ import {
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
-  EASYCREDIT_PENDING_CAPTURE_STALE_MS,
   EASYCREDIT_REQUEST_TIMEOUT_MS,
   EASYCREDIT_TOTAL_VALUE_FIELD,
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { getBillPaymentExclusion } from './billPaymentRestriction.service';
+import { settleOpenRefunds } from './easycreditNotification.service';
 
 // Callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
@@ -1162,9 +1164,8 @@ const settlePendingCharge = async (
     return undefined;
   }
 
-  const age = Date.now() - Date.parse(charge.timestamp ?? '');
   const isOpen =
-    getCaptureBookingsSince(captureBookings, charge.timestamp).length > 0 || age <= EASYCREDIT_PENDING_CAPTURE_STALE_MS;
+    getCaptureBookingsSince(captureBookings, charge.timestamp).length > 0 || !isWithoutBookingTooLong(charge.timestamp);
   if (!result && isOpen) {
     log.info('Payment capture is still being processed, capture request ignored', logContext);
     return undefined;
@@ -1179,11 +1180,30 @@ const settlePendingCharge = async (
   return getActiveCaptureTransaction(failed) ? undefined : failed;
 };
 
-export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
-  const payment = await getPaymentById(paymentId);
+// The notification is the usual way to complete refunds; this covers the ones it never completed.
+// A failed lookup only leaves them open, so it does not block the request.
+const settleRefunds = async (payment: Payment): Promise<Payment> => {
+  if (getOpenRefundTransactions(payment).length === 0) {
+    return payment;
+  }
+  try {
+    const ecTransaction = await initEasyCreditClient().getMerchantTransaction(
+      getSuccessTransaction(payment)?.interactionId as string,
+    );
+    return await settleOpenRefunds(payment, ecTransaction.bookings ?? []);
+  } catch (error) {
+    log.warn('Open refunds could not be settled from the easyCredit bookings', { paymentId: payment.id, error });
+    return await getPaymentById(payment.id);
+  }
+};
 
-  validatePayment(payment);
-  validateSuccessTransaction(payment);
+export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
+  const fetchedPayment = await getPaymentById(paymentId);
+
+  validatePayment(fetchedPayment);
+  validateSuccessTransaction(fetchedPayment);
+
+  const payment = await settleRefunds(fetchedPayment);
 
   // A repeated request, for example a shipping event sent twice, succeeds without capturing again.
   if (getSuccessCaptureTransactions(payment).length > 0) {
@@ -1247,11 +1267,14 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
 
 // The response is 202 with the payment either way; the refund transaction state carries the outcome.
 export const handleRefundPayment = async (paymentId: string, refundAmount: number): Promise<Payment> => {
-  const payment = await getPaymentById(paymentId);
+  const fetchedPayment = await getPaymentById(paymentId);
 
+  validatePayment(fetchedPayment);
+  validateSuccessTransaction(fetchedPayment);
+
+  // Settled first, so a refund that failed meanwhile no longer counts against the remaining amount.
+  const payment = await settleRefunds(fetchedPayment);
   const refundCents = validateRefundAmount(payment, refundAmount);
-  validatePayment(payment);
-  validateSuccessTransaction(payment);
 
   const ecTransactionId = getSuccessTransaction(payment)?.interactionId as string;
 
@@ -1262,6 +1285,7 @@ export const handleRefundPayment = async (paymentId: string, refundAmount: numbe
         type: CTTransactionType.Refund,
         state: CTTransactionState.Initial,
         amount: mapAmountToCTTransactionAmount(refundCents / 100),
+        timestamp: new Date().toISOString(),
       },
     },
   ]);

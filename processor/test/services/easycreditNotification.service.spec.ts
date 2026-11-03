@@ -53,6 +53,8 @@ jest.mock('../../src/utils/payment.utils', () => ({
   ...jest.createMockFromModule<typeof import('../../src/utils/payment.utils')>('../../src/utils/payment.utils'),
   getCaptureResult: jest.requireActual<typeof import('../../src/utils/payment.utils')>('../../src/utils/payment.utils')
     .getCaptureResult,
+  getOpenRefundTransactions: jest.fn(() => []),
+  getExpiredRefunds: jest.fn(() => []),
 }));
 
 describe('Easycredit Notification handlers', () => {
@@ -165,7 +167,7 @@ describe('Easycredit Notification handlers', () => {
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, updateActions);
     });
 
-    it('should log error when completed refunds have no booking ID', async () => {
+    it('should find the payment by the order ID when no completed refund has a booking ID', async () => {
       const mockECMerchantTransaction = {
         bookings: [
           {
@@ -176,9 +178,9 @@ describe('Easycredit Notification handlers', () => {
             status: 'DONE',
             message: null,
             amount: 12.0,
-            // bookingId is missing - this should trigger the error
           },
         ],
+        orderDetails: { orderId: 'payment123' },
       } as unknown as ECGetMerchantTransactionResponse;
 
       (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -189,16 +191,18 @@ describe('Easycredit Notification handlers', () => {
       (getCompletedRefunds as jest.Mock).mockReturnValue([
         mockECMerchantTransaction.bookings[0], // This has no bookingId
       ]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([]);
+      (getOpenRefundTransactions as jest.Mock).mockReturnValue([]);
 
       const resourceId = 'payment123';
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.error).toHaveBeenCalledWith('No booking ID found for completed refund');
       expect(getPaymentByEasyCreditRefundBookingId).not.toHaveBeenCalled();
+      expect(getPaymentById).toHaveBeenCalledWith('payment123');
     });
 
-    it('should log error when no pending refund transactions exist', async () => {
+    it('should not update the payment when no refund transaction is open', async () => {
       const mockPayment = {
         id: 'payment123',
         transactions: [], // No transactions
@@ -235,7 +239,6 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.info).toHaveBeenCalledWith('No open refund transactions to update', { paymentId: mockPayment.id });
       expect(mapUpdateActionForRefunds).not.toHaveBeenCalled();
       expect(updatePayment).not.toHaveBeenCalled();
     });
@@ -382,7 +385,9 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(getPaymentById).not.toHaveBeenCalled();
+      // Only the open refunds are checked, the capture needs no payment without capture bookings.
+      expect(getPaymentById).toHaveBeenCalledTimes(1);
+      expect(updatePayment).not.toHaveBeenCalled();
       expect(log.warn).not.toHaveBeenCalled();
     });
 
