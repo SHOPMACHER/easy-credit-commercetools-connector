@@ -18,7 +18,7 @@ Pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. Request and response fo
 
 - Installment now reads the easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`) for its limits, with the same credentials. If easyCredit rejects that request (for example `401` or `404`), `GET /payments/payment-method/{cartId}` and `POST /payments` answer `503 EasyCreditUnavailable` instead of offering installment. Check that the webshop ID and API password are accepted by that endpoint before upgrading. See [Changed](#changed).
 
-- `customerRelationship` in `POST /payments` is ignored, the connector derives it from commercetools. A shop that sent `customerStatus` or other optional fields no longer passes them to easyCredit. Add the optional `view_customers` scope so `customerSince` is the account date instead of the first order date. See [Changed](#changed).
+- The cancel webhook redirects to `redirectUrl` only if the link carries a valid `sig`, which the connector adds to the cancel and denial links it sends to easyCredit. A shopper who is on the easyCredit page during the upgrade, with a link from the previous version, gets `200` with `{ "paymentId": "..." }` instead of the redirect, and the payment is cancelled as before. The key of the signature is derived from `API_PASSWORD`, so changing it has the same effect for open attempts. See [Cancel Payment](docs/CancelPayment.md#redirect).
 
 A few responses change where the previous version answered wrongly, see [Fixed](#fixed):
 
@@ -38,12 +38,14 @@ A few responses change where the previous version answered wrongly, see [Fixed](
 - `Charge` transaction custom field `easyCreditEarlierCaptureBookings` with the easyCredit capture bookings listed before the `Charge` was added.
 - `waitForAuthorization` body field for `POST /payments/{paymentId}/authorize`. With `true` the call waits up to 30 seconds until easyCredit reports `AUTHORIZED` and the transaction is `Success`, or returns `504 AuthorizationTimeout`. Without it the call answers after sending the authorization request, as before.
 - Enabler: `CheckoutComponent.isAvailable()` tells whether a payment method can be offered for the cart. It is an optional member of the type, so existing implementations and test doubles compile unchanged.
+- Express checkout from the product page or the cart: `POST /payments/express` creates the easyCredit transaction for the cart of the session without customer and addresses, and `GET /payments/express/payment-method` tells which express buttons to show. The payment is flagged with `easyCreditExpress` in the payment custom type. A cart without shipping address gets the placeholder `{ "country": "DE" }` to be frozen, and the connector removes it again when the attempt ends without an order. For express, the connector builds `customerRelationship` from commercetools, like TeamBank's own plugins, including `logisticsServiceProvider` from the shipping method. Authorize checks the address from the express return, see [Create Express Payment](docs/CreateExpressPayment.md) and [Authorize Payment](docs/AuthorizePayment.md#express-payments).
+- `GET /payments/payment-method/{cartId}` and `POST /payments` end an express attempt that the shopper left without a callback and that still holds its placeholder address: the cart is unfrozen and the placeholder and the payment are removed, see [Abandoned attempt](docs/CreateExpressPayment.md#abandoned-attempt).
 
 ### Changed
 
 - The installment limits come from the easyCredit webshop configuration instead of the fixed 200 € to 10,000 €. If easyCredit cannot be reached or sends an invalid configuration, the last valid configuration or the fixed limits are used. `503 EasyCreditUnavailable` with a `Retry-After` header is returned only if easyCredit rejects the webshop request itself (for example `401` or `404`), or reported installment as deactivated and cannot be reached since.
 - `InvalidAmount` formats amounts the German way, for example `10.000€`.
-- The `customerRelationship` sent to easyCredit is derived from the cart, like in TeamBank's shop plugins: a guest has `0` orders and no login, a logged-in customer has the number of their commercetools orders and `customerSince`. Before, the value came from the request body, which the shopper's browser sends and can change. The field is still accepted but ignored, and the enabler no longer sends it (`CheckoutComponentOptions.customerRelationship` is optional and deprecated). See [Create Payment](./docs/CreatePayment.md#customer-relationship).
+- The cancel webhook answers a payment whose transaction is already `Failure` like a successful cancel (`302` to a signed `redirectUrl`, otherwise `200`) instead of `400`, and releases the cart unless another easyCredit attempt on it is still open. Before, a cancel in the tab of an attempt that a newer one replaced showed an error, and a cancel repeated after a failed cart update left the cart frozen. See [Cancel Payment](docs/CancelPayment.md#already-failed-attempt).
 - A repeated capture of a payment with a `Success` `Charge` returns `204` without calling easyCredit again. Otherwise each capture first reads the easyCredit bookings, so a capture fails with `502` or `504` `CaptureFailed` if easyCredit cannot be read. With a `Pending` `Charge` the bookings decide: a `DONE` booking completes the `Charge`, a `FAILED` booking of this `Charge` sets it to `Failure` and captures again, and so does no booking of this `Charge` while easyCredit still waits for a capture (`REPORT_CAPTURE...`) and the `Charge` is older than 30 seconds. In every other case the `Charge` stays `Pending` and the capture returns `204`. See [Capture Payment](docs/CapturePayment.md#workflow).
 - `POST /payments/{paymentId}/authorize` returns `204` for a payment that is already authorized, instead of `400 TransactionNotPreauthorized`.
 - The notification also completes Refund transactions that are still `Initial`, and logs the easyCredit reason of a failed capture or refund.
@@ -91,8 +93,12 @@ A few responses change where the previous version answered wrongly, see [Fixed](
 - New environment variables: `BILL_PAYMENT_ENABLED` (default `0`), `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`, `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS` and `WEBSHOP_CACHE_TTL` (default `300`). See `connect.yaml`.
 - `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES` needs the `view_product_types` scope.
 - Redeploy the connector so the post-deploy script adds `easyCreditInterest`, `easyCreditTotalValue` and `easyCreditEarlierCaptureBookings` to the transaction custom type.
+- New environment variable `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) for the payment custom type of express payments. The post-deploy script creates it. Until it ran, the express endpoints answer `503 ExpressNotConfigured`, the regular checkout is not affected.
+- Optional scope `view_customers`: without it, `customerSince` of a logged-in express customer is the date of the first order instead of the account date.
 
 ### Security
 
 - Capture and refund check the token scopes, see [Upgrade notes](#upgrade-notes).
+- The cancel and authorize webhooks redirect only to a link the connector signed for the payment, so they can no longer be used to send a shopper to any site. See [Upgrade notes](#upgrade-notes).
+- The express redirect links must be absolute `http` or `https` URLs without user name or password, so a link like `https://shop.example.com@evil.example` is rejected with `400 InvalidField`.
 - Updated dependencies with known vulnerabilities.

@@ -102,7 +102,11 @@ This guide provides instructions on how to integrate and display the connector's
           urlCancellation: window.location.origin + window.location.pathname + '?step=2&status=cancelled',
           urlDenial: window.location.origin + window.location.pathname + '?step=2&status=denied',
         },
-        // customerRelationship is deprecated and ignored: the processor derives it from commercetools
+        customerRelationship: {
+          customerStatus: loggedIn === true ? 'EXISTING_CUSTOMER' : 'NEW_CUSTOMER',
+          customerSince: account?.createdAt,
+          numberOfOrders: myOrdersCount,
+        },
 
         onError: (err: any) => {
           console.error('onError', err);

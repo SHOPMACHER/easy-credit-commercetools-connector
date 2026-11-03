@@ -174,6 +174,8 @@ A payment created by [Create Express Payment](./CreateExpressPayment.md) (`easyC
 - The cart still holds the placeholder `{ "country": "DE" }`: `400 ExpressAddressMissing`. The transaction stays `Initial` and the cart `Frozen`, so the shop can set the address from easyCredit and call again. This also stops a `urlSuccess` that leads to a page which authorizes without taking over the address.
 - Otherwise the cart is checked as in [Create Payment](./CreatePayment.md#payment-type-availability) for the payment type, addresses included, also for `INSTALLMENT_PAYMENT`. A broken rule sets the transaction to `Failure`, unfreezes the cart and returns the error, as for `BILL_PAYMENT` in [Workflow](#workflow), step 5.
 
+The address rules are the ones of Create Payment: billing and shipping address must both be set, complete, identical and in `DE`. The express return must therefore set both from the easyCredit data. A cart with only the shipping address fails with `400 InvalidBillingAddress` (with `AddressesUnmatched`), which sets the transaction to `Failure`.
+
 When the transaction is set to `Failure` (`DECLINED`, `EXPIRED`, a failed check), the placeholder is removed from the cart together with the unfreeze, see [Create Express Payment](./CreateExpressPayment.md#placeholder-address).
 <br />
 
@@ -295,4 +297,4 @@ easyCredit calls `GET /webhook/{paymentId}/authorize` (the `urlAuthorizationCall
 
 The connector only writes allowed transitions: `Initial` to `Pending`, `Success` or `Failure`, and `Pending` to `Success` or `Failure`. A `Success` or `Failure` transaction is never overwritten, because overlapping callbacks and authorize calls can race. A `Success` transaction is returned as success without a cart check. If easyCredit is `AUTHORIZED` but the transaction is `Failure`, the response is `400 TransactionNotAuthorized` and the divergence is logged.
 
-A successful callback answers with a `302` redirect to the query parameter `redirectUrl` if it is set, otherwise with `200` and `{ "paymentId": "..." }`.
+A successful callback answers with `200` and `{ "paymentId": "..." }`. The connector registers the callback without `redirectUrl`. A `redirectUrl` query parameter is followed with a `302` only if it carries a valid `sig`, as for [Cancel Payment](./CancelPayment.md#redirect).

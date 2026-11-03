@@ -23,7 +23,7 @@ To use this functionality, the following conditions must be met:
 
 ## Workflow
 
-1. **Fetch Cart by ID**: The cart is retrieved from CommerceTools using the provided `cartId`. For `BILL_PAYMENT` with `BILL_PAYMENT_ENABLED=0`, the API returns `PaymentTypeNotAvailable` without reading the cart.
+1. **Fetch Cart by ID**: The cart is retrieved from CommerceTools using the provided `cartId`. For `BILL_PAYMENT` with `BILL_PAYMENT_ENABLED=0`, the API returns `PaymentTypeNotAvailable` without reading the cart. If the cart still holds the placeholder address of an abandoned express attempt, that attempt is ended and the cart released first. This changes the cart, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt). If the attempt cannot be ended, the check continues and reports the placeholder like any incomplete address.
 2. **Validate the cart and the requested payment type**: The order of the checks depends on `paymentType`:
    - The webshop configuration is read first (step 3). A `503` from it, or a `503 BillPaymentCheckFailed`, is returned on its own.
    - Otherwise all errors are returned together in one `400` response, as in earlier versions: first the addresses and the currency (for `BILL_PAYMENT` also the shipping destinations and the customer, private persons only), then the availability of the requested payment type (limits, activation, excluded items). The checkout component hides a payment type if any of the errors is an availability error, so the order does not matter for it.

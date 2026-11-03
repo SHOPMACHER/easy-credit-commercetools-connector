@@ -2,6 +2,7 @@
 
 * [Switching to another payment method](#switching-to-another-payment-method)
 * [Already failed attempt](#already-failed-attempt)
+* [Redirect](#redirect)
 * [Representation: CT Payment](#representation-ct-payment)
 * [Creating CommerceTools Actions from Easy Credit's Response](#creating-commercetools-actions-from-easy-credits-response)
 
@@ -15,7 +16,7 @@ This functionality is designed to cancel pending payments created with Easy Cred
 To use this functionality, the customer must have a payment that is created but remains unpaid. For a successful cancellation, the CommerceTools Payment object should meet these criteria:
 
 1. The payment must be an Easy Credit payment: `paymentMethodInfo.paymentInterface` is `easycredit`. The comparison is case-insensitive, so a value such as `EasyCredit` (as in the example below) matches too. The connector itself writes `easycredit`.
-2. A transaction of type `Authorization` should exist with a state of either `Pending` or `Initial`. A `Failure` transaction is answered without any change, see [Already failed attempt](#already-failed-attempt).
+2. A transaction of type `Authorization` should exist with a state of either `Pending` or `Initial`. A `Failure` transaction is not changed and is answered like a successful cancel, see [Already failed attempt](#already-failed-attempt).
 3. The transaction should include an `interactionId`, which is the Easy Credit Payment ID.
 4. The status of the Easy Credit transaction should be verified through the Easy Credit API. If the transaction status is AUTHORIZED, the cancellation will be blocked, and an error will be returned to indicate that cancellations are not allowed for authorized Easy Credit payments. If Easy Credit no longer knows the transaction (`404` or `410`, for example because a newer transaction invalidated it), the check is skipped and the cancellation continues, so the cart can still be unfrozen. Any other failure of the lookup is returned and nothing is changed.
 5. A `Pending` transaction means the authorization request was already sent to Easy Credit (see [Authorize Payment](./AuthorizePayment.md)). Cancelling it is still allowed, but Easy Credit can authorize between the status check and the `Failure` write. After the `Failure` write the connector therefore checks the Easy Credit status once more, with a 5 second limit. If it is `AUTHORIZED`, the connector logs `EASYCREDIT_AUTHORIZED_CT_NOT_SUCCESS` (reason: cancelled while the authorization was in flight). The cancellation itself still completes, and the cart is unfrozen. A failing re-check is logged as a warning and does not fail the cancellation. There is no automatic void at Easy Credit, so a logged event needs manual follow-up.
@@ -32,11 +33,19 @@ If the shopper switches to easyCredit again (installment or pay by invoice), no 
 
 ## Already failed attempt
 
-A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab). The webhook then changes nothing, neither the transaction nor the cart, which may be frozen for the newer attempt, and answers like a successful cancel: `302` to `redirectUrl`, or `200` without it.
+A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab), or because an earlier cancel set it but could not release the cart. The webhook does not change the transaction and answers like a successful cancel, see [Redirect](#redirect).
+
+It releases the cart as in [Cart cleanup](#cart-cleanup), unless another easyCredit payment on the cart has an `Initial` or `Pending` transaction: that newer attempt holds the cart. A payment the newer attempt discarded is no longer on any cart, so nothing changes. A failing release is logged and the answer stays the same, so a retry of the cancel can release the cart.
 
 ## Cart cleanup
 
 The cart is unfrozen if it is still `Frozen`. For an express payment whose placeholder address the connector added and that is still on the cart, the placeholder is removed in the same update, together with a shipping method set on it. See [Create Express Payment](./CreateExpressPayment.md#placeholder-address).
+
+## Redirect
+
+The connector builds the cancel and denial links it sends to easyCredit as `/webhook/{paymentId}/cancel?redirectUrl=<shop link>&sig=<signature>`. The signature is an HMAC-SHA256 of the payment ID and the shop link, with a key derived from `API_PASSWORD`, so no extra setting is needed. The webhook answers `302` to `redirectUrl` only if `sig` matches. Without `redirectUrl`, or with a missing or wrong `sig`, it answers `200` with `{ "paymentId": "..." }` and logs a warning. The cancel itself runs in every case.
+
+Links created before this check existed carry no `sig`, so a shopper who was on the easyCredit page during the upgrade sees the JSON answer instead of the shop page. Changing `API_PASSWORD` has the same effect for the links of open attempts.
 
 <br />
 
@@ -87,7 +96,7 @@ To cancel a payment, you can make a call to the following URL.
 ### Request
 
 **HTTP Method:** `GET`  
-**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}`  
+**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&sig={{signature}}`  
 **Headers:**
 ```http
 Content-Type: application/json

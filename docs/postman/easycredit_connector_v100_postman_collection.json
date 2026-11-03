@@ -17,7 +17,7 @@
 						"method": "POST",
 						"header": [],
 						"url": {
-							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string",
+							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string&sig=string",
 							"host": [
 								"{{connector_url}}"
 							],
@@ -31,6 +31,11 @@
 									"key": "redirectUrl",
 									"value": "string",
 									"description": "The URL where the customer is redirected after successfully completing the payment cancellation."
+								},
+								{
+									"key": "sig",
+									"value": "string",
+									"description": "Signature of redirectUrl. The connector adds it to the links it sends to easyCredit and redirects only if it matches."
 								}
 							]
 						}

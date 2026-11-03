@@ -14,7 +14,7 @@ deployAs:
           description: commercetools project key
           required: true
         - key: CTP_CLIENT_ID
-          description: commercetools client ID with manage_payments, manage_orders, view_sessions, view_api_clients, manage_checkout_payment_intents, introspect_oauth_tokens, manage_types and view_types scopes, plus view_product_types if BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES is set, and optionally view_customers so the customer relationship sent to easyCredit carries the account date
+          description: commercetools client ID with manage_payments, manage_orders, view_sessions, view_api_clients, manage_checkout_payment_intents, introspect_oauth_tokens, manage_types and view_types scopes, plus view_product_types if BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES is set, and optionally view_customers so the customer relationship of express payments carries the account date
           required: true
         - key: CTP_REGION
           description: commercetools region (example - europe-west1.gcp)
@@ -70,7 +70,7 @@ deployAs:
           required: false
           default: easy-credit-technical-transaction-id
         - key: PAYMENT_CUSTOM_TYPE_KEY
-          description: Key of the custom type for payment resources, used to flag express payments. Use an existing key to share a custom type with other connectors. The post-deploy script creates the type or adds the field definitions easyCreditExpress and easyCreditExpressPlaceholderAddress if they are missing, so an existing deployment gets them by redeploying the connector. Until then the express endpoints answer 500 ExpressNotConfigured, and the regular checkout is not affected.
+          description: Key of the custom type for payment resources, used to flag express payments. Use an existing key to share a custom type with other connectors. The post-deploy script creates the type or adds the field definitions easyCreditExpress and easyCreditExpressPlaceholderAddress if they are missing, so an existing deployment gets them by redeploying the connector. Until then the express endpoints answer 503 ExpressNotConfigured, and the regular checkout is not affected.
           required: false
           default: easy-credit-payment
       securedConfiguration:
@@ -81,5 +81,5 @@ deployAs:
           description: EasyCredit WebShop ID
           required: true
         - key: API_PASSWORD
-          description: EasyCredit API password
+          description: EasyCredit API password. Also the key for the signature of the cancel and denial links, so a change makes the links of open easyCredit attempts answer without redirect.
           required: true
