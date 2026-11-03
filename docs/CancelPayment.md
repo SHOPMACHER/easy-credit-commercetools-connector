@@ -3,6 +3,7 @@
 For the terms in this document (EC, CT, easyCredit status values, cart freeze), see [Terms](./CommercetoolsFrontendIntegration.md#terms).
 
 * [Switching to another payment method](#switching-to-another-payment-method)
+* [Already failed attempt](#already-failed-attempt)
 * [Representation: CT Payment](#representation-ct-payment)
 * [Creating CommerceTools Actions from Easy Credit's Response](#creating-commercetools-actions-from-easy-credits-response)
 
@@ -16,7 +17,7 @@ This function cancels an easyCredit payment that is not complete.
 To cancel a payment, the customer must have a payment that is created but not paid. The CommerceTools Payment object must meet these criteria:
 
 1. The payment is an easyCredit payment: `paymentMethodInfo.paymentInterface` is `easycredit`. The comparison is not case-sensitive. A value such as `EasyCredit` (in the example below) also matches. The connector writes `easycredit`.
-2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5.
+2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5. The connector answers a `Failure` transaction without a change, see [Already failed attempt](#already-failed-attempt).
 3. The transaction has an `interactionId`. This is the easyCredit Payment ID.
 4. The connector checks the status of the easyCredit transaction through the easyCredit API.
    - If the status is AUTHORIZED, the connector blocks the cancellation. It returns an error: you cannot cancel an authorized easyCredit payment.
@@ -63,6 +64,16 @@ A `Pending` payment can stay `Pending`. For example, easyCredit no longer finds 
 ## Several payments on one order
 
 A cancelled attempt stays on the cart and on the order with a `Failure` transaction. To find the payment that the shopper used, see [Find the used payment](./CommercetoolsFrontendIntegration.md#find-the-used-payment).
+
+<br />
+
+## Already failed attempt
+
+A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab). The webhook then changes nothing, neither the transaction nor the cart, which may be frozen for the newer attempt, and answers like a successful cancel: `302` to `redirectUrl`, or `200` without it.
+
+## Cart cleanup
+
+The cart is unfrozen if it is still `Frozen`. For an express payment whose placeholder address the connector added and that is still on the cart, the placeholder is removed in the same update, together with a shipping method set on it. See [Create Express Payment](./CreateExpressPayment.md#placeholder-address).
 
 <br />
 

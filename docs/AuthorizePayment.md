@@ -4,6 +4,7 @@ For the terms in this document (EC, CT, easyCredit status values, cart freeze), 
 
 * [Authorize EC transaction](#workflow)
 * [Sync the final payment type](#sync-the-final-payment-type)
+* [Express payments](#express-payments)
 * [Timeout handling](#timeout-handling)
 * [Response Format](#response-format)
 * [Error Handling](#error-responses)
@@ -44,6 +45,7 @@ To use this function, these conditions must be true:
 4. **Sync the final payment type** (`PREAUTHORIZED` only): easyCredit can offer a switch between installment and pay by invoice on its page (see [Sync the final payment type](#sync-the-final-payment-type)). The connector therefore reads the final type from the easyCredit transaction. It keeps `paymentMethodInfo` of the CT payment in sync. This runs before the amount check and before the authorization request. The connector returns its errors. See [Sync the final payment type](#sync-the-final-payment-type).
 5. **Only if the CT transaction is `Initial`**: check the amounts, send the authorization request to easyCredit and set the CT transaction to `Pending`.
    - The amount check needs the cart to be `Frozen`. The cart total, the CT transaction amount and the easyCredit `orderValue` must be identical in cents. If they are not, the connector sets the CT transaction to `Failure`. It unfreezes the cart if it is still `Frozen`. It returns `400 AmountMismatch`. In this case, the connector sends no authorization request.
+   - For an express payment whose cart still holds the placeholder address, the connector returns `400 ExpressAddressMissing` and writes nothing. See [Express payments](#express-payments).
    - For a `BILL_PAYMENT`, the connector also checks again that the cart still meets the pay by invoice rules for addresses and customer. The billing and shipping address match and are in Germany. The customer is a private customer. A frozen cart still accepts address and company updates. If a rule is broken, the connector sets the CT transaction to `Failure`, unfreezes the cart and returns the error (for example `400 AddressesUnmatched` or `400 CorporateCustomerNotAllowed`, see [Create Payment](./CreatePayment.md#error-response-400)). The connector sends no authorization request. The limits need no separate check. The cart total, the transaction amount and the easyCredit `orderValue` must be identical. This rejects any price change.
    - easyCredit answers the authorization request with `202`. This means only that easyCredit received the request. It does not mean that the transaction is authorized. The connector does not accept any other `2xx` as an authorization. It answers with `502 AuthorizationFailed`.
    - All easyCredit requests of this endpoint share the 30 second budget that starts with the request. If the budget is already used up before the authorization request, it returns `504 AuthorizationTimeout` and sends no request.
@@ -151,6 +153,8 @@ The connector checks the cart for the final type as described in [Payment type a
 - **Deterministic failure**: the final type is off in the connector configuration (`INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED` not `1`). Or every returned error is one of `InvalidAmount`, `InstallmentPaymentExcludedItems`, `BillPaymentExcludedItems`, `CorporateCustomerNotAllowed`, `AddressesUnmatched`, `InvalidBillingAddress`, `InvalidShippingAddress`, `InvalidAddress` or `InvalidCurrency`. The connector sets the CT transaction to `Failure`, unfreezes the cart and returns the error (`400`). It writes nothing to `paymentMethodInfo`. If it cannot fail the transaction, it logs this and still returns the validation error. The connector computes `InvalidAmount` only from a fresh webshop configuration. Without one, the call returns `503 EasyCreditUnavailable`, see below.
 - **Anything else**: for example `PaymentTypeNotAvailable` from the webshop configuration, `503 InstallmentPaymentCheckFailed`, `503 BillPaymentCheckFailed`, `503 EasyCreditUnavailable`, a `5xx`, a cart that the connector cannot read, or a list that also has another code. The connector returns the error and does not touch the transaction. An outage therefore cannot destroy a credit decision that the shopper already got. A retry runs the sync again. Meanwhile the cart stays `Frozen` and the transaction stays `Initial`. If the error does not go away, the shop can call the [cancel webhook](./CancelPayment.md). The transaction then becomes `Failure` and the cart is unfrozen. Or the shopper can pick another payment method. A new create call then discards this attempt, see [Create Payment](./CreatePayment.md#switching-in-the-shop-checkout).
 
+For an express payment whose cart still holds the placeholder address, the address checks are skipped as at [Create Express Payment](./CreateExpressPayment.md#differences-to-create-payment). The authorization then refuses the placeholder, see [Express payments](#express-payments).
+
 ### easyCredit sends no payment type
 
 For the outcome, the connector treats a value other than `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` like an absent type. The sync writes exactly one log line for each case:
@@ -165,6 +169,16 @@ Outcome for an absent and for an unrecognised value:
 - Stored type `BILL_PAYMENT`: if the sync is gated for validation (easyCredit status `PREAUTHORIZED` and CT transaction `Initial`), the connector fails closed with `502 PaymentTypeUnknown` and writes nothing. In every other case (`AUTHORIZED`, or `PREAUTHORIZED` with a `Pending` or `Success` transaction), nothing is about to be authorized. The connector keeps the stored type and still writes the log line. It records the interest for the stored type and returns no error. This is true on this endpoint, in the callback and in [Get Payment](./GetPayment.md).
 
 A switch writes `method` `easycredit` for installment and `BILL_PAYMENT` for pay by invoice. The connector does not rewrite an installment payment when easyCredit also says installment. For the interest fields, see [Create Payment](./CreatePayment.md#transaction-custom-fields).
+<br />
+
+## Express payments
+
+A payment created by [Create Express Payment](./CreateExpressPayment.md) (`easyCreditExpress: true`) was created without address checks, so they run before its authorization request:
+
+- The cart still holds the placeholder `{ "country": "DE" }`: `400 ExpressAddressMissing`. The transaction stays `Initial` and the cart `Frozen`, so the shop can set the address from easyCredit and call again. This also stops a `urlSuccess` that leads to a page which authorizes without taking over the address.
+- Otherwise the cart is checked as in [Create Payment](./CreatePayment.md#payment-type-availability) for the payment type, addresses included, also for `INSTALLMENT_PAYMENT`. A broken rule sets the transaction to `Failure`, unfreezes the cart and returns the error, as for `BILL_PAYMENT` in [Workflow](#workflow), step 5.
+
+When the transaction is set to `Failure` (`DECLINED`, `EXPIRED`, a failed check), the placeholder is removed from the cart together with the unfreeze, see [Create Express Payment](./CreateExpressPayment.md#placeholder-address).
 <br />
 
 ## Timeout handling
@@ -221,6 +235,7 @@ The API returns a `204 No content` response:
 | 400 | `InvalidPaymentTransaction` | The payment has no `Authorization` transaction with an `interactionId`. |
 | 400 | `TransactionNotPreauthorized` | The CT transaction is `Failure`, or the easyCredit status is not `PREAUTHORIZED` and not `AUTHORIZED`. For `DECLINED` or `EXPIRED`, the connector sets the CT transaction to `Failure` and unfreezes the cart. |
 | 400 | `TransactionNotAuthorized` | Another process set the attempt to `Failure` at the same time, after the connector sent the authorization request. See [Workflow](#workflow), step 5. |
+| 400 | `ExpressAddressMissing` | Express payment only: the cart still holds the placeholder address. The connector writes nothing. See [Express payments](#express-payments). |
 | 400 | `AmountMismatch` | The cart is no longer `Frozen` (after easyCredit reported `AUTHORIZED`: not `Frozen` and not `Ordered`, see [Amount check after authorization](#amount-check-after-authorization)). Or the cart total, the CT transaction amount and the easyCredit order value (in cents) differ. Or easyCredit sent no order value. The CT transaction is `Failure`. The connector unfreezes the cart only if it was still `Frozen`. |
 | 400 | `InvalidAmount`, `InstallmentPaymentExcludedItems`, `BillPaymentExcludedItems`, `CorporateCustomerNotAllowed`, `AddressesUnmatched`, `InvalidBillingAddress`, `InvalidShippingAddress`, `InvalidAddress`, `InvalidCurrency`, `PaymentTypeNotAvailable` | The cart does not fit the final payment type, or for `BILL_PAYMENT` its address or customer rules are broken. The CT transaction is `Failure` and the cart is unfrozen. The exception is `PaymentTypeNotAvailable` from webshop data: it leaves the transaction as it is. See [Validation of the final type](#validation-of-the-final-type). |
 | 502 | `PaymentTypeUnknown` | easyCredit sent no payment type, or an unrecognised one, for a `BILL_PAYMENT` payment while the status is `PREAUTHORIZED` and the CT transaction is `Initial`. The connector writes nothing. You cannot continue the payment. |
