@@ -17,13 +17,13 @@ Behavior changes for existing integrations, installment included, are listed in 
 To use this functionality, the following conditions must be met:
 
 1. A valid `paymentId` must be provided, associated with an existing payment that holds an `authorized EC transaction` in CommerceTools.
-2. The request must be authenticated with a CommerceTools access token.
+2. The request must be authenticated with a CommerceTools access token that has one of the scopes `manage_payments`, `manage_checkout_payment_intents` or `manage_project`.
 3. A payment is captured only once. If it already has a `Charge` transaction in state `Success`, the request returns `204` without capturing again, so a repeated request (for example a shipping event sent twice) is safe. A `Charge` in state `Pending` is handled in workflow step 1.
 <br />
 
 ## Workflow
 
-1. **Validate and get `payment`**: Use `paymentId` to get related CT `payment` data. If the payment has a `Charge` in state `Pending`, for example because the EC notification never arrived, the connector reads the EC capture bookings first:
+1. **Validate and get `payment`**: Use `paymentId` to get related CT `payment` data. Open refunds of the payment are settled from the EC bookings first, as described in [Refund Payment](./RefundPayment.md#process). If the payment has a `Charge` in state `Pending`, for example because the EC notification never arrived, the connector reads the EC capture bookings first:
    - A `DONE` booking sets the `Charge` to `Success` and the API returns `204`.
    - A booking dated after the `Charge` that is not finished yet, or no booking within 15 minutes after the `Charge`, means EC may still be processing the capture: the `Charge` stays `Pending` and the API returns `204`.
    - A `FAILED` booking dated after the `Charge`, or no booking 15 minutes after it, sets the `Charge` to `Failure` and the capture continues with step 2.
@@ -70,7 +70,7 @@ On successful capture the payment, the API returns a `204 No content` response.
 | --- | --- | --- | --- |
 | `400` | `InvalidJsonInput` | The body is invalid, for example a `trackingNumber` longer than 50 characters. | none added |
 | `400` | `TransactionIsNotAuthorized` | The EC transaction is not `AUTHORIZED`. | none added |
-| `401` | `invalid_token` | The access token is missing or invalid. | none added |
+| `401` | `invalid_token` | The access token is missing or invalid, or has none of the scopes `manage_payments`, `manage_checkout_payment_intents` and `manage_project` (then `fields.validAuthorities` lists them). | none added |
 | `404` | `404`, with `ResourceNotFound` in `fields` | No payment exists for `payment_id`. | none added |
 | `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the `Charge` was added. Nothing was sent to EC, the capture can be requested again. | none added |
 | EC status (`4xx` or `5xx`) | `title` of the EC response, or `CaptureFailed` | EC rejects the capture (`401` and `403` included) or answers with a server error. | `Failure` |

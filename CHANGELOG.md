@@ -8,7 +8,9 @@ Planned as `1.1.0` of the processor and the enabler. Deploy both from the same b
 
 ### Upgrade notes
 
-Pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. Existing installment integrations need no code or configuration changes, but check these points:
+Pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. Existing installment integrations need no code changes, but check these points:
+
+- **Breaking:** `POST /payments/{paymentId}/capture` and `POST /payments/{paymentId}/refund` need a token with one of the scopes `manage_payments`, `manage_checkout_payment_intents` or `manage_project`. A token without them gets `401 invalid_token` with the accepted scopes in `fields.validAuthorities`. Before, any valid token of the project was accepted. Check the API client that calls capture and refund before upgrading.
 
 - Installment now reads the easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`) for its limits, with the same credentials. If easyCredit rejects that request (for example `401` or `404`), `GET /payments/payment-method/{cartId}` and `POST /payments` answer `503 EasyCreditUnavailable` instead of offering installment. Check that the webshop ID and API password are accepted by that endpoint before upgrading. See [Changed](#changed).
 
@@ -53,6 +55,7 @@ A few responses change where the previous version answered wrongly, see [Fixed](
 **Refund** (`POST /payments/{paymentId}/refund`)
 
 - If easyCredit answers with a `5xx`, cannot be reached or does not answer within 10 seconds, the Refund transaction is set to `Pending` instead of `Failure`, because easyCredit may still book the refund. The notification completes it. The response stays `202` with the payment. Do not send the refund again: a new request is a new refund.
+- A refund whose notification never arrives no longer stays open forever. Each capture and refund request of the payment first reads the easyCredit bookings: an open refund with a `DONE` or `FAILED` booking gets `Success` or `Failure`, and one without a booking 15 minutes after it was sent gets `Failure`, which frees its amount for a new refund. Calling `GET /easycredit-notification?vorgangskennung={easyCredit transaction ID}` does the same.
 - Each refund request uses its own Refund transaction as easyCredit `bookingId`. Before, a refund stuck in `Initial` made later requests change the wrong transaction.
 - A refund that easyCredit accepted no longer stays `Initial` when another request changed the payment at the same time.
 - A notification that completes a refund and the capture together no longer fails with a version conflict and leaves the refunds `Pending`.
@@ -83,4 +86,5 @@ A few responses change where the previous version answered wrongly, see [Fixed](
 
 ### Security
 
+- Capture and refund check the token scopes, see [Upgrade notes](#upgrade-notes).
 - Updated dependencies with known vulnerabilities.
