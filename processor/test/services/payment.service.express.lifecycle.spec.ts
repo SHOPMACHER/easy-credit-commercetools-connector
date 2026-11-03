@@ -1,21 +1,40 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fastify from 'fastify';
 import { Cart, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { handleAuthorizeECPayment, handleCancelPayment, handleGetPayment } from '../../src/services/payment.service';
+import {
+  handleAuthorizeECPayment,
+  handleCancelPayment,
+  handleCreatePayment,
+  handleExpressPaymentMethod,
+  handleGetPayment,
+  handlePaymentMethod,
+} from '../../src/services/payment.service';
 import { resetWebshopInfoCache } from '../../src/services/webshop.service';
-import { getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
+import {
+  findCartByPaymentId,
+  getCartById,
+  getCartByPaymentId,
+  updateCart,
+} from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { webhookRoute } from '../../src/routes/webhook.route';
 import { errorHandler } from '../../src/libs/fastify/error-handler';
 import { signRedirectUrl } from '../../src/utils/redirect.utils';
+import { isPaymentCustomTypeReady } from '../../src/commercetools/customFields.commercetools';
 
 // Runs the real service and validators; only the external APIs are mocked.
 jest.mock('../../src/commercetools/cart.commercetools');
+
+// The cart release looks the cart up without throwing; the tests set the cart through getCartByPaymentId.
+beforeEach(() => {
+  jest.mocked(findCartByPaymentId).mockImplementation((paymentId) => jest.mocked(getCartByPaymentId)(paymentId));
+});
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/commercetools/customObject.commercetools');
 jest.mock('../../src/commercetools/productType.commercetools');
+jest.mock('../../src/commercetools/customFields.commercetools');
 
 type AnyFn = (...args: any[]) => any;
 
@@ -170,14 +189,9 @@ describe('express payment lifecycle', () => {
     });
 
     it('should do nothing for an attempt a newer one already discarded', async () => {
-      const discarded = buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure');
-      const newer = { ...buildPayment(), id: 'payment-2' };
-      jest
-        .mocked(getPaymentById)
-        .mockImplementation(
-          async (id) => (id === newer.id ? newer : discarded) as unknown as Awaited<ReturnType<typeof getPaymentById>>,
-        );
-      givenCart(buildCart({ paymentInfo: { payments: [{ typeId: 'payment', id: newer.id }] } }));
+      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+      // The discard removed the payment from the cart.
+      jest.mocked(findCartByPaymentId).mockResolvedValue(undefined);
 
       await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
 
@@ -186,8 +200,49 @@ describe('express payment lifecycle', () => {
       expect(updateCart).not.toHaveBeenCalled();
     });
 
+    it('should release the cart on a retry after the release of the first cancel failed', async () => {
+      givenPayment(buildPayment());
+      const cart = buildCart();
+      givenCart(cart);
+      jest.mocked(updateCart).mockRejectedValueOnce(new Error('commercetools down'));
+
+      await expect(handleCancelPayment(PAYMENT_ID)).rejects.toThrow('commercetools down');
+
+      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+      await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+      expect(updateCart).toHaveBeenLastCalledWith(cart, [{ action: 'unfreezeCart' }, { action: 'setShippingAddress' }]);
+    });
+
+    it('should keep the cart frozen for a newer open attempt on it', async () => {
+      const newer = { ...buildPayment(), id: 'payment-newer' };
+      jest
+        .mocked(getPaymentById)
+        .mockImplementation(
+          async (id) =>
+            (id === newer.id ? newer : buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure')) as unknown as Awaited<
+              ReturnType<typeof getPaymentById>
+            >,
+        );
+      givenCart(buildCart({ paymentInfo: { payments: [{ id: PAYMENT_ID }, { id: newer.id }] } }));
+
+      await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('should still answer when the release for an already failed attempt fails', async () => {
+      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+      givenCart(buildCart());
+      jest.mocked(updateCart).mockRejectedValueOnce(new Error('commercetools down'));
+
+      await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+    });
+
     it('should redirect the shopper for an already discarded attempt instead of answering 400', async () => {
       givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+      jest.mocked(findCartByPaymentId).mockResolvedValue(undefined);
+      const redirectUrl = 'https://shop.example.com/cart';
       const app = fastify();
       app.setErrorHandler(errorHandler);
       await app.register(webhookRoute, { prefix: '/webhook' });
@@ -195,13 +250,11 @@ describe('express payment lifecycle', () => {
       try {
         const response = await app.inject({
           method: 'GET',
-          url:
-            `/webhook/${PAYMENT_ID}/cancel?redirectUrl=${encodeURIComponent('https://shop.example.com/cart')}` +
-            `&sig=${signRedirectUrl(PAYMENT_ID, 'https://shop.example.com/cart')}`,
+          url: `/webhook/${PAYMENT_ID}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&sig=${signRedirectUrl(PAYMENT_ID, redirectUrl)}`,
         });
 
         expect(response.statusCode).toBe(302);
-        expect(response.headers.location).toBe('https://shop.example.com/cart');
+        expect(response.headers.location).toBe(redirectUrl);
       } finally {
         await app.close();
       }
@@ -242,6 +295,20 @@ describe('express payment lifecycle', () => {
       expect(client.authorizePayment).not.toHaveBeenCalled();
       expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
       expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+    });
+
+    it('should fail with InvalidBillingAddress when the express return only set the shipping address', async () => {
+      givenPayment(buildPayment());
+      const cart = buildCart({ shippingAddress: address });
+      givenCart(cart);
+      client.getPayment.mockResolvedValue(preauthorized());
+
+      await expect(getErrorCodes(handleAuthorizeECPayment(PAYMENT_ID))).resolves.toEqual(
+        expect.arrayContaining(['InvalidBillingAddress']),
+      );
+
+      expect(client.authorizePayment).not.toHaveBeenCalled();
+      expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
     });
 
     it('should leave a regular installment payment as it was', async () => {
@@ -289,6 +356,111 @@ describe('express payment lifecycle', () => {
       await expect(getErrorCodes(handleGetPayment(PAYMENT_ID))).resolves.toEqual(['CorporateCustomerNotAllowed']);
 
       expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
+    });
+  });
+  describe('abandoned express attempt in the regular checkout', () => {
+    const removeAbandoned = [
+      { action: 'unfreezeCart' },
+      { action: 'setShippingAddress' },
+      { action: 'removePayment', payment: { typeId: 'payment', id: PAYMENT_ID } },
+    ];
+    const regularLinks = {
+      urlSuccess: 'https://shop.example.com/success',
+      urlCancellation: 'https://shop.example.com/cancel',
+      urlDenial: 'https://shop.example.com/denied',
+    };
+    const shopRelationship = { customerStatus: 'NEW_CUSTOMER' as const, numberOfOrders: 0 };
+    const abandonedCart = () => buildCart({ paymentInfo: { payments: [{ id: PAYMENT_ID }] } });
+
+    beforeEach(() => {
+      jest.mocked(getCartById).mockResolvedValue(abandonedCart());
+    });
+
+    it('should end the attempt and remove the placeholder before the payment method check', async () => {
+      givenPayment(buildPayment());
+      client.getPayment.mockResolvedValue({ status: 'OPEN' });
+
+      await handlePaymentMethod('cart-1').catch(() => undefined);
+
+      expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
+      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+    });
+
+    it('should end the attempt before a regular create', async () => {
+      givenPayment(buildPayment());
+      client.getPayment.mockResolvedValue({ status: 'OPEN' });
+
+      await handleCreatePayment('cart-1', regularLinks, shopRelationship).catch(() => undefined);
+
+      expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
+      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+    });
+
+    it('should only detach an attempt that has already failed', async () => {
+      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+
+      await handlePaymentMethod('cart-1').catch(() => undefined);
+
+      expect(client.getPayment).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+    });
+
+    it('should refuse a regular create while easyCredit may still authorize the attempt', async () => {
+      givenPayment(buildPayment());
+      client.getPayment.mockResolvedValue({ status: 'AUTHORIZED' });
+
+      await expect(getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship))).resolves.toEqual([
+        'PaymentInProgress',
+      ]);
+
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a regular create when the attempt moved on before it could be ended', async () => {
+      jest
+        .mocked(getPaymentById)
+        .mockResolvedValueOnce(buildPayment() as unknown as Awaited<ReturnType<typeof getPaymentById>>)
+        .mockResolvedValue(
+          buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending') as unknown as Awaited<ReturnType<typeof getPaymentById>>,
+        );
+      client.getPayment.mockResolvedValue({ status: 'OPEN' });
+
+      await expect(getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship))).resolves.toEqual([
+        'PaymentInProgress',
+      ]);
+
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('should keep the attempt in the payment method check while easyCredit may still authorize it', async () => {
+      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending'));
+
+      await handlePaymentMethod('cart-1').catch(() => undefined);
+
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('should leave a country-only address the shop set itself', async () => {
+      givenPayment(buildPayment({ easyCreditExpress: true, easyCreditExpressPlaceholderAddress: false }));
+
+      await handlePaymentMethod('cart-1').catch(() => undefined);
+
+      expect(client.getPayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
+    it('should not touch the cart in the express payment method check', async () => {
+      givenPayment(buildPayment());
+      jest.mocked(isPaymentCustomTypeReady).mockResolvedValue(true);
+
+      await handleExpressPaymentMethod('cart-1').catch(() => undefined);
+
+      expect(getPaymentById).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
     });
   });
 });

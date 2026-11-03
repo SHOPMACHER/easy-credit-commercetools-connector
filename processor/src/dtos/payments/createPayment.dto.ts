@@ -34,20 +34,14 @@ export const CreatePaymentBodySchema = Type.Object({
   cartId: Type.String(),
   paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
   redirectLinks: RedirectLinksSchema,
-  // Deprecated and ignored: the connector derives it from commercetools. Still accepted so older callers keep working.
-  customerRelationship: Type.Optional(CustomerRelationshipSchema),
+  customerRelationship: CustomerRelationshipSchema,
 });
 
-const AbsoluteUrl = Type.String({ pattern: '^https?://' });
-
 // No cartId: express always uses the cart of the session. No customerRelationship: the connector derives it.
+// The links are checked in the service, as a schema pattern cannot reject credentials in the URL.
 export const CreateExpressPaymentBodySchema = Type.Object({
   paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
-  redirectLinks: Type.Object({
-    urlSuccess: AbsoluteUrl,
-    urlCancellation: AbsoluteUrl,
-    urlDenial: AbsoluteUrl,
-  }),
+  redirectLinks: RedirectLinksSchema,
 });
 
 export const CreatePaymentResponseSchema = Type.Object({
