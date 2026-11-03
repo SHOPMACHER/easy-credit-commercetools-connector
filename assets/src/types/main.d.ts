@@ -14,6 +14,11 @@
  *                urlCancellation: "https://google.com",
  *                urlDenial: "https://google.com"
  *            },
+ *            customerRelationship": {
+ *                customerStatus: "NEW_CUSTOMER",
+ *                customerSince: "2024-01-01",
+ *                numberOfOrders: 0
+ *            },
  *            onLoading: () => {},
  *            onError: (error) => {},
  *            onSuccess: (response) => {},
@@ -112,8 +117,7 @@ export type CheckoutComponentOptions = {
     urlCancellation: string;
     urlDenial: string;
   };
-  /** @deprecated Ignored and not sent: the processor derives the customer relationship from commercetools. */
-  customerRelationship?: {
+  customerRelationship: {
     customerStatus: 'NEW_CUSTOMER' | 'EXISTING_CUSTOMER' | 'PREMIUM_CUSTOMER';
     customerSince?: string;
     numberOfOrders: number;

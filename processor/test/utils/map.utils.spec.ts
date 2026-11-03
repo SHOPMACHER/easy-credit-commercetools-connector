@@ -30,7 +30,6 @@ import {
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { LineItem } from '@commercetools/connect-payments-sdk';
-
 import { signRedirectUrl } from '../../src/utils/redirect.utils';
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),

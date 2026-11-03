@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { handleAuthorizeECPayment, handleAuthorizePayment, handleGetPayment } from '../../src/services/payment.service';
-import { getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
+import { findCartByPaymentId, getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
@@ -10,6 +10,11 @@ import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestricti
 import { getShippingAddress, getShippingDestinations } from '../../src/utils/map.utils';
 
 jest.mock('../../src/commercetools/cart.commercetools');
+
+// The cart release looks the cart up without throwing; the tests set the cart through getCartByPaymentId.
+beforeEach(() => {
+  jest.mocked(findCartByPaymentId).mockImplementation((paymentId) => jest.mocked(getCartByPaymentId)(paymentId));
+});
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');
@@ -1276,6 +1281,8 @@ describe('payment type sync before authorizing', () => {
         ctState = 'Failure'; // a concurrent create discarded this attempt and froze the cart for a newer one
         return cart;
       });
+      // The discard also removed this payment from the cart.
+      mock(findCartByPaymentId).mockResolvedValue(undefined);
 
       await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
         errors: [expect.objectContaining({ code: 'CorporateCustomerNotAllowed' })],
@@ -1455,6 +1462,8 @@ describe('payment type sync before authorizing', () => {
         ctState = 'Failure'; // a concurrent create discarded this attempt and froze the cart for a newer one
         return cart;
       });
+      // The discard also removed this payment from the cart.
+      mock(findCartByPaymentId).mockResolvedValue(undefined);
 
       await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
         errors: expect.arrayContaining([expect.objectContaining({ code: 'CorporateCustomerNotAllowed' })]),
@@ -1474,6 +1483,8 @@ describe('payment type sync before authorizing', () => {
           ctState = movedTo; // a concurrent flow moved the transaction after this call read Initial
           return cart;
         });
+        // A concurrent discard also removed the payment from the cart.
+        mock(findCartByPaymentId).mockResolvedValue(undefined);
 
         await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'AmountMismatch' });
 

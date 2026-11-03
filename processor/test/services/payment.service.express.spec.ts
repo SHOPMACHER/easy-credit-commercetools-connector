@@ -24,6 +24,9 @@ import { paymentsRoute } from '../../src/routes/payment.route';
 import { errorHandler } from '../../src/libs/fastify/error-handler';
 
 // Runs the real service, validators, mappers and config; only the external APIs and the session are mocked.
+// What a shop sends in the regular create body; the connector passes it on unchanged.
+const shopRelationship = { customerStatus: 'NEW_CUSTOMER' as const, customerSince: '2024-01-01', numberOfOrders: 0 };
+
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
@@ -217,6 +220,30 @@ describe('express payment creation', () => {
       expect(getCustomerSince).not.toHaveBeenCalled();
     });
 
+    it('should send the shipping method as logisticsServiceProvider, like the TeamBank plugins', async () => {
+      mockCreateFlow(expressCart(500, { shippingInfo: { shippingMethodName: ' DHL Paket ' } }));
+
+      await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerRelationship: { ...guestRelationship, logisticsServiceProvider: 'DHL Paket' },
+        }),
+      );
+    });
+
+    it('should cut a shipping method name longer than easyCredit allows', async () => {
+      mockCreateFlow(expressCart(500, { shippingInfo: { shippingMethodName: 'x'.repeat(300) } }));
+
+      await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerRelationship: { ...guestRelationship, logisticsServiceProvider: 'x'.repeat(255) },
+        }),
+      );
+    });
+
     describe('for a logged-in customer', () => {
       const missingScope = Object.assign(new Error('insufficient_scope'), { statusCode: 403 });
 
@@ -236,6 +263,23 @@ describe('express payment creation', () => {
         expect(getCustomerSince).toHaveBeenCalledWith('customer-1');
         expect(getOrderHistoryOfCustomer).toHaveBeenCalledWith('customer-1');
         expectRelationship({ orderDoneWithLogin: true, numberOfOrders: 3, customerSince: '2020-05-01' });
+      });
+
+      it('should add the shipping method for a logged-in customer too', async () => {
+        mockCreateFlow(
+          expressCart(500, { customerId: 'customer-1', shippingInfo: { shippingMethodName: 'Standard' } }),
+        );
+        jest.mocked(getCustomerSince).mockResolvedValue('2020-05-01');
+        jest.mocked(getOrderHistoryOfCustomer).mockResolvedValue({ numberOfOrders: 3, firstOrderDate: '2021-02-03' });
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expectRelationship({
+          orderDoneWithLogin: true,
+          numberOfOrders: 3,
+          customerSince: '2020-05-01',
+          logisticsServiceProvider: 'Standard',
+        });
       });
 
       it('should use the first order date without the view_customers scope', async () => {
@@ -330,7 +374,7 @@ describe('express payment creation', () => {
 
       await expect(
         getErrorCodes(handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT)),
-      ).resolves.toEqual([{ code: 'ExpressNotConfigured', httpErrorStatus: 500 }]);
+      ).resolves.toEqual([{ code: 'ExpressNotConfigured', httpErrorStatus: 503 }]);
       expect(isPaymentCustomTypeReady).toHaveBeenCalledWith('easy-credit-payment');
       expect(getCartById).not.toHaveBeenCalled();
       expect(updateCart).not.toHaveBeenCalled();
@@ -590,7 +634,9 @@ describe('express payment creation', () => {
     it('should still require addresses and send no express flag', async () => {
       mockCreateFlow(expressCart(500));
 
-      const codes = await getErrorCodes(handleCreatePayment('session-cart', redirectLinks, INSTALLMENT));
+      const codes = await getErrorCodes(
+        handleCreatePayment('session-cart', redirectLinks, shopRelationship, INSTALLMENT),
+      );
 
       expect(codes.map(({ code }) => code)).toEqual(expect.arrayContaining(['InvalidBillingAddress']));
       expect(createPayment).not.toHaveBeenCalled();
@@ -599,7 +645,7 @@ describe('express payment creation', () => {
     it('should not set a custom type on a regular payment', async () => {
       mockCreateFlow(expressCart(500, { billingAddress: address, shippingAddress: address }));
 
-      await handleCreatePayment('session-cart', redirectLinks, INSTALLMENT);
+      await handleCreatePayment('session-cart', redirectLinks, shopRelationship, INSTALLMENT);
 
       expect(createPayment).toHaveBeenCalledWith(expect.not.objectContaining({ custom: expect.anything() }));
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ customer: expect.anything() }));
@@ -645,7 +691,7 @@ describe('express payment creation', () => {
       jest.mocked(isPaymentCustomTypeReady).mockResolvedValue(false);
 
       await expect(getErrorCodes(handleExpressPaymentMethod('session-cart', INSTALLMENT))).resolves.toEqual([
-        { code: 'ExpressNotConfigured', httpErrorStatus: 500 },
+        { code: 'ExpressNotConfigured', httpErrorStatus: 503 },
       ]);
     });
 
@@ -763,13 +809,29 @@ describe('express payment creation', () => {
     });
 
     it.each([
-      ['an unknown payment type', { redirectLinks, paymentType: 'CASH' }],
-      ['a relative urlSuccess', { redirectLinks: { ...redirectLinks, urlSuccess: '/express/return' } }],
+      ['an unknown payment type', { redirectLinks, paymentType: 'CASH' }, 'InvalidJsonInput'],
+      ['a relative urlSuccess', { redirectLinks: { ...redirectLinks, urlSuccess: '/express/return' } }, 'InvalidField'],
       [
         'a non-http urlCancellation',
         { redirectLinks: { ...redirectLinks, urlCancellation: 'ftp://shop.example.com/cart' } },
+        'InvalidField',
       ],
-    ])('should answer 400 for %s before the cart is read', async (_, payload) => {
+      [
+        'a urlSuccess with a user name that hides the real host',
+        { redirectLinks: { ...redirectLinks, urlSuccess: 'https://shop.example.com@evil.example.com/return' } },
+        'InvalidField',
+      ],
+      [
+        'a urlDenial with user name and password',
+        { redirectLinks: { ...redirectLinks, urlDenial: 'https://user:secret@shop.example.com/denied' } },
+        'InvalidField',
+      ],
+      [
+        'a mailto urlSuccess',
+        { redirectLinks: { ...redirectLinks, urlSuccess: 'mailto:shop@example.com' } },
+        'InvalidField',
+      ],
+    ])('should answer 400 for %s before the cart is read', async (_, payload, code) => {
       jest.mocked(getCartIdFromContext).mockReturnValue('session-cart');
       const app = await buildApp();
 
@@ -777,13 +839,14 @@ describe('express payment creation', () => {
         const response = await app.inject({ method: 'POST', url: '/payments/express', payload });
 
         expect(response.statusCode).toBe(400);
+        expect(response.json().errors).toEqual([expect.objectContaining({ code })]);
         expect(getCartById).not.toHaveBeenCalled();
       } finally {
         await app.close();
       }
     });
 
-    it('should answer 500 with ExpressNotConfigured while the payment type is missing', async () => {
+    it('should answer 503 with ExpressNotConfigured while the payment type is missing', async () => {
       jest.mocked(getCartIdFromContext).mockReturnValue('session-cart');
       jest.mocked(isPaymentCustomTypeReady).mockResolvedValue(false);
       const app = await buildApp();
@@ -791,7 +854,7 @@ describe('express payment creation', () => {
       try {
         const response = await app.inject({ method: 'POST', url: '/payments/express', payload: { redirectLinks } });
 
-        expect(response.statusCode).toBe(500);
+        expect(response.statusCode).toBe(503);
         expect(response.json().errors).toEqual([expect.objectContaining({ code: 'ExpressNotConfigured' })]);
       } finally {
         await app.close();
@@ -805,6 +868,7 @@ describe('express payment creation', () => {
         const response = await app.inject({ method: 'POST', url: '/payments/express', payload: {} });
 
         expect(response.statusCode).toBe(400);
+        expect(response.json().errors).toEqual([expect.objectContaining({ code: 'RequiredField' })]);
         expect(getCartById).not.toHaveBeenCalled();
       } finally {
         await app.close();

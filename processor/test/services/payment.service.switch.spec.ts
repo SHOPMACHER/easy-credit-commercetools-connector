@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { handleCreatePayment, handleGetPayment } from '../../src/services/payment.service';
-import { getCartById, getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
+import {
+  findCartByPaymentId,
+  getCartById,
+  getCartByPaymentId,
+  updateCart,
+} from '../../src/commercetools/cart.commercetools';
 import { createPayment, getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { Errorx } from '@commercetools/connect-payments-sdk';
@@ -11,7 +16,15 @@ import { getPaymentTypesAvailability } from '../../src/services/webshop.service'
 import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestriction.service';
 import { getShippingAddress, getShippingDestinations } from '../../src/utils/map.utils';
 
+// What a shop sends in the regular create body; the connector passes it on unchanged.
+const shopRelationship = { customerStatus: 'NEW_CUSTOMER' as const, customerSince: '2024-01-01', numberOfOrders: 0 };
+
 jest.mock('../../src/commercetools/cart.commercetools');
+
+// The cart release looks the cart up without throwing; the tests set the cart through getCartByPaymentId.
+beforeEach(() => {
+  jest.mocked(findCartByPaymentId).mockImplementation((paymentId) => jest.mocked(getCartByPaymentId)(paymentId));
+});
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');
@@ -410,9 +423,17 @@ describe('handleGetPayment payment type sync', () => {
 
     it('a validation failure leaves a transaction that is already Failure alone, so the cart of a newer attempt stays frozen', async () => {
       switchToBill();
-      mock(getPaymentById).mockReset().mockResolvedValueOnce(buildPayment(INSTALLMENT));
-      mock(getPaymentById).mockResolvedValue(buildPayment(INSTALLMENT, 'Failure'));
-      mock(getCartByPaymentId).mockResolvedValue(buildCart({ billingAddress: { ...address, company: 'ACME GmbH' } }));
+      const newer = { ...buildPayment(BILL), id: 'payment-newer' };
+      mock(getPaymentById)
+        .mockReset()
+        .mockResolvedValueOnce(buildPayment(INSTALLMENT))
+        .mockImplementation(async (id: string) => (id === newer.id ? newer : buildPayment(INSTALLMENT, 'Failure')));
+      mock(getCartByPaymentId).mockResolvedValue(
+        buildCart({
+          billingAddress: { ...address, company: 'ACME GmbH' },
+          paymentInfo: { payments: [{ id: PAYMENT_ID }, { id: newer.id }] },
+        }),
+      );
 
       await expect(handleGetPayment(PAYMENT_ID)).rejects.toMatchObject({
         errors: [expect.objectContaining({ code: 'CorporateCustomerNotAllowed' })],
@@ -421,7 +442,7 @@ describe('handleGetPayment payment type sync', () => {
       expectTransactionUntouched();
     });
 
-    it('BILL_PAYMENT_ENABLED=0 on a transaction that is already Failure: rethrown, cart stays frozen', async () => {
+    it('BILL_PAYMENT_ENABLED=0 on a transaction that is already Failure: rethrown, the cart no other attempt holds is released', async () => {
       switchToBill();
       mock(getPaymentById).mockReset().mockResolvedValueOnce(buildPayment(INSTALLMENT));
       mock(getPaymentById).mockResolvedValue(buildPayment(INSTALLMENT, 'Failure'));
@@ -431,7 +452,8 @@ describe('handleGetPayment payment type sync', () => {
         errors: [expect.objectContaining({ code: 'PaymentTypeNotAvailable' })],
       });
 
-      expectTransactionUntouched();
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
     });
 
     it('BILL_PAYMENT_ENABLED=0 on a transaction that moved to Pending: rethrown, transaction untouched', async () => {
@@ -965,7 +987,7 @@ describe('handleCreatePayment discarding stale attempts', () => {
   const givenPayments = (...payments: { id: string; [key: string]: unknown }[]) =>
     mock(getPaymentById).mockImplementation(async (id: string) => payments.find((payment) => payment.id === id));
 
-  const create = (type: string) => handleCreatePayment('cart-1', redirectLinks, type as any);
+  const create = (type: string) => handleCreatePayment('cart-1', redirectLinks, shopRelationship, type as any);
   const removeActions = (...ids: string[]) =>
     ids.map((id) => ({ action: 'removePayment', payment: { typeId: 'payment', id } }));
   // staleCart is frozen with HardFreeze, and the re-freeze keeps the cart's own strategy.
