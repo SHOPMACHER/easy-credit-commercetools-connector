@@ -944,7 +944,6 @@ describe('handleGetPayment payment type sync', () => {
 describe('handleCreatePayment discarding stale attempts', () => {
   const OLD = 'old-1';
   const redirectLinks = { urlSuccess: 'https://s', urlCancellation: 'https://c', urlDenial: 'https://d' };
-  const customer = { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 } as any;
   const INSTALLMENT_CENTS = 30000;
 
   const staleCart = (ids: string[], overrides: Record<string, unknown> = {}) =>
@@ -966,7 +965,7 @@ describe('handleCreatePayment discarding stale attempts', () => {
   const givenPayments = (...payments: { id: string; [key: string]: unknown }[]) =>
     mock(getPaymentById).mockImplementation(async (id: string) => payments.find((payment) => payment.id === id));
 
-  const create = (type: string) => handleCreatePayment('cart-1', redirectLinks, customer, type as any);
+  const create = (type: string) => handleCreatePayment('cart-1', redirectLinks, type as any);
   const removeActions = (...ids: string[]) =>
     ids.map((id) => ({ action: 'removePayment', payment: { typeId: 'payment', id } }));
   // staleCart is frozen with HardFreeze, and the re-freeze keeps the cart's own strategy.

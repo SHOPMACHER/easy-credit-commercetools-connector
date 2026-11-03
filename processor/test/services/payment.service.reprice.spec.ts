@@ -8,7 +8,7 @@ import { getCustomObjectByKey } from '../../src/commercetools/customObject.comme
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
 import { resetPaymentTypeRestrictionCache } from '../../src/services/paymentTypeRestriction.service';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
-import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
+import { ECTransactionPaymentType } from '../../src/types/payment.types';
 
 // Runs the real service, webshop service, validators and config; only the external APIs are mocked.
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -114,9 +114,9 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     const frozen = buildCart('Frozen', 510000);
     mockFlow(buildCart('Active', 500000), frozen);
 
-    await expect(
-      getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
-    ).resolves.toEqual([{ code: 'InvalidAmount', httpErrorStatus: 400 }]);
+    await expect(getErrorCodes(handleCreatePayment('cart123', redirectLinks, BILL))).resolves.toEqual([
+      { code: 'InvalidAmount', httpErrorStatus: 400 },
+    ]);
 
     expect(createPayment).not.toHaveBeenCalled();
     expect(createECPaymentMock).not.toHaveBeenCalled();
@@ -127,7 +127,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     const shopFrozen = { ...buildCart('Frozen', 500000), freezeStrategy: 'SoftFreeze' } as Cart;
     mockFlow(shopFrozen, shopFrozen);
 
-    await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+    await handleCreatePayment('cart123', redirectLinks, BILL);
 
     const actions = jest.mocked(updateCart).mock.calls.flatMap(([, a]) => a.map(({ action }) => action));
     expect(actions).toEqual(['addPayment']);
@@ -139,9 +139,9 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   it('re-validates when only the currency differs', async () => {
     mockFlow(buildCart('Active', 50000), buildCart('Frozen', 50000, 'USD'));
 
-    await expect(
-      getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
-    ).resolves.toEqual([expect.objectContaining({ httpErrorStatus: 400 })]);
+    await expect(getErrorCodes(handleCreatePayment('cart123', redirectLinks, BILL))).resolves.toEqual([
+      expect.objectContaining({ httpErrorStatus: 400 }),
+    ]);
 
     expect(createPayment).not.toHaveBeenCalled();
     expect(updateCart).toHaveBeenLastCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
@@ -150,7 +150,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   it('creates the payment when the repriced total is still within the limits', async () => {
     mockFlow(buildCart('Active', 50000), buildCart('Frozen', 60000));
 
-    await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, INSTALLMENT);
+    await handleCreatePayment('cart123', redirectLinks, INSTALLMENT);
 
     expect(availabilitySpy).toHaveBeenCalledTimes(2);
     expect(availabilitySpy).toHaveBeenLastCalledWith(600);
@@ -174,9 +174,9 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     mockFlow({ ...buildCart('Active', 50000), lineItems: [physicalItem] } as unknown as Cart, frozen);
 
     try {
-      await expect(
-        getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
-      ).resolves.toEqual([{ code: 'BillPaymentExcludedItems', httpErrorStatus: 400 }]);
+      await expect(getErrorCodes(handleCreatePayment('cart123', redirectLinks, BILL))).resolves.toEqual([
+        { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
     } finally {
       process.env = originalEnv;
     }
@@ -190,7 +190,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   it('fetches the availability once when the total and the items are unchanged', async () => {
     mockFlow(buildCart('Active', 50000), buildCart('Frozen', 50000));
 
-    await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, INSTALLMENT);
+    await handleCreatePayment('cart123', redirectLinks, INSTALLMENT);
 
     expect(availabilitySpy).toHaveBeenCalledTimes(1);
     expect(createPayment).toHaveBeenCalledTimes(1);

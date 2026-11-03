@@ -227,12 +227,33 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(201);
       expect(response.json()).toEqual(mockResponse);
-      expect(handleCreatePayment).toHaveBeenCalledWith(
-        mockRequest.cartId,
-        mockRequest.redirectLinks,
-        mockRequest.customerRelationship,
-        paymentType,
-      );
+      // The customerRelationship from the body is ignored, the connector derives it.
+      expect(handleCreatePayment).toHaveBeenCalledWith(mockRequest.cartId, mockRequest.redirectLinks, paymentType);
+    });
+
+    it('should still accept a request without customerRelationship', async () => {
+      // @ts-expect-error mocked
+      (handleCreatePayment as jest.Mock).mockResolvedValue({
+        technicalTransactionId: 'technicalTransactionId',
+        paymentId: 'paymentId',
+        redirectUrl: 'redirectUrl',
+        transactionInformation: {
+          status: 'status',
+          decision: { decisionOutcome: 'POSITIVE', decisionOutcomeText: null },
+        },
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments`,
+        body: {
+          cartId: '12345',
+          redirectLinks: { urlSuccess: 'https://s.com', urlCancellation: 'https://c.com', urlDenial: 'https://d.com' },
+        },
+        headers: { 'x-session-id': sessionId, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(201);
     });
   });
 
