@@ -366,6 +366,12 @@ describe('Payment Utility Functions', () => {
       expect(getCaptureBookingsSince(bookings, '2026-10-28T05:00:00Z')).toStrictEqual(bookings.slice(1));
     });
 
+    it('getCaptureBookingsSince should keep a booking without a readable date', () => {
+      const unreadable = capture('PENDING', 'not a date');
+
+      expect(getCaptureBookingsSince([unreadable], '2026-10-28T05:00:00Z')).toStrictEqual([unreadable]);
+    });
+
     it.each([undefined, '', 'not a date'])(
       'getCaptureBookingsSince should keep all bookings for the Charge date %p',
       (date) => {

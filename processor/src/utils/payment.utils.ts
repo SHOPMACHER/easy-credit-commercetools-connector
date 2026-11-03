@@ -97,7 +97,14 @@ export const getCaptureBooking = (ecBookings: ECBooking[]) => {
 // Bookings dated before the Charge belong to an earlier capture attempt. Without a Charge date all bookings count.
 export const getCaptureBookingsSince = (captureBookings: ECBooking[], chargedAt?: string): ECBooking[] => {
   const from = Date.parse(chargedAt ?? '') - EASYCREDIT_BOOKING_CLOCK_SKEW_MS;
-  return Number.isNaN(from) ? captureBookings : captureBookings.filter(({ created }) => !(Date.parse(created) < from));
+  if (Number.isNaN(from)) {
+    return captureBookings;
+  }
+  // A booking without a readable date is kept, as it may belong to this Charge.
+  return captureBookings.filter(({ created }) => {
+    const createdAt = Date.parse(created);
+    return Number.isNaN(createdAt) || createdAt >= from;
+  });
 };
 
 // A DONE booking is final. Otherwise the newest booking of this Charge decides, as a retried capture leaves the earlier FAILED one behind.
