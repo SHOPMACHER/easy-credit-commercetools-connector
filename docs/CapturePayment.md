@@ -18,21 +18,22 @@ To use this functionality, the following conditions must be met:
 
 1. A valid `paymentId` must be provided, associated with an existing payment that holds an `authorized EC transaction` in CommerceTools.
 2. The request must be authenticated with a CommerceTools access token that has one of the scopes `manage_payments`, `manage_checkout_payment_intents` or `manage_project`.
-3. A payment is captured only once. If it already has a `Charge` transaction in state `Success`, the request returns `204` without capturing again, so a repeated request (for example a shipping event sent twice) is safe. A `Charge` in state `Pending` is handled in workflow step 1.
+3. A payment is captured only once. If it already has a `Charge` transaction in state `Success`, the request returns `204` without capturing again, so a repeated request (for example a shipping event sent twice) is safe. A `Charge` in state `Pending` is handled in workflow step 2.
 <br />
 
 ## Workflow
 
-1. **Validate and get `payment`**: Use `paymentId` to get related CT `payment` data. Open refunds of the payment are settled from the EC bookings first, as described in [Refund Payment](./RefundPayment.md#process). If the payment has a `Charge` in state `Pending`, for example because the EC notification never arrived, the connector reads the EC capture bookings first:
-   - A `DONE` booking sets the `Charge` to `Success` and the API returns `204`.
-   - A booking dated after the `Charge` that is not finished yet, or no booking within 15 minutes after the `Charge`, means EC may still be processing the capture: the `Charge` stays `Pending` and the API returns `204`.
-   - A `FAILED` booking dated after the `Charge`, or no booking 15 minutes after it, sets the `Charge` to `Failure` and the capture continues with step 2.
-   - If EC answers this read with an error, cannot be reached or does not answer within 10 seconds, the API returns that error and the `Charge` stays `Pending`.
-2. **Retrieve EC `technicalTransactionId`**: The id is stored in a custom field named `easyCreditTechnicalTransactionId` under the payment transaction
-3. **Check the EC transaction**: With the `technicalTransactionId`, the connector reads the EC transaction. If its status is not `AUTHORIZED`, the API returns `400 TransactionIsNotAuthorized`. If EC answers this read with an error, cannot be reached or does not answer within 10 seconds, the API returns that error (see [Error Responses](#error-responses)). In all these cases no `Charge` transaction is added and nothing is captured.
-4. **Add a `Charge` transaction**: A `Charge` transaction in state `Pending` is added before EC is called, so an EC notification that arrives early finds it. If a parallel capture request added its `Charge` first, this request returns `204` without capturing.
+1. **Validate and get `payment`**: Use `paymentId` to get related CT `payment` data. A payment with a `Charge` in state `Success` returns `204` here, without reading EC.
+2. **Read the EC bookings**: The connector reads the EC transaction with its bookings once. If EC answers with an error, cannot be reached or does not answer within 10 seconds, the API returns that error and nothing changes. Open refunds of the payment are settled from these bookings, as described in [Refund Payment](./RefundPayment.md#process). If the payment has a `Charge` in state `Pending`, for example because the EC notification never arrived, the bookings decide:
+   - A `DONE` capture booking sets the `Charge` to `Success` and the API returns `204`.
+   - A `FAILED` capture booking of this `Charge` sets it to `Failure` and the capture continues with step 3.
+   - Without a capture booking of this `Charge`, the `Charge` is set to `Failure` and the capture continues only if EC still waits for a capture (transaction status `REPORT_CAPTURE` or `REPORT_CAPTURE_EXPIRING`, also with the suffix `_FAILED`) and the `Charge` is older than 30 seconds, so the request that added it is past its EC call.
+   - In every other case, for example a booking of this `Charge` that is still `PENDING`, the `Charge` stays `Pending` and the API returns `204`, however old the `Charge` is.
+   - If EC sends the transaction without `bookings`, the `Charge` stays `Pending` and the API returns `204`.
+3. **Check the EC transaction**: The EC `technicalTransactionId` is stored in the custom field `easyCreditTechnicalTransactionId` of the `Authorization` transaction. With it, the connector reads the EC transaction. If its status is not `AUTHORIZED`, the API returns `400 TransactionIsNotAuthorized`. If EC answers this read with an error, cannot be reached or does not answer within 10 seconds, the API returns that error (see [Error Responses](#error-responses)). In all these cases no `Charge` transaction is added and nothing is captured.
+4. **Add a `Charge` transaction**: A `Charge` transaction in state `Pending` is added before EC is called, so an EC notification that arrives early finds it. The IDs (`uuid`) of the capture bookings that EC listed in step 2 are stored in its custom field `easyCreditEarlierCaptureBookings`, so a booking of an earlier, failed capture is never taken as the result of this one. If EC sent no `bookings` and the payment already had a `Charge`, the API returns `502 CaptureFailed` instead, as an earlier capture could not be told apart. If a parallel capture request added its `Charge` first, this request returns `204` without capturing.
 5. **Capture the EC transaction**: A capture request with the CT `paymentId` as `orderId` and the optional `trackingNumber` is sent to EC. If EC rejects it or cannot be reached, the `Charge` is set to `Failure` and the API returns the error.
-6. **Complete the `Charge`**: EC captures asynchronously. The EC notification sets the `Charge` to `Success` if EC booked the capture, or `Failure` if EC reports it as failed. If the capture was requested again after a failure, only EC capture bookings dated after the new `Charge` (with one minute of tolerance for differing clocks) can fail it, so the earlier failed booking does not fail the new `Charge` while EC is still processing it.
+6. **Complete the `Charge`**: EC captures asynchronously. The EC notification sets the `Charge` to `Success` if EC booked the capture, or `Failure` if a booking of this `Charge` failed. Bookings listed in `easyCreditEarlierCaptureBookings` are ignored, whatever their dates, so the failed booking of an earlier capture does not fail the new `Charge` while EC is still processing it.
 
 ![Capture payment flow](./assets/easycredit-capture-payment-flow.png)
 <br />
@@ -74,7 +75,8 @@ On successful capture the payment, the API returns a `204 No content` response.
 | `404` | `404`, with `ResourceNotFound` in `fields` | No payment exists for `payment_id`. | none added |
 | `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the `Charge` was added. Nothing was sent to EC, the capture can be requested again. | none added |
 | EC status (`4xx` or `5xx`) | `title` of the EC response, or `CaptureFailed` | EC rejects the capture (`401` and `403` included) or answers with a server error. | `Failure` |
-| `502` / `504` | `CaptureFailed` | EC cannot be reached or answers with a `2xx` other than `202` (`502`), or does not answer within 10 seconds (`504`). | `Failure`, or unchanged if this happens while the EC transaction or its bookings are read (workflow steps 1 and 3) |
+| `502` / `504` | `CaptureFailed` | EC cannot be reached or answers with a `2xx` other than `202` (`502`), or does not answer within 10 seconds (`504`). | `Failure`, or unchanged if this happens while the EC transaction or its bookings are read (workflow steps 2 and 3) |
+| `502` | `CaptureFailed` | EC sends the transaction without `bookings` and the payment already had a `Charge` (workflow step 4). | none added |
 
 After a `Failure` the capture can be requested again. EC captures a transaction only once, so a retry cannot capture it twice. EC does not document whether it accepts a new capture after a failed one; if it does not, the API returns its error.
 
