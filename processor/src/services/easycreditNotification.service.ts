@@ -13,7 +13,6 @@ import {
   getCaptureBooking,
   getCaptureResult,
   getCompletedRefunds,
-  getExpiredRefunds,
   getOpenRefundTransactions,
   getPendingCaptureTransactions,
   getSuccessCaptureTransactions,
@@ -25,10 +24,15 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
   try {
     validateECTransactionId(resourceId);
     const ecTransaction = await initEasyCreditClient().getMerchantTransaction(resourceId);
+    const { bookings } = ecTransaction;
+    if (!bookings) {
+      log.warn('EasyCredit sent the transaction without bookings, notification ignored', { resourceId });
+      return;
+    }
 
     // Both update the same payment, so they run one after the other; a failed refund update must not block the capture.
-    const [refunds] = await Promise.allSettled([handleRefundNotifications(ecTransaction)]);
-    await handleCaptureNotifications(ecTransaction, resourceId);
+    const [refunds] = await Promise.allSettled([handleRefundNotifications(bookings)]);
+    await handleCaptureNotifications(ecTransaction, bookings, resourceId);
     if (refunds.status === 'rejected') {
       throw refunds.reason;
     }
@@ -38,7 +42,7 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
   }
 };
 
-// Completes open refunds from their easyCredit bookings and fails the ones easyCredit never booked.
+// Only a DONE or FAILED booking completes a refund: without one, easyCredit may still book it.
 export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[]): Promise<Payment> => {
   const openRefunds = getOpenRefundTransactions(payment);
   if (openRefunds.length === 0) {
@@ -46,15 +50,7 @@ export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[
   }
 
   const completedRefunds = getCompletedRefunds(ecBookings);
-  const expiredRefunds = getExpiredRefunds(openRefunds, ecBookings);
-  const updateActions = [
-    ...mapUpdateActionForRefunds(openRefunds, completedRefunds),
-    ...expiredRefunds.map(({ id }) => ({
-      action: 'changeTransactionState' as const,
-      transactionId: id,
-      state: CTTransactionState.Failure,
-    })),
-  ];
+  const updateActions = mapUpdateActionForRefunds(openRefunds, completedRefunds);
   if (updateActions.length === 0) {
     return payment;
   }
@@ -74,31 +70,18 @@ export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[
         reason: booking.message?.messageEN,
       }),
     );
-  expiredRefunds.forEach(({ id }) =>
-    log.warn('EasyCredit has no booking for the refund, CommerceTools transaction state updated to Failure.', {
-      paymentId: payment.id,
-      transactionId: id,
-    }),
-  );
 
   return updatedPayment;
 };
 
-// Without a completed refund the order ID still finds the payment, so refunds easyCredit never booked can be failed.
-const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransactionResponse): Promise<void> => {
-  const firstRefundBookingId = getCompletedRefunds(ecTransaction.bookings)[0]?.bookingId;
-  const paymentId = ecTransaction.orderDetails?.orderId;
-
-  let ctPayment: Payment;
-  if (firstRefundBookingId) {
-    ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
-  } else if (paymentId) {
-    ctPayment = await getPaymentById(paymentId);
-  } else {
+const handleRefundNotifications = async (ecBookings: ECBooking[]): Promise<void> => {
+  const firstRefundBookingId = getCompletedRefunds(ecBookings)[0]?.bookingId;
+  if (!firstRefundBookingId) {
     return;
   }
 
-  await settleOpenRefunds(ctPayment, ecTransaction.bookings);
+  const ctPayment = await getPaymentByEasyCreditRefundBookingId(firstRefundBookingId);
+  await settleOpenRefunds(ctPayment, ecBookings);
 };
 
 /**
@@ -106,6 +89,7 @@ const handleRefundNotifications = async (ecTransaction: ECGetMerchantTransaction
  */
 const handleCaptureNotifications = async (
   ecTransaction: ECGetMerchantTransactionResponse,
+  ecBookings: ECBooking[],
   resourceId: string,
 ): Promise<void> => {
   if (!ecTransaction?.orderDetails) {
@@ -121,7 +105,7 @@ const handleCaptureNotifications = async (
     return;
   }
 
-  const ecCaptureBookings = getCaptureBooking(ecTransaction.bookings);
+  const ecCaptureBookings = getCaptureBooking(ecBookings);
 
   if (ecCaptureBookings?.length === 0) {
     return;
@@ -129,7 +113,7 @@ const handleCaptureNotifications = async (
 
   const ctPayment = await getPaymentById(paymentId);
   const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
-  const captureResult = getCaptureResult(ecCaptureBookings, ctPendingCaptureTransactions[0]?.timestamp);
+  const captureResult = getCaptureResult(ecCaptureBookings, ctPendingCaptureTransactions[0]);
 
   if (!captureResult) {
     log.info('EasyCredit capture is still being processed', { paymentId });

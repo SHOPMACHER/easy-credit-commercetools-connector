@@ -3,17 +3,16 @@ import {
   getActiveCaptureTransaction,
   getAddedTransaction,
   getCaptureBooking,
-  getCaptureBookingsSince,
   getCaptureResult,
+  getChargeCaptureBookings,
   getCompletedRefunds,
-  getExpiredRefunds,
   getOpenRefundTransactions,
   getPayment,
   getPaymentType,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
-  isWithoutBookingTooLong,
+  isCaptureInFlight,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import {
   CTTransactionState,
@@ -315,107 +314,77 @@ describe('Payment Utility Functions', () => {
       expect(getCaptureBooking(bookings)).toStrictEqual([bookings[0]]);
     });
 
+    const charge = (earlier?: string[], timestamp?: string) =>
+      ({
+        id: 'charge-1',
+        type: CTTransactionType.Charge,
+        state: CTTransactionState.Pending,
+        timestamp,
+        custom: earlier && { fields: { easyCreditEarlierCaptureBookings: earlier } },
+      }) as unknown as Transaction;
+
     it('getCaptureResult should return a DONE booking even if a newer one failed', () => {
       const done = capture('DONE', '2026-10-28T04:36:07+01:00');
 
       expect(getCaptureResult([done, capture('FAILED', '2026-10-28T05:00:00+01:00')])).toBe(done);
     });
 
-    it('getCaptureResult should return the newest booking if it FAILED', () => {
-      const failed = capture('FAILED', '2026-10-28T05:00:00+01:00', 'Capture not possible');
+    it('getCaptureResult should return a DONE booking that the Charge lists as earlier', () => {
+      const done = capture('DONE', '2026-10-28T04:00:00Z');
 
-      expect(getCaptureResult([capture('FAILED', '2026-10-28T04:00:00+01:00'), failed])).toBe(failed);
+      expect(getCaptureResult([done], charge([done.uuid]))).toBe(done);
     });
 
-    it('getCaptureResult should wait while a retried capture is still pending after a FAILED one', () => {
-      const bookings = [
-        capture('FAILED', '2026-10-28T04:00:00+01:00'),
-        capture('PENDING', '2026-10-28T05:00:00+01:00'),
-      ];
+    it('getCaptureResult should return the FAILED booking of the Charge', () => {
+      const earlier = capture('FAILED', '2026-10-28T04:00:00Z');
+      const failed = capture('FAILED', '2026-10-28T03:59:30Z', 'Capture not possible');
 
-      expect(getCaptureResult(bookings)).toBeUndefined();
+      // Dated before the earlier one, as only the listed uuids decide.
+      expect(getCaptureResult([earlier, failed], charge([earlier.uuid]))).toBe(failed);
     });
 
-    it('getCaptureResult should compare times across offsets', () => {
-      const failed = capture('FAILED', '2026-10-28T04:30:00Z');
+    it('getCaptureResult should ignore the FAILED bookings that the Charge lists as earlier', () => {
+      const earlier = capture('FAILED', '2026-10-28T05:00:30Z');
 
-      expect(getCaptureResult([capture('PENDING', '2026-10-28T05:00:00+01:00'), failed])).toBe(failed);
+      expect(getCaptureResult([earlier], charge([earlier.uuid], '2026-10-28T05:00:00Z'))).toBeUndefined();
+    });
+
+    it('getCaptureResult should wait while a booking of the Charge is open', () => {
+      const earlier = capture('FAILED', '2026-10-28T04:00:00Z');
+      const bookings = [earlier, capture('PENDING', '2026-10-28T05:00:00Z')];
+
+      expect(getCaptureResult(bookings, charge([earlier.uuid]))).toBeUndefined();
+    });
+
+    it('getCaptureResult should count every booking for a Charge without earlier bookings', () => {
+      const failed = capture('FAILED', '2026-10-28T04:00:00Z');
+
+      expect(getCaptureResult([failed], charge())).toBe(failed);
+      expect(getCaptureResult([failed])).toBe(failed);
     });
 
     it('getCaptureResult should return undefined without bookings', () => {
-      expect(getCaptureResult([])).toBeUndefined();
+      expect(getCaptureResult([], charge())).toBeUndefined();
     });
 
-    it('getCaptureResult should ignore a FAILED booking dated before the Charge', () => {
-      expect(getCaptureResult([capture('FAILED', '2026-10-28T04:00:00Z')], '2026-10-28T05:00:00Z')).toBeUndefined();
+    it('getChargeCaptureBookings should drop the bookings that the Charge lists as earlier', () => {
+      const bookings = [capture('FAILED', '2026-10-28T04:00:00Z'), capture('PENDING', '2026-10-28T05:00:00Z')];
+
+      expect(getChargeCaptureBookings(bookings, charge([bookings[0].uuid]))).toStrictEqual([bookings[1]]);
+      expect(getChargeCaptureBookings(bookings, undefined)).toStrictEqual(bookings);
     });
-
-    it('getCaptureResult should keep a DONE booking dated before the Charge', () => {
-      const done = capture('DONE', '2026-10-28T04:00:00Z');
-
-      expect(getCaptureResult([done], '2026-10-28T05:00:00Z')).toBe(done);
-    });
-
-    it('getCaptureBookingsSince should allow one minute of clock skew', () => {
-      const bookings = [
-        capture('FAILED', '2026-10-28T04:58:59Z'),
-        capture('PENDING', '2026-10-28T04:59:00Z'),
-        capture('PENDING', '2026-10-28T05:00:01Z'),
-      ];
-
-      expect(getCaptureBookingsSince(bookings, '2026-10-28T05:00:00Z')).toStrictEqual(bookings.slice(1));
-    });
-
-    it('getCaptureBookingsSince should keep a booking without a readable date', () => {
-      const unreadable = capture('PENDING', 'not a date');
-
-      expect(getCaptureBookingsSince([unreadable], '2026-10-28T05:00:00Z')).toStrictEqual([unreadable]);
-    });
-
-    it.each([undefined, '', 'not a date'])(
-      'getCaptureBookingsSince should keep all bookings for the Charge date %p',
-      (date) => {
-        const bookings = [capture('FAILED', '2026-10-28T04:00:00Z')];
-
-        expect(getCaptureBookingsSince(bookings, date)).toStrictEqual(bookings);
-      },
-    );
-  });
-
-  describe('refunds without easyCredit booking', () => {
-    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
-    const refund = (id: string, timestamp?: string) =>
-      ({ id, type: CTTransactionType.Refund, state: CTTransactionState.Pending, timestamp }) as Transaction;
-    const refundBooking = (bookingId: string, bookingType = 'RefundBooking') =>
-      ({
-        bookingType,
-        type: 'REFUND',
-        status: 'PENDING',
-        created: minutesAgo(1),
-        uuid: bookingId,
-        bookingId,
-      }) as ECBooking;
 
     it.each([
-      [minutesAgo(16), true],
-      [minutesAgo(14), false],
-      [undefined, true],
-      ['not a date', true],
-    ])('isWithoutBookingTooLong(%p) should be %p', (timestamp, expected) => {
-      expect(isWithoutBookingTooLong(timestamp)).toBe(expected);
+      [5, true],
+      [40, false],
+    ])('isCaptureInFlight should be %p for a Charge %p seconds old', (seconds, expected) => {
+      const timestamp = new Date(Date.now() - (seconds as number) * 1000).toISOString();
+
+      expect(isCaptureInFlight(charge(undefined, timestamp))).toBe(expected);
     });
 
-    it('getExpiredRefunds should return old refunds that no refund booking names', () => {
-      const unbooked = refund('refund-unbooked', minutesAgo(20));
-      const refunds = [
-        unbooked,
-        refund('refund-booked', minutesAgo(20)),
-        refund('refund-recent', minutesAgo(1)),
-        refund('refund-capture-id', minutesAgo(20)),
-      ];
-      const bookings = [refundBooking('refund-booked'), refundBooking('refund-capture-id', 'ApiBooking')];
-
-      expect(getExpiredRefunds(refunds, bookings)).toStrictEqual([unbooked, refunds[3]]);
+    it.each([undefined, 'not a date'])('isCaptureInFlight should be false for the Charge date %p', (timestamp) => {
+      expect(isCaptureInFlight(charge(undefined, timestamp))).toBe(false);
     });
   });
 

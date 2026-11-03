@@ -1,7 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Errorx, Payment } from '@commercetools/connect-payments-sdk';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { handleCapturePayment, handleRefundPayment } from '../../src/services/payment.service';
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
+import {
+  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
+  EASYCREDIT_INTEREST_FIELD,
+  EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
+} from '../../src/utils/constant.utils';
 
 // A short request timeout, so the real AbortSignal of the client fires within the test.
 jest.mock('../../src/utils/constant.utils', () => ({
@@ -9,99 +14,147 @@ jest.mock('../../src/utils/constant.utils', () => ({
   EASYCREDIT_REQUEST_TIMEOUT_MS: 50,
 }));
 
-// Writable shapes, as the fake mutates what the SDK types declare read-only.
+// Both APIs are faked behind fetch only: the commercetools SDK client, the payment module,
+// the easyCredit client and their error handling run as in production.
 type StoredTransaction = Record<string, any>;
 type StoredPayment = { id: string; version: number; transactions: StoredTransaction[] } & Record<string, any>;
 
-// commercetools in memory: version-locked updates that apply the transaction actions like the API does.
-const mockStore = new Map<string, StoredPayment>();
-let mockNextId = 0;
-
-jest.mock('../../src/commercetools/payment.commercetools', () => {
-  const clone = <T>(value: T): T => structuredClone(value);
-  const find = (id: string) => mockStore.get(id) as StoredPayment;
-
-  return {
-    getPaymentById: async (id: string) => clone(find(id)),
-    getPaymentByEasyCreditRefundBookingId: async (bookingId: string) =>
-      clone([...mockStore.values()].find(({ transactions }) => transactions.some(({ id }) => id === bookingId))),
-    updatePayment: async (payment: Payment, actions: Record<string, any>[]) => {
-      const current = find(payment.id);
-      if (current.version !== payment.version) {
-        throw new Errorx({ code: 'ConcurrentModification', message: 'Version mismatch', httpErrorStatus: 409 });
-      }
-      for (const action of actions) {
-        if (action.action === 'addTransaction') {
-          const { amount, ...draft } = action.transaction;
-          current.transactions.push({
-            id: `tx-${++mockNextId}`,
-            ...draft,
-            amount: { type: 'centPrecision', fractionDigits: 2, ...amount },
-          });
-        } else if (action.action === 'changeTransactionState') {
-          const transaction = current.transactions.find(({ id }) => id === action.transactionId) as StoredTransaction;
-          transaction.state = action.state;
-        } else {
-          throw new Error(`Unexpected action ${action.action}`);
-        }
-      }
-      current.version += 1;
-      return clone(current);
-    },
-  };
-});
-
+const PROJECT_KEY = process.env.CTP_PROJECT_KEY as string;
 const PAYMENT_ID = 'payment-1';
 const EC_TX_ID = 'ABC123';
 const TECH_ID = 'tech-1';
+const TRANSACTION_FIELDS = new Set([
+  EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+  EASYCREDIT_INTEREST_FIELD,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
+  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
+]);
 
-// easyCredit behind fetch: the client, its error handling and its timeouts stay real.
-let bookings: Record<string, unknown>[];
+const store = new Map<string, StoredPayment>();
+let nextId = 0;
+let bookings: Record<string, unknown>[] | undefined;
+let ecStatus: string;
 let answerCapture: (init: RequestInit) => Promise<Response>;
 let answerRefund: (init: RequestInit) => Promise<Response>;
 
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+const ctError = (status: number, code: string, message: string) =>
+  json({ statusCode: status, message, errors: [{ code, message }] }, status);
 const accepted = async () => new Response(null, { status: 202 });
 const hang = (init: RequestInit) =>
   new Promise<Response>((_resolve, reject) =>
     init.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
   );
 
-const fakeEasyCredit = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
-  const url = String(input);
-  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-
-  if (url.endsWith(`/payment/v3/transaction/${TECH_ID}`)) {
-    return json({ status: 'AUTHORIZED', decision: { transactionId: EC_TX_ID } });
+// The update actions this flow sends, applied like the API does, with its version lock and custom field check.
+const applyAction = (payment: StoredPayment, action: Record<string, any>): Response | undefined => {
+  if (action.action === 'addTransaction') {
+    const { amount, custom, ...draft } = action.transaction;
+    const unknownField = Object.keys(custom?.fields ?? {}).find((name) => !TRANSACTION_FIELDS.has(name));
+    if (unknownField) {
+      return ctError(400, 'InvalidInput', `The field '${unknownField}' is not defined`);
+    }
+    payment.transactions.push({
+      id: `tx-${++nextId}`,
+      ...draft,
+      amount: { type: 'centPrecision', fractionDigits: 2, ...amount },
+      ...(custom && { custom: { type: { typeId: 'type', id: 'type-1' }, fields: custom.fields } }),
+    });
+    return undefined;
   }
-  if (url.endsWith(`/merchant/v3/transaction/${EC_TX_ID}/capture`)) {
-    return answerCapture(init);
+  if (action.action === 'changeTransactionState') {
+    const transaction = payment.transactions.find(({ id }) => id === action.transactionId) as StoredTransaction;
+    transaction.state = action.state;
+    return undefined;
   }
-  if (url.endsWith(`/merchant/v3/transaction/${EC_TX_ID}/refund`)) {
-    return answerRefund(init);
-  }
-  if (url.endsWith(`/merchant/v3/transaction/${EC_TX_ID}`)) {
-    return json({ transactionId: EC_TX_ID, status: 'AUTHORIZED', bookings, orderDetails: { orderId: PAYMENT_ID } });
-  }
-  throw new Error(`Unexpected request ${init.method ?? 'GET'} ${url}`);
+  return ctError(400, 'InvalidInput', `Unexpected action ${action.action}`);
 };
 
-const captureBooking = (status: string, created: string) => ({
+const fakeCommercetools = async (url: URL, init: RequestInit): Promise<Response> => {
+  if (url.pathname === '/oauth/token') {
+    return json({ access_token: 'token', token_type: 'Bearer', expires_in: 172800 });
+  }
+  const byId = new RegExp(`^/${PROJECT_KEY}/payments/([^/]+)$`).exec(url.pathname);
+  if (byId) {
+    const stored = store.get(byId[1]);
+    if (!stored) {
+      return ctError(404, 'ResourceNotFound', `The Resource with ID '${byId[1]}' was not found.`);
+    }
+    if (init.method !== 'POST') {
+      return json(stored);
+    }
+    const { version, actions } = JSON.parse(init.body as string);
+    if (version !== stored.version) {
+      return ctError(409, 'ConcurrentModification', `Expected version ${version}, actual ${stored.version}.`);
+    }
+    const updated = structuredClone(stored);
+    for (const action of actions) {
+      const rejected = applyAction(updated, action);
+      if (rejected) {
+        return rejected;
+      }
+    }
+    updated.version += 1;
+    store.set(updated.id, updated);
+    return json(updated);
+  }
+  if (url.pathname === `/${PROJECT_KEY}/payments`) {
+    const transactionId = /transactions\(id="(.+)"\)/.exec(url.searchParams.get('where') ?? '')?.[1];
+    const results = [...store.values()].filter(({ transactions }) =>
+      transactions.some(({ id }) => id === transactionId),
+    );
+    return json({ limit: 20, offset: 0, count: results.length, results });
+  }
+  throw new Error(`Unexpected commercetools request ${init.method ?? 'GET'} ${url}`);
+};
+
+const fakeEasyCredit = async (url: URL, init: RequestInit): Promise<Response> => {
+  if (url.pathname.endsWith(`/payment/v3/transaction/${TECH_ID}`)) {
+    return json({ status: 'AUTHORIZED', decision: { transactionId: EC_TX_ID } });
+  }
+  if (url.pathname.endsWith(`/merchant/v3/transaction/${EC_TX_ID}/capture`)) {
+    return answerCapture(init);
+  }
+  if (url.pathname.endsWith(`/merchant/v3/transaction/${EC_TX_ID}/refund`)) {
+    return answerRefund(init);
+  }
+  if (url.pathname.endsWith(`/merchant/v3/transaction/${EC_TX_ID}`)) {
+    return json({ transactionId: EC_TX_ID, status: ecStatus, bookings, orderDetails: { orderId: PAYMENT_ID } });
+  }
+  throw new Error(`Unexpected easyCredit request ${init.method ?? 'GET'} ${url}`);
+};
+
+const fakeFetch = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
+  const url = new URL(String(input));
+  return url.host.includes('commercetools') ? fakeCommercetools(url, init) : fakeEasyCredit(url, init);
+};
+
+const captureBooking = (status: string, created: string, uuid = `capture-${status}-${created}`) => ({
   bookingType: 'ApiBooking',
   type: 'CAPTURE',
-  uuid: `capture-${created}`,
+  uuid,
   created,
   status,
 });
+const refundBooking = (bookingId: string, status: string) => ({
+  bookingType: 'RefundBooking',
+  type: 'REFUND',
+  uuid: `refund-${bookingId}-${status}`,
+  created: new Date().toISOString(),
+  status,
+  bookingId,
+});
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
-const stored = () => mockStore.get(PAYMENT_ID) as StoredPayment;
+const stored = () => store.get(PAYMENT_ID) as StoredPayment;
 const charges = () => stored().transactions.filter(({ type }) => type === 'Charge');
 const refunds = () => stored().transactions.filter(({ type }) => type === 'Refund');
+let fetchSpy: jest.SpiedFunction<typeof fetch>;
 const requests = (path: string) =>
-  jest.mocked(fetch).mock.calls.filter(([url, init]) => init?.method === 'POST' && String(url).endsWith(path));
+  fetchSpy.mock.calls.filter(([url, init]) => init?.method === 'POST' && String(url).endsWith(path));
 
 const seed = (...transactions: StoredTransaction[]) =>
-  mockStore.set(PAYMENT_ID, {
+  store.set(PAYMENT_ID, {
     id: PAYMENT_ID,
     version: 1,
     amountPlanned: { type: 'centPrecision', centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
@@ -119,38 +172,61 @@ const seed = (...transactions: StoredTransaction[]) =>
     ],
   });
 
-describe('capture and refund against commercetools and easyCredit fakes', () => {
+describe('capture and refund against the commercetools and easyCredit APIs behind fetch', () => {
+  beforeAll(() => {
+    // Installed once, as the commercetools client keeps the fetch it was built with.
+    fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(fakeFetch);
+  });
+
+  afterAll(() => {
+    fetchSpy.mockRestore();
+  });
+
   beforeEach(() => {
-    mockStore.clear();
+    fetchSpy.mockClear();
+    store.clear();
     bookings = [];
+    ecStatus = 'REPORT_CAPTURE';
     answerCapture = accepted;
     answerRefund = accepted;
-    jest.spyOn(global, 'fetch').mockImplementation(fakeEasyCredit);
     seed();
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
   describe('a Pending Charge that no notification completes', () => {
-    it('is captured again once it is stale and easyCredit has no booking for it', async () => {
-      await handleCapturePayment(PAYMENT_ID);
-      // The notification never comes and easyCredit lists no booking.
-      charges()[0].timestamp = minutesAgo(16);
+    it('is captured again when easyCredit never received its capture', async () => {
+      // Left by a crash between adding the Charge and calling easyCredit.
+      seed({
+        id: 'charge-crashed',
+        type: 'Charge',
+        state: 'Pending',
+        interactionId: EC_TX_ID,
+        timestamp: minutesAgo(1),
+      });
 
       await handleCapturePayment(PAYMENT_ID);
 
       expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-      expect(requests('/capture')).toHaveLength(2);
+      expect(requests('/capture')).toHaveLength(1);
     });
 
-    it('is not captured again while it is recent', async () => {
+    it('is not captured again while easyCredit has not listed the booking of a capture just sent', async () => {
       await handleCapturePayment(PAYMENT_ID);
       await handleCapturePayment(PAYMENT_ID);
 
       expect(charges().map(({ state }) => state)).toEqual(['Pending']);
       expect(requests('/capture')).toHaveLength(1);
+    });
+
+    it('stays Pending, however old, while its capture booking is PENDING', async () => {
+      seed({ id: 'charge-1', type: 'Charge', state: 'Pending', interactionId: EC_TX_ID, timestamp: minutesAgo(600) });
+      // easyCredit keeps REPORT_CAPTURE until the booking is DONE.
+      ecStatus = 'REPORT_CAPTURE';
+      bookings = [captureBooking('PENDING', minutesAgo(599))];
+
+      await handleCapturePayment(PAYMENT_ID);
+
+      expect(charges().map(({ state }) => state)).toEqual(['Pending']);
+      expect(requests('/capture')).toHaveLength(0);
     });
 
     it('is completed from a DONE booking without capturing again', async () => {
@@ -163,35 +239,67 @@ describe('capture and refund against commercetools and easyCredit fakes', () => 
       expect(requests('/capture')).toHaveLength(1);
     });
 
-    it('left by a crash before easyCredit was called is captured again', async () => {
-      seed({
-        id: 'charge-crashed',
-        type: 'Charge',
-        state: 'Pending',
-        interactionId: EC_TX_ID,
-        timestamp: minutesAgo(60),
+    it('stays Pending when easyCredit sends the transaction without bookings', async () => {
+      seed({ id: 'charge-1', type: 'Charge', state: 'Pending', interactionId: EC_TX_ID, timestamp: minutesAgo(600) });
+      bookings = undefined;
+
+      await handleCapturePayment(PAYMENT_ID);
+      await handleEasyCreditNotification(EC_TX_ID);
+
+      expect(charges().map(({ state }) => state)).toEqual(['Pending']);
+      expect(requests('/capture')).toHaveLength(0);
+    });
+  });
+
+  it('sends one capture for parallel requests', async () => {
+    await Promise.all([handleCapturePayment(PAYMENT_ID), handleCapturePayment(PAYMENT_ID)]);
+
+    expect(charges().map(({ state }) => state)).toEqual(['Pending']);
+    expect(requests('/capture')).toHaveLength(1);
+  });
+
+  describe('a capture retried right after a FAILED booking', () => {
+    // Dated just before the retry, so a clock tolerance would take it as the result of the retry.
+    const failed = captureBooking('FAILED', new Date(Date.now() - 30000).toISOString(), 'capture-failed');
+
+    beforeEach(() => {
+      seed({ id: 'charge-old', type: 'Charge', state: 'Failure', interactionId: EC_TX_ID, timestamp: minutesAgo(1) });
+      ecStatus = 'REPORT_CAPTURE_FAILED';
+      bookings = [failed];
+    });
+
+    it('stores the FAILED booking on the new Charge, so a notification keeps the Charge Pending', async () => {
+      await handleCapturePayment(PAYMENT_ID);
+      await handleEasyCreditNotification(EC_TX_ID);
+
+      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
+      expect(charges()[1].custom.fields).toEqual({
+        easyCreditTechnicalTransactionId: TECH_ID,
+        easyCreditEarlierCaptureBookings: ['capture-failed'],
       });
 
+      bookings = [failed, captureBooking('DONE', new Date().toISOString())];
+      await handleEasyCreditNotification(EC_TX_ID);
+
+      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Success']);
+    });
+
+    it('does not send the capture twice when the request is repeated before the new booking is listed', async () => {
+      await handleCapturePayment(PAYMENT_ID);
       await handleCapturePayment(PAYMENT_ID);
 
       expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
       expect(requests('/capture')).toHaveLength(1);
     });
-  });
 
-  it('keeps a retried Charge Pending when a notification still lists the FAILED booking of the earlier capture', async () => {
-    seed({ id: 'charge-old', type: 'Charge', state: 'Failure', interactionId: EC_TX_ID, timestamp: minutesAgo(30) });
-    bookings = [captureBooking('FAILED', minutesAgo(30))];
+    it('fails the new Charge for its own FAILED booking', async () => {
+      await handleCapturePayment(PAYMENT_ID);
+      bookings = [failed, captureBooking('FAILED', new Date().toISOString(), 'capture-failed-again')];
 
-    await handleCapturePayment(PAYMENT_ID);
-    await handleEasyCreditNotification(EC_TX_ID);
+      await handleEasyCreditNotification(EC_TX_ID);
 
-    expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-
-    bookings = [...bookings, captureBooking('DONE', new Date().toISOString())];
-    await handleEasyCreditNotification(EC_TX_ID);
-
-    expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Success']);
+      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Failure']);
+    });
   });
 
   it('sets the Charge to Failure and answers 504 when the capture request times out', async () => {
@@ -217,22 +325,34 @@ describe('capture and refund against commercetools and easyCredit fakes', () => 
   });
 
   describe('a refund that no notification completes', () => {
-    const refundBooking = (bookingId: string, status: string) => ({
-      bookingType: 'RefundBooking',
-      type: 'REFUND',
-      uuid: `refund-${bookingId}`,
-      created: new Date().toISOString(),
-      status,
-      bookingId,
-    });
-
-    it('is failed by the next refund when it timed out and easyCredit never booked it', async () => {
+    it('stays Pending and keeps its amount, however old, while easyCredit has no booking for it', async () => {
       answerRefund = hang;
       await handleRefundPayment(PAYMENT_ID, 100);
-      refunds()[0].timestamp = minutesAgo(16);
+      refunds()[0].timestamp = minutesAgo(600);
       answerRefund = accepted;
 
-      // The full amount is free again, as the first refund was never booked.
+      await expect(handleRefundPayment(PAYMENT_ID, 100)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
+      await handleEasyCreditNotification(EC_TX_ID);
+      await handleCapturePayment(PAYMENT_ID);
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Pending']);
+      expect(requests('/refund')).toHaveLength(1);
+    });
+
+    it('is completed when its booking turns up late', async () => {
+      answerRefund = hang;
+      await handleRefundPayment(PAYMENT_ID, 100);
+      bookings = [refundBooking(refunds()[0].id, 'DONE')];
+
+      await handleEasyCreditNotification(EC_TX_ID);
+
+      expect(refunds().map(({ state }) => state)).toEqual(['Success']);
+    });
+
+    it('frees its amount once easyCredit failed it', async () => {
+      await handleRefundPayment(PAYMENT_ID, 100);
+      bookings = [refundBooking(refunds()[0].id, 'FAILED')];
+
       await handleRefundPayment(PAYMENT_ID, 100);
 
       expect(refunds().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
@@ -249,23 +369,35 @@ describe('capture and refund against commercetools and easyCredit fakes', () => 
       expect(charges().map(({ state }) => state)).toEqual(['Pending']);
     });
 
-    it('stays Pending while its booking is open, even when it is old', async () => {
+    it('stays Pending while its booking is open', async () => {
       await handleRefundPayment(PAYMENT_ID, 30);
-      refunds()[0].timestamp = minutesAgo(60);
       bookings = [refundBooking(refunds()[0].id, 'PENDING')];
 
       await expect(handleRefundPayment(PAYMENT_ID, 70.01)).rejects.toMatchObject({ code: 'InvalidRefundAmount' });
 
       expect(refunds().map(({ state }) => state)).toEqual(['Pending']);
     });
+  });
 
-    it('is failed by a notification of the transaction when easyCredit never booked it', async () => {
+  describe('a notification', () => {
+    it('answers without reading or writing a payment when easyCredit has no completed booking', async () => {
+      store.clear();
+      fetchSpy.mockClear();
+
+      await expect(handleEasyCreditNotification(EC_TX_ID)).resolves.toBeUndefined();
+
+      expect(fetchSpy.mock.calls.map(([url]) => new URL(String(url)).host)).not.toContainEqual(
+        expect.stringContaining('commercetools'),
+      );
+    });
+
+    it('does not touch open refunds without a completed booking', async () => {
       await handleRefundPayment(PAYMENT_ID, 30);
-      refunds()[0].timestamp = minutesAgo(16);
+      const version = stored().version;
 
       await handleEasyCreditNotification(EC_TX_ID);
 
-      expect(refunds().map(({ state }) => state)).toEqual(['Failure']);
+      expect(stored().version).toBe(version);
     });
   });
 

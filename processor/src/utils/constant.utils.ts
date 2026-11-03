@@ -50,17 +50,26 @@ export const EASYCREDIT_INTEREST_FIELD = 'easyCreditInterest';
 
 export const EASYCREDIT_TOTAL_VALUE_FIELD = 'easyCreditTotalValue';
 
+// The capture bookings easyCredit listed before a Charge was added, so they are not taken as its result.
+export const EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD = 'easyCreditEarlierCaptureBookings';
+
 export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 
-// easyCredit dates the bookings, the connector the Charge, so their clocks may differ by this much.
-export const EASYCREDIT_BOOKING_CLOCK_SKEW_MS = 60000;
+// Merchant transaction states that still wait for a capture. They stay so while a capture booking is PENDING,
+// so only a missing booking of the Charge tells that easyCredit never received its capture.
+export const EASYCREDIT_CAPTURE_NOT_REPORTED_STATUSES = [
+  'REPORT_CAPTURE',
+  'REPORT_CAPTURE_FAILED',
+  'REPORT_CAPTURE_EXPIRING',
+  'REPORT_CAPTURE_EXPIRING_FAILED',
+];
 
-// A capture or refund without an easyCredit booking after this long is treated as one easyCredit never received.
-export const EASYCREDIT_MISSING_BOOKING_MS = 900000;
+// Longer than the capture call may take, so the request that added a Charge has called easyCredit by then.
+export const EASYCREDIT_CAPTURE_IN_FLIGHT_MS = 3 * EASYCREDIT_REQUEST_TIMEOUT_MS;
 
 // The scopes that may capture and refund; a token needs one of them.
 export const PAYMENT_MODIFICATION_SCOPES = ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'];
