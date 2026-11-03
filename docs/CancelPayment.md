@@ -17,7 +17,7 @@ This function cancels an easyCredit payment that is not complete.
 To cancel a payment, the customer must have a payment that is created but not paid. The CommerceTools Payment object must meet these criteria:
 
 1. The payment is an easyCredit payment: `paymentMethodInfo.paymentInterface` is `easycredit`. The comparison is not case-sensitive. A value such as `EasyCredit` (in the example below) also matches. The connector writes `easycredit`.
-2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5. The connector answers a `Failure` transaction without a change, see [Already failed attempt](#already-failed-attempt).
+2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5. The connector does not change a `Failure` transaction and answers like a successful cancel, see [Already failed attempt](#already-failed-attempt).
 3. The transaction has an `interactionId`. This is the easyCredit Payment ID.
 4. The connector checks the status of the easyCredit transaction through the easyCredit API.
    - If the status is AUTHORIZED, the connector blocks the cancellation. It returns an error: you cannot cancel an authorized easyCredit payment.
@@ -69,7 +69,9 @@ A cancelled attempt stays on the cart and on the order with a `Failure` transact
 
 ## Already failed attempt
 
-A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab). The webhook then changes nothing, neither the transaction nor the cart, which may be frozen for the newer attempt, and answers like a successful cancel: `302` to `redirectUrl`, or `200` without it.
+A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab), or because an earlier cancel set it but could not release the cart. The webhook does not change the transaction and answers like a successful cancel: `302` to a signed `redirectUrl`, or `200` without it.
+
+It releases the cart as in [Cart cleanup](#cart-cleanup), unless another easyCredit payment on the cart has an `Initial` or `Pending` transaction: that newer attempt holds the cart. A payment the newer attempt discarded is no longer on any cart, so nothing changes. A failing release is logged and the answer stays the same, so a retry of the cancel can release the cart.
 
 ## Cart cleanup
 

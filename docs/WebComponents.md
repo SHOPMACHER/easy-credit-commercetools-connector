@@ -118,7 +118,11 @@ This guide tells you how to add the web components of the connector to your shop
           urlCancellation: window.location.origin + window.location.pathname + '?step=2&status=cancelled',
           urlDenial: window.location.origin + window.location.pathname + '?step=2&status=denied',
         },
-        // customerRelationship is deprecated and ignored: the processor derives it from commercetools
+        customerRelationship: {
+          customerStatus: loggedIn === true ? 'EXISTING_CUSTOMER' : 'NEW_CUSTOMER',
+          customerSince: account?.createdAt,
+          numberOfOrders: myOrdersCount,
+        },
 
         onError: (err) => {
           console.error('onError', err);

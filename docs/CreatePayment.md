@@ -4,14 +4,13 @@ For the terms in this document (EC, CT, easyCredit status values, cart freeze), 
 
 * [Create payment workflow](#workflow)
 * [Example request](#request)
-* [Customer relationship](#customer-relationship)
 * [Switching in the shop checkout](#switching-in-the-shop-checkout)
 * [Switching on the easyCredit page](#switching-on-the-easycredit-page)
 * [Response Format](#success-response)
 * [Error response](#error-response-4xx)
 
 ## Overview
-This API creates payment details from CommerceTools. It uses the `cartId` and the necessary `redirectLinks`. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
+This API creates payment details from CommerceTools. It uses the `cartId`, the necessary `redirectLinks` and the `customerRelationship` data. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
 
 For an express checkout from the product page or the cart, without addresses, see [Create Express Payment](./CreateExpressPayment.md).
 <br />
@@ -26,11 +25,11 @@ To use this function, these conditions must be true:
 
 ## Workflow
 
-1. **Get `cart`**: Get the CT `cart` instance with the `cartId`. If the selected payment type is off in the connector configuration (`INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED=0`), the connector rejects the request before it reads the cart.
+1. **Get `cart`**: Get the CT `cart` instance with the `cartId`. If the selected payment type is off in the connector configuration (`INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED=0`), the connector rejects the request before it reads the cart. The connector first ends an abandoned express attempt that still holds its placeholder address, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt).
 2. **Check payment type availability, then the cart**: The connector checks the selected payment type, see [Payment type availability](#payment-type-availability). Then the connector validates the addresses and the currency. The connector gets the cart again for this request. It therefore also checks items that you added after the GET payment method call.
 3. **Discard stale attempts and freeze the cart**: The connector discards or refuses earlier easyCredit payments on the cart, see [Switching in the shop checkout](#switching-in-the-shop-checkout). Then it freezes the cart, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).
-5. **Create EC transaction**: Convert the CT data into EC data (the `paymentType` and the [customer relationship](#customer-relationship) included). Create the transaction. `paymentSwitchPossible` is `true` only if `BILL_PAYMENT_ENABLED=1`. The connector then supports a switch between installment and pay by invoice, if easyCredit offers one on its page. See [Switching on the easyCredit page](#switching-on-the-easycredit-page).
+5. **Create EC transaction**: Convert the CT data into EC data (the `paymentType` included). Create the transaction. `paymentSwitchPossible` is `true` only if `BILL_PAYMENT_ENABLED=1`. The connector then supports a switch between installment and pay by invoice, if easyCredit offers one on its page. See [Switching on the easyCredit page](#switching-on-the-easycredit-page).
 6. **Add CT transaction**: Add an `Authorization` transaction to the CT payment. Its `interactionId` is the easyCredit `transactionId`. The `technicalTransactionId` is in a custom field. The state is `Initial`. If easyCredit answers with a negative decision, the state is `Failure`. The API then returns `400 TransactionNotSuccess` and unfreezes the cart.
 
 ![Create payment flow](./assets/easycredit-create-payment-flow.png)
@@ -74,23 +73,6 @@ If this validation fails, the connector creates no payment and unfreezes the car
 - Until the connector writes the CT `Authorization` transaction, the CT payment is an orphan on the cart. If the easyCredit call fails, or the write of that transaction fails, the connector also removes the payment from the cart. It does this in the same update that unfreezes the cart.
 - A negative decision writes a `Failure` transaction and only unfreezes the cart.
 - If this cleanup fails, the connector only logs it and returns the original error.
-<br />
-
-## Customer relationship
-
-easyCredit uses `customerRelationship` for its risk assessment. The connector builds it from commercetools, the same way TeamBank's own shop plugins do, and ignores a `customerRelationship` in the request body: the shopper's browser sends that request and could set any value. The field is still accepted, so existing callers keep working.
-
-| Cart | `orderDoneWithLogin` | `numberOfOrders` | `customerSince` |
-| --- | --- | --- | --- |
-| Guest (no `customerId`) | `false` | `0` | not sent |
-| Logged-in customer | `true` | Orders of the customer in commercetools | Date the account was created |
-
-easyCredit rejects a logged-in order without `customerSince`, so the connector always sends one:
-
-- The account date needs the optional `view_customers` scope. Without it, the connector uses the date of the customer's first order, and today if there is none. These dates are never earlier than the account date, so they cannot make a customer look older than they are.
-- If the orders cannot be read, `numberOfOrders` is `0` and a warning is logged.
-
-Orders of a guest are not counted by email, because anyone can enter another shopper's email. `customerStatus` is not sent, as in TeamBank's plugins. The other optional fields are only known to the shop and are not sent either.
 <br />
 
 ## Switching in the shop checkout
@@ -190,8 +172,12 @@ To get the `X-Session-Id`, see the [CommerceTools Sessions API documentation](ht
         "urlSuccess": "https://example.com/success",
         "urlCancellation": "https://example.com/cancellation",
         "urlDenial": "https://example.com/denial"
+    },
+    "customerRelationship": {
+        "customerStatus": "NEW_CUSTOMER",
+        "customerSince": "yyyy-MM-dd",
+        "numberOfOrders": 0
     }
-    // customerRelationship is accepted but ignored, see Customer relationship
 }
 ```
 
