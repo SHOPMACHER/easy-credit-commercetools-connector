@@ -18,6 +18,8 @@ Pay by invoice stays off until `BILL_PAYMENT_ENABLED=1`. Request and response fo
 
 - Installment now reads the easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`) for its limits, with the same credentials. If easyCredit rejects that request (for example `401` or `404`), `GET /payments/payment-method/{cartId}` and `POST /payments` answer `503 EasyCreditUnavailable` instead of offering installment. Check that the webshop ID and API password are accepted by that endpoint before upgrading. See [Changed](#changed).
 
+- `customerRelationship` in `POST /payments` is ignored, the connector derives it from commercetools. A shop that sent `customerStatus` or other optional fields no longer passes them to easyCredit. Add the optional `view_customers` scope so `customerSince` is the account date instead of the first order date. See [Changed](#changed).
+
 A few responses change where the previous version answered wrongly, see [Fixed](#fixed):
 
 - A capture that easyCredit rejects or does not answer returns an error instead of `204`. Before, the `204` hid a capture that never happened.
@@ -41,6 +43,7 @@ A few responses change where the previous version answered wrongly, see [Fixed](
 
 - The installment limits come from the easyCredit webshop configuration instead of the fixed 200 € to 10,000 €. If easyCredit cannot be reached or sends an invalid configuration, the last valid configuration or the fixed limits are used. `503 EasyCreditUnavailable` with a `Retry-After` header is returned only if easyCredit rejects the webshop request itself (for example `401` or `404`), or reported installment as deactivated and cannot be reached since.
 - `InvalidAmount` formats amounts the German way, for example `10.000€`.
+- The `customerRelationship` sent to easyCredit is derived from the cart, like in TeamBank's shop plugins: a guest has `0` orders and no login, a logged-in customer has the number of their commercetools orders and `customerSince`. Before, the value came from the request body, which the shopper's browser sends and can change. The field is still accepted but ignored, and the enabler no longer sends it (`CheckoutComponentOptions.customerRelationship` is optional and deprecated). See [Create Payment](./docs/CreatePayment.md#customer-relationship).
 - A repeated capture of a payment with a `Success` `Charge` returns `204` without calling easyCredit again. Otherwise each capture first reads the easyCredit bookings, so a capture fails with `502` or `504` `CaptureFailed` if easyCredit cannot be read. With a `Pending` `Charge` the bookings decide: a `DONE` booking completes the `Charge`, a `FAILED` booking of this `Charge` sets it to `Failure` and captures again, and so does no booking of this `Charge` while easyCredit still waits for a capture (`REPORT_CAPTURE...`) and the `Charge` is older than 30 seconds. In every other case the `Charge` stays `Pending` and the capture returns `204`. See [Capture Payment](docs/CapturePayment.md#workflow).
 - `POST /payments/{paymentId}/authorize` returns `204` for a payment that is already authorized, instead of `400 TransactionNotPreauthorized`.
 - The notification also completes Refund transactions that are still `Initial`, and logs the easyCredit reason of a failed capture or refund.
