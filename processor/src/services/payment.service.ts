@@ -756,7 +756,7 @@ const logLateAuthorization = async (paymentId: string, technicalTransactionId: s
 
 const getEcCents = (ecPayment: ECGetPaymentResponse): number | undefined => {
   const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
-  return ecValue === undefined ? undefined : eurToCents(ecValue);
+  return typeof ecValue === 'number' ? eurToCents(ecValue) : undefined;
 };
 
 const failWithAmountMismatch = async (
