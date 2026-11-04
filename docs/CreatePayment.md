@@ -9,6 +9,8 @@
 
 ## Overview
 This API is designed to create payment details from CommerceTools using the provided `cartId`, needed `redirectLinks` and `customerRelationship` data. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
+
+For an express checkout from the product page or the cart, without addresses, see [Create Express Payment](./CreateExpressPayment.md).
 <br />
 
 ## Conditions
@@ -21,7 +23,7 @@ To use this functionality, the following conditions must be met:
 
 ## Workflow
 
-1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency.
+1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency. An abandoned express attempt that still holds its placeholder address is ended first, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt).
 2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1` and a cart without excluded items, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). The cart is fetched again for this request, so items added after the GET payment method call are checked too.
 3. **Discard stale attempts and freeze the cart**: Earlier easyCredit payments on the cart are discarded or refused, see [Switching in the shop checkout](#switching-in-the-shop-checkout). The cart is then frozen, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).

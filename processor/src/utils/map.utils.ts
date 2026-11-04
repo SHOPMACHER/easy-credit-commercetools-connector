@@ -4,14 +4,18 @@ import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
+  EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
   EASYCREDIT_TOTAL_VALUE_FIELD,
+  getPaymentCustomTypeKey,
   getTransactionCustomTypeKey,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
+import { signRedirectUrl } from './redirectSignature.utils';
 import {
   CTTransactionState,
   CTTransactionType,
@@ -54,12 +58,22 @@ export const mapLineItem = (lineItem: LineItem) => ({
   ],
 });
 
+// The signature lets the webhook redirect only to a link the connector itself passed to easyCredit.
+const cancelWebhookUrl = (connectorUrl: string | undefined, paymentId: string, redirectUrl: string): string =>
+  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}` +
+  `&sig=${signRedirectUrl(paymentId, redirectUrl)}`;
+
+export type ExpressOptions = {
+  express?: boolean;
+};
+
 export const mapCTCartToECPayment = async (
   cart: Cart,
   payment: Payment,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
   paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
+  { express = false }: ExpressOptions = {},
 ): Promise<ECTransaction> => {
   const connectorUrl = await getCustomObjectByKey(EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL);
 
@@ -75,28 +89,33 @@ export const mapCTCartToECPayment = async (
       orderId: payment.id,
       numberOfProductsInShoppingCart: cart.lineItems.length,
       withoutFlexprice: false,
-      invoiceAddress: mapAddress(cart.billingAddress as Address),
-      shippingAddress: mapAddress(shippingAddress as Address),
+      // Express leaves customer and addresses out, the shopper enters them on the easyCredit payment page.
+      ...(!express && {
+        invoiceAddress: mapAddress(cart.billingAddress as Address),
+        shippingAddress: mapAddress(shippingAddress as Address),
+      }),
       shoppingCartInformation: cart.lineItems.map(mapLineItem) as ECTransactionOrderDetailsShoppingCartInformation[],
     },
-    customer: {
-      firstName: shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
-      lastName: shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
-      contact: {
-        email: cart?.customerEmail ?? '',
-        mobilePhoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
-        phoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
-        phoneNumbersConfirmed: true,
+    ...(!express && {
+      customer: {
+        firstName: shippingAddress?.firstName ?? cart.billingAddress?.firstName ?? '',
+        lastName: shippingAddress?.lastName ?? cart.billingAddress?.lastName ?? '',
+        contact: {
+          email: cart?.customerEmail ?? '',
+          mobilePhoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+          phoneNumber: shippingAddress?.phone ?? cart.billingAddress?.phone ?? '',
+          phoneNumbersConfirmed: true,
+        },
       },
-    },
+    }),
     shopsystem: {
       shopSystemManufacturer: LIBRARY_NAME,
       shopSystemModuleVersion: VERSION_STRING,
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
-      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
+      urlDenial: cancelWebhookUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlDenial),
+      urlCancellation: cancelWebhookUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlCancellation),
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
@@ -109,6 +128,7 @@ export const mapCTCartToECPayment = async (
 export const mapCTCartToCTPayment = (
   cart: Cart,
   paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
+  { express = false, placeholderAddress = false }: ExpressOptions & { placeholderAddress?: boolean } = {},
 ): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
@@ -119,6 +139,12 @@ export const mapCTCartToCTPayment = (
     method: toPaymentMethod(paymentType),
     name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] },
   },
+  ...(express && {
+    custom: {
+      type: { typeId: 'type', key: getPaymentCustomTypeKey() },
+      fields: { [EASYCREDIT_EXPRESS_FIELD]: true, [EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]: placeholderAddress },
+    },
+  }),
 });
 
 export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, payment: Payment): PaymentResponse => ({

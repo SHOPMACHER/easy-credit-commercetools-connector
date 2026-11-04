@@ -22,7 +22,8 @@ export const getCartById = async (cartId: string) => {
   }
 };
 
-export const getCartByPaymentId = async (paymentId: string) => {
+// Undefined when no cart holds the payment, e.g. after a newer attempt removed it from the cart.
+export const findCartByPaymentId = async (paymentId: string): Promise<Cart | undefined> => {
   const carts = await createApiRoot()
     .carts()
     .get({
@@ -33,7 +34,13 @@ export const getCartByPaymentId = async (paymentId: string) => {
     })
     .execute();
 
-  if (carts.body.count === 0) {
+  return carts.body.results[0];
+};
+
+export const getCartByPaymentId = async (paymentId: string) => {
+  const cart = await findCartByPaymentId(paymentId);
+
+  if (!cart) {
     log.error(`Cart not found for payment ID: ${paymentId}`);
 
     throw new Errorx({
@@ -43,7 +50,7 @@ export const getCartByPaymentId = async (paymentId: string) => {
     });
   }
 
-  return carts.body.results[0];
+  return cart;
 };
 
 export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]): Promise<Cart> {
@@ -62,7 +69,7 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
     return cartObject;
   } catch (error: any) {
-    log.error('Error in updatePayment', error);
+    log.error('Error in updateCart', error);
 
     throw new Errorx({
       code: error?.code as string,

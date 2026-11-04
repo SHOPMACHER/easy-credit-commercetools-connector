@@ -234,6 +234,22 @@ describe('paymentsRoute', () => {
         paymentType,
       );
     });
+
+    it('should reject a request without customerRelationship', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments`,
+        body: {
+          cartId: '12345',
+          redirectLinks: { urlSuccess: 'https://s.com', urlCancellation: 'https://c.com', urlDenial: 'https://d.com' },
+        },
+        headers: { 'x-session-id': sessionId, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().errors).toEqual([expect.objectContaining({ code: 'RequiredField' })]);
+      expect(handleCreatePayment).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /payments/paymentId', () => {
