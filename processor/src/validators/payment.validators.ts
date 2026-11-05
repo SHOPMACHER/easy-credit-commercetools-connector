@@ -88,11 +88,11 @@ export const validateCartAmount = (
   }
 };
 
+export const isEasyCreditPayment = (payment: Payment): boolean =>
+  payment.paymentMethodInfo?.paymentInterface?.toLowerCase() === EASYCREDIT_PAYMENT_METHOD;
+
 export const validatePayment = (payment: Payment) => {
-  if (
-    !payment.paymentMethodInfo?.paymentInterface ||
-    payment.paymentMethodInfo?.paymentInterface.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD
-  ) {
+  if (!isEasyCreditPayment(payment)) {
     throw new Errorx({
       code: 'InvalidPaymentMethod',
       httpErrorStatus: 400,

@@ -14,10 +14,10 @@
 				{
 					"name": "Cancel Payment",
 					"request": {
-						"method": "POST",
+						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string",
+							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string&sig=string",
 							"host": [
 								"{{connector_url}}"
 							],
@@ -31,6 +31,11 @@
 									"key": "redirectUrl",
 									"value": "string",
 									"description": "The URL where the customer is redirected after successfully completing the payment cancellation."
+								},
+								{
+									"key": "sig",
+									"value": "string",
+									"description": "HMAC-SHA256 of '<paymentId>:<redirectUrl>' keyed with API_PASSWORD. Required when redirectUrl is set. The connector adds it to the URLs it sends to easyCredit."
 								}
 							]
 						}

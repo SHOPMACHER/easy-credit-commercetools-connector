@@ -23,6 +23,10 @@ import { convertCentsToEur } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
+import { signRedirectUrl } from './redirect.utils';
+
+const buildCancelUrl = (connectorUrl: string, paymentId: string, redirectUrl: string): string =>
+  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl)}`;
 
 export const mapAddress = (address: Address) => ({
   address: [address?.streetName?.trim(), address?.streetNumber?.trim()].filter(Boolean).join(' '),
@@ -86,8 +90,8 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
-      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
+      urlDenial: buildCancelUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlDenial),
+      urlCancellation: buildCancelUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlCancellation),
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
