@@ -338,11 +338,12 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
     const easyCreditTransaction = await initEasyCreditClient()
       .getPayment(ecTechnicalTransactionId)
       // Only an Initial transaction may be treated as expired; a Pending one may already be authorized at easyCredit.
-      .catch((error: unknown) =>
-        transaction.state === CTTransactionState.Initial && isExpiredECTransactionError(error)
-          ? undefined
-          : Promise.reject(error),
-      );
+      .catch((error: unknown) => {
+        if (transaction.state === CTTransactionState.Initial && isExpiredECTransactionError(error)) {
+          return undefined;
+        }
+        throw error;
+      });
 
     if (easyCreditTransaction?.status === ECTransactionStatus.AUTHORIZED) {
       throw new Errorx({
