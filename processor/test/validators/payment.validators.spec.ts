@@ -18,7 +18,12 @@ import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { CTTransactionState, CTTransactionType, PaymentTypeExclusion } from '../../src/types/payment.types';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECTransactionPaymentType,
+  PaymentTypeExclusion,
+} from '../../src/types/payment.types';
 
 jest.mock('../../src/utils/commerceTools.utils', () => ({
   compareAddress: jest.fn(),
@@ -213,21 +218,49 @@ describe('Validation Functions', () => {
         { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
         ecConfig,
         errors,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
       );
       expect(errors).toHaveLength(0);
     });
 
-    it.each<[PaymentTypeExclusion, string, number]>([
-      ['cartItems', 'BillPaymentExcludedItems', 400],
-      ['checkFailed', 'BillPaymentCheckFailed', 503],
-    ])('should push %s as %s instead of InvalidAmount', (exclusion, code, httpErrorStatus) => {
+    it.each<[ECTransactionPaymentType, PaymentTypeExclusion, string, number, string]>([
+      [
+        ECTransactionPaymentType.ECTransactionBillPayment,
+        'cartItems',
+        'BillPaymentExcludedItems',
+        400,
+        'Die Zahlung per easyCredit-Rechnung ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+      ],
+      [
+        ECTransactionPaymentType.ECTransactionBillPayment,
+        'checkFailed',
+        'BillPaymentCheckFailed',
+        503,
+        'Die Zahlung per easyCredit-Rechnung ist derzeit nicht verfügbar.',
+      ],
+      [
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        'cartItems',
+        'InstallmentPaymentExcludedItems',
+        400,
+        'Die Zahlung per easyCredit-Ratenkauf ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+      ],
+      [
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        'checkFailed',
+        'InstallmentPaymentCheckFailed',
+        503,
+        'Die Zahlung per easyCredit-Ratenkauf ist derzeit nicht verfügbar.',
+      ],
+    ])('should push %s %s as %s instead of InvalidAmount', (paymentType, exclusion, code, httpErrorStatus, message) => {
       validatePaymentTypeAvailability(
         10,
         { enabled: true, available: false, exclusion, minAmount: 50, maxAmount: 5000 },
         ecConfig,
         errors,
+        paymentType,
       );
-      expect(errors).toEqual([expect.objectContaining({ code, httpErrorStatus, fields: ecConfig })]);
+      expect(errors).toEqual([expect.objectContaining({ code, httpErrorStatus, message, fields: ecConfig })]);
     });
 
     it.each([100, 10001])('should push InvalidAmount with the given limits if amount %s is out of range', (amount) => {
@@ -236,6 +269,7 @@ describe('Validation Functions', () => {
         { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
         ecConfig,
         errors,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
       );
       expect(errors).toHaveLength(1);
       expect(errors[0]).toEqual(
@@ -255,6 +289,7 @@ describe('Validation Functions', () => {
         { enabled: true, available: false, minAmount: 1500, maxAmount: 10000 },
         ecConfig,
         errors,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
       );
 
       expect(errors[0].message).toBe('Die Summe des Warenkorbs muss zwischen 1.500€ und 10.000€ liegen.');
@@ -270,6 +305,7 @@ describe('Validation Functions', () => {
           { enabled: false, available: false, minAmount: 50, maxAmount: 5000 },
           ecConfig,
           errors,
+          ECTransactionPaymentType.ECTransactionInstallmentPayment,
         );
         expect(errors).toHaveLength(1);
         expect(errors[0]).toEqual(
@@ -279,7 +315,13 @@ describe('Validation Functions', () => {
     );
 
     it('should push PaymentTypeNotAvailable if no limits are known', () => {
-      validatePaymentTypeAvailability(500, { enabled: true, available: false }, ecConfig, errors);
+      validatePaymentTypeAvailability(
+        500,
+        { enabled: true, available: false },
+        ecConfig,
+        errors,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+      );
       expect(errors).toHaveLength(1);
       expect(errors[0]).toEqual(expect.objectContaining({ code: 'PaymentTypeNotAvailable' }));
     });

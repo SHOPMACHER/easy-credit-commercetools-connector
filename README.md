@@ -34,7 +34,7 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ## Product details
 
-- **Purchase amounts**: Defined by easyCredit per webshop and not configurable in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10,000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data.
+- **Purchase amounts**: Defined by easyCredit per webshop and not configurable in the connector. Without a fresh easyCredit webshop configuration no easyCredit payment method is offered.
 
 - **Terms**: 2 to 60 months freely selectable
 
@@ -43,6 +43,8 @@ You can rely on our many years of experience in liquidity management and the pro
 ## 📔 Supported features
 
 ### Installment payment
+
+Installment payment is on by default (`INSTALLMENT_PAYMENT_ENABLED=1`) and is offered if easyCredit has activated it for the webshop. Set `INSTALLMENT_PAYMENT_ENABLED=0` to offer pay by invoice only. Carts with excluded product types or custom line items (`INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES`, `INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`, both empty by default) cannot use installment payment. A product type list needs the `view_product_types` scope. If easyCredit cannot be reached, no easyCredit payment method is offered.
 
 - [Create payments](/docs/CreatePayment.md)
 - [Authorize payments](/docs/AuthorizePayment.md)
