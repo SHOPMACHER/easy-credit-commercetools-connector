@@ -6,7 +6,7 @@ import { getPaymentById, updatePayment } from '../../src/commercetools/payment.c
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
 import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
-import { getBillPaymentExclusion } from '../../src/services/billPaymentRestriction.service';
+import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestriction.service';
 import { getShippingAddress, getShippingDestinations } from '../../src/utils/map.utils';
 
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -15,8 +15,11 @@ jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/services/webshop.service');
-jest.mock('../../src/services/billPaymentRestriction.service');
+jest.mock('../../src/services/paymentTypeRestriction.service');
 jest.mock('../../src/utils/config.utils', () => ({
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
   readConfiguration: jest.fn(() => ({
     easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
     commerceTools: { projectKey: 'projectKey123', clientId: 'clientId123', clientSecret: 'clientSecret', region: 'eu' },
@@ -136,7 +139,7 @@ beforeEach(() => {
   mock(getShippingDestinations)
     .mockReset()
     .mockImplementation((c: any) => [c.shippingAddress]);
-  mock(getBillPaymentExclusion).mockReset().mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
+  mock(getPaymentTypeExclusion).mockReset().mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
   mock(getPaymentTypesAvailability)
     .mockReset()
     .mockResolvedValue({
