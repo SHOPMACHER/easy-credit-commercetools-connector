@@ -61,7 +61,7 @@ So if the connector received 202 as status code, it will update the above Initia
 
 - If the payment has `Initial` or `Pending` refunds, each refund and capture request first reads the easyCredit bookings, in case a notification never arrived. A refund with a `DONE` or `FAILED` booking gets `Success` or `Failure`. The remaining amount is checked after this step. If easyCredit cannot be read or sends no `bookings`, the request goes on and the refunds stay open.
 
-- Only a booking completes a refund. A refund that easyCredit has no booking for stays `Initial` or `Pending`, however old it is, and its amount stays reserved: only easyCredit knows whether it booked the refund, and a booking can still turn up later. If such a refund stays open, check the transaction in the easyCredit merchant portal. If easyCredit never booked it, set the Refund transaction to `Failure` with the commercetools API (`changeTransactionState`) to free its amount. If easyCredit booked it under another `bookingId`, which earlier versions did while an older refund was still `Initial`, set it to the state of that booking.
+- Only a booking completes a refund. A refund that easyCredit has no booking for stays `Initial` or `Pending`, however old it is, and its amount stays reserved: only easyCredit knows whether it booked the refund, and a booking can still turn up later. Each time the bookings are read, such refunds are logged as a warning (`Refunds without an easyCredit booking stay open and keep their amount`, with their IDs, states and amounts). If such a refund stays open, check the transaction in the easyCredit merchant portal. If easyCredit never booked it, set the Refund transaction to `Failure` with the commercetools API (`changeTransactionState`) to free its amount. If easyCredit booked it under another `bookingId`, which earlier versions did while an older refund was still `Initial`, set it to the state of that booking.
 
 - Each request uses its own Refund transaction ID as easyCredit `bookingId`, also when another refund of the same payment is still `Initial` or `Pending`.
 
@@ -71,7 +71,7 @@ So if the connector received 202 as status code, it will update the above Initia
 
 | Status | `code` | When | Refund transaction |
 | --- | --- | --- | --- |
-| `400` | `InvalidRefundAmount` | The amount is not greater than 0, has more than two decimal places, or is above the payment `amountPlanned` minus the refunds that did not fail. | none added |
+| `400` | `InvalidRefundAmount` | The amount is not greater than 0, has more than two decimal places, or is above the payment `amountPlanned` minus the refunds that did not fail. If open refunds hold part of that amount, `fields.openRefunds` lists them, see [Process](#process). | none added |
 | `401` | `invalid_token` | The access token is missing or invalid, or has none of the scopes `manage_payments`, `manage_checkout_payment_intents` and `manage_project` (then `fields.validAuthorities` lists them). | none added |
 | `404` | `404`, with `ResourceNotFound` in `fields` | No payment exists for `paymentId`. | none added |
 | `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the refund transaction was added. Nothing was sent to easyCredit, so the refund can be sent again. | none added |
@@ -85,6 +85,26 @@ So if the connector received 202 as status code, it will update the above Initia
         {
             "code": "InvalidRefundAmount",
             "message": "The refund amount cannot be greater than the payment amount minus the refunds that did not fail"
+        }
+    ]
+}
+```
+
+With open refunds:
+
+```json
+{
+    "message": "The refund amount cannot be greater than the payment amount minus the refunds that did not fail. Open refunds keep their amount until easyCredit completes their booking, see docs/RefundPayment.md#process",
+    "statusCode": 400,
+    "errors": [
+        {
+            "code": "InvalidRefundAmount",
+            "message": "The refund amount cannot be greater than the payment amount minus the refunds that did not fail. Open refunds keep their amount until easyCredit completes their booking, see docs/RefundPayment.md#process",
+            "fields": {
+                "openRefunds": [
+                    { "transactionId": "<Refund transaction ID>", "state": "Initial", "centAmount": 5000 }
+                ]
+            }
         }
     ]
 }
