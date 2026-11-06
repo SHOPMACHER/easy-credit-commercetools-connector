@@ -4,7 +4,6 @@ import {
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
-  EASYCREDIT_CAPTURE_IN_FLIGHT_MS,
   EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
@@ -79,8 +78,11 @@ export const getCaptureBooking = (ecBookings: ECBooking[]) => {
 };
 
 // Bookings listed before the Charge was added belong to an earlier capture attempt.
+export const getEarlierCaptureBookingIds = (charge?: Transaction): string[] =>
+  (charge?.custom?.fields?.[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] as string[] | undefined) ?? [];
+
 export const getChargeCaptureBookings = (captureBookings: ECBooking[], charge?: Transaction): ECBooking[] => {
-  const earlier = new Set((charge?.custom?.fields?.[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] as string[]) ?? []);
+  const earlier = new Set(getEarlierCaptureBookingIds(charge));
   return captureBookings.filter(({ uuid }) => !earlier.has(uuid));
 };
 
@@ -96,10 +98,6 @@ export const getCaptureResult = (captureBookings: ECBooking[], charge?: Transact
   }
   return own.at(-1);
 };
-
-// A Charge without a readable timestamp is from an earlier version, so no request is still sending its capture.
-export const isCaptureInFlight = (charge: Transaction): boolean =>
-  Date.now() - Date.parse(charge.timestamp ?? '') < EASYCREDIT_CAPTURE_IN_FLIGHT_MS;
 
 export const getPendingCaptureTransactions = (payment: Payment): Transaction[] => {
   return payment.transactions.filter(

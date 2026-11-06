@@ -8,7 +8,11 @@ import {
 import { log } from '../libs/logger';
 import { CTTransactionState, ECBooking, ECGetMerchantTransactionResponse } from '../types/payment.types';
 import { mapPendingChargeTransaction, mapUpdateActionForRefunds } from '../utils/map.utils';
-import { EASYCREDIT_BOOKING_STATUS_DONE, EASYCREDIT_BOOKING_STATUS_FAILED } from '../utils/constant.utils';
+import {
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
+  EASYCREDIT_REFUND_BOOKING_TYPE,
+} from '../utils/constant.utils';
 import {
   getCaptureBooking,
   getCaptureResult,
@@ -42,6 +46,37 @@ export const handleEasyCreditNotification = async (resourceId: string): Promise<
   }
 };
 
+// A refund without any easyCredit booking stays open until someone checks it, see docs/RefundPayment.md#process.
+const logRefundsLeftOpen = (payment: Payment, openRefunds: Transaction[], ecBookings: ECBooking[]): void => {
+  const bookingStatus = new Map(
+    ecBookings
+      .filter(({ bookingType, bookingId }) => bookingType === EASYCREDIT_REFUND_BOOKING_TYPE && bookingId)
+      .map(({ bookingId, status }) => [bookingId, status]),
+  );
+  const leftOpen = openRefunds
+    .filter(({ id }) => {
+      const status = bookingStatus.get(id);
+      return status !== EASYCREDIT_BOOKING_STATUS_DONE && status !== EASYCREDIT_BOOKING_STATUS_FAILED;
+    })
+    .map(({ id, state, amount }) => ({
+      transactionId: id,
+      state,
+      centAmount: amount.centAmount,
+      ecBookingStatus: bookingStatus.get(id) ?? 'none',
+    }));
+  if (leftOpen.some(({ ecBookingStatus }) => ecBookingStatus === 'none')) {
+    log.warn('Refunds without an easyCredit booking stay open and keep their amount', {
+      paymentId: payment.id,
+      refunds: leftOpen,
+    });
+  } else if (leftOpen.length > 0) {
+    log.info('Refunds stay open while their easyCredit booking is processed', {
+      paymentId: payment.id,
+      refunds: leftOpen,
+    });
+  }
+};
+
 // Only a DONE or FAILED booking completes a refund: without one, easyCredit may still book it.
 export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[]): Promise<Payment> => {
   const openRefunds = getOpenRefundTransactions(payment);
@@ -51,6 +86,7 @@ export const settleOpenRefunds = async (payment: Payment, ecBookings: ECBooking[
 
   const completedRefunds = getCompletedRefunds(ecBookings);
   const updateActions = mapUpdateActionForRefunds(openRefunds, completedRefunds);
+  logRefundsLeftOpen(payment, openRefunds, ecBookings);
   if (updateActions.length === 0) {
     return payment;
   }

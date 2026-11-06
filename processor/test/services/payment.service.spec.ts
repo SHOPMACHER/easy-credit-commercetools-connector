@@ -25,6 +25,7 @@ import {
 } from '../../src/validators/payment.validators';
 import { readConfiguration } from '../../src/utils/config.utils';
 import {
+  getAddedTransaction,
   getCaptureBooking,
   getOpenRefundTransactions,
   getPaymentType,
@@ -1233,6 +1234,7 @@ describe('Payment handlers', () => {
       (getSuccessCaptureTransactions as jest.Mock).mockReturnValue([]);
       (getPendingCaptureTransactions as jest.Mock).mockReturnValue([]);
       (getOpenRefundTransactions as jest.Mock).mockReturnValue([]);
+      (getAddedTransaction as jest.Mock).mockReturnValue({ id: 'charge-1', type: 'Charge', state: 'Pending' });
       // @ts-expect-error mocked
       (updatePayment as jest.Mock).mockResolvedValue(mockPayment);
 

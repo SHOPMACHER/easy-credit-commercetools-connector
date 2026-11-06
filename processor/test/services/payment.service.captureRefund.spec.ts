@@ -51,7 +51,17 @@ const buildPayment = (method: string | undefined, extra: Tx[] = []) => ({
   transactions: [authorization, ...extra],
 });
 
-const ecError = new Errorx({ code: 'Booking not allowed', message: 'Booking not allowed', httpErrorStatus: 409 });
+const ecError = new Errorx({ code: 'Booking not allowed', message: 'Booking not allowed', httpErrorStatus: 400 });
+const alreadyCapturedError = new Errorx({
+  code: 'CAPTURE already submitted',
+  message: 'CAPTURE already submitted',
+  httpErrorStatus: 409,
+});
+const captureTimeoutError = new ECOutcomeUnknownError({
+  code: 'CaptureFailed',
+  message: 'Capture failed',
+  httpErrorStatus: 504,
+});
 const conflictError = new Errorx({ code: 'ConcurrentModification', message: 'Version mismatch', httpErrorStatus: 409 });
 const timeoutError = new ECOutcomeUnknownError({
   code: 'RefundFailed',
@@ -137,6 +147,17 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       );
     });
 
+    it('does not read the easyCredit bookings for the first capture, as 1.0 did not', async () => {
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      addOnUpdate(payment, 'charge-new');
+
+      await handleCapturePayment(PAYMENT_ID);
+
+      expect(client.getMerchantTransaction).not.toHaveBeenCalled();
+      expect(client.capturePayment).toHaveBeenCalledTimes(1);
+    });
+
     it('TEBA-222: still captures when a refund was registered before shipping', async () => {
       const payment = buildPayment(method, [
         { id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000), timestamp: minutesAgo(1) },
@@ -177,6 +198,46 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         'Failed to mark transaction as failed',
         expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'charge-new', type: 'Charge' }),
       );
+    });
+
+    it('keeps the Charge Pending when the capture outcome is unknown, as easyCredit may have booked it', async () => {
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      addOnUpdate(payment, 'charge-new');
+      client.capturePayment.mockRejectedValue(captureTimeoutError);
+
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(captureTimeoutError);
+      expect(updateActions()).toHaveLength(1);
+    });
+
+    it('keeps the Charge Pending and answers 204 when easyCredit already has the capture', async () => {
+      const payment = buildPayment(method);
+      mock(getPaymentById).mockResolvedValue(payment);
+      addOnUpdate(payment, 'charge-new');
+      client.capturePayment.mockRejectedValue(alreadyCapturedError);
+
+      await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+      expect(updateActions()).toHaveLength(1);
+      expect(log.info).toHaveBeenCalledWith(
+        'easyCredit already has the capture of this Charge, the Charge stays Pending',
+        expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'charge-new' }),
+      );
+    });
+
+    it('sets the new Charge to Failure when easyCredit refuses a capture after an earlier one', async () => {
+      const payment = buildPayment(method, [{ id: 'charge-1', type: 'Charge', state: 'Failure' }]);
+      mock(getPaymentById).mockResolvedValue(payment);
+      client.getMerchantTransaction.mockResolvedValue({
+        status: 'REPORT_CAPTURE_FAILED',
+        bookings: [captureBooking('FAILED', minutesAgo(40))],
+      });
+      addOnUpdate(payment, 'charge-new');
+      client.capturePayment.mockRejectedValue(alreadyCapturedError);
+
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(alreadyCapturedError);
+      expect(updateActions()[1]).toEqual([
+        { action: 'changeTransactionState', transactionId: 'charge-new', state: 'Failure' },
+      ]);
     });
 
     it('rejects a payment that easyCredit does not report as AUTHORIZED', async () => {
@@ -249,35 +310,81 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         expect(client.capturePayment).not.toHaveBeenCalled();
       });
 
-      it.each([
-        // easyCredit keeps REPORT_CAPTURE while the capture booking is PENDING.
-        ['a booking of the Charge is still open', 'REPORT_CAPTURE', [captureBooking('PENDING', minutesAgo(29))]],
-        ['easyCredit reports a capture without a booking', 'IN_BILLING', []],
-        ['easyCredit reports a status outside the known ones', 'REPORT_CAPTURE_PENDING', []],
-      ])('leaves the Charge Pending, however old, when %s', async (_name, status, bookings) => {
+      it('leaves the Charge Pending, however old, while a booking of the Charge is still open', async () => {
         mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(600))]));
-        withBookings(status, ...bookings);
+        // easyCredit keeps REPORT_CAPTURE while the capture booking is PENDING.
+        withBookings('REPORT_CAPTURE', captureBooking('PENDING', minutesAgo(599)));
 
         await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
         expect(updatePayment).not.toHaveBeenCalled();
         expect(client.capturePayment).not.toHaveBeenCalled();
       });
 
-      it.each([
-        ['without bookings', 'REPORT_CAPTURE', []],
-        ['with the FAILED booking of an earlier capture', 'REPORT_CAPTURE_FAILED', [earlierFailed]],
-      ])(
-        'leaves a Charge Pending %s while its request may still be calling easyCredit',
-        async (_n, status, bookings) => {
-          const charge = pendingCharge(new Date(Date.now() - 5000).toISOString(), [earlierFailed.uuid]);
-          mock(getPaymentById).mockResolvedValue(buildPayment(method, [charge]));
+      describe('without a booking of its own', () => {
+        it.each([
+          ['just added', 'REPORT_CAPTURE', new Date(Date.now() - 1000).toISOString(), []],
+          ['hours old', 'REPORT_CAPTURE', minutesAgo(600), []],
+          ['with the FAILED booking of an earlier capture', 'REPORT_CAPTURE', minutesAgo(1), [earlierFailed]],
+          ['while easyCredit reports a capture', 'IN_BILLING', minutesAgo(1), []],
+          ['with a status outside the documented ones', 'REPORT_CAPTURE_PENDING', minutesAgo(1), []],
+          ['of an earlier version without timestamp', 'REPORT_CAPTURE', undefined, []],
+        ])('sends the capture again for the same Charge, %s', async (_name, status, timestamp, bookings) => {
+          mock(getPaymentById).mockResolvedValue(
+            buildPayment(method, [pendingCharge(timestamp, [earlierFailed.uuid])]),
+          );
           withBookings(status, ...bookings);
+
+          await expect(handleCapturePayment(PAYMENT_ID, 'track-1')).resolves.toBeUndefined();
+          expect(client.capturePayment).toHaveBeenCalledWith(EC_TX_ID, PAYMENT_ID, 'track-1');
+          expect(client.getPayment).not.toHaveBeenCalled();
+          expect(updatePayment).not.toHaveBeenCalled();
+        });
+
+        it('keeps the Charge Pending and answers 204 when easyCredit already has its capture', async () => {
+          mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(1))]));
+          withBookings('REPORT_CAPTURE');
+          client.capturePayment.mockRejectedValue(alreadyCapturedError);
 
           await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
           expect(updatePayment).not.toHaveBeenCalled();
-          expect(client.capturePayment).not.toHaveBeenCalled();
-        },
-      );
+        });
+
+        it('passes a 409 after an earlier capture on and keeps the Charge Pending', async () => {
+          mock(getPaymentById).mockResolvedValue(
+            buildPayment(method, [pendingCharge(minutesAgo(1), [earlierFailed.uuid])]),
+          );
+          withBookings('REPORT_CAPTURE_FAILED', earlierFailed);
+          client.capturePayment.mockRejectedValue(alreadyCapturedError);
+
+          // The 409 may refuse the capture, so a 204 could report a capture that never happens.
+          await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(alreadyCapturedError);
+          expect(updatePayment).not.toHaveBeenCalled();
+          expect(log.warn).toHaveBeenCalledWith(
+            'easyCredit answered 409 after an earlier capture, the Charge stays Pending',
+            expect.objectContaining({ paymentId: PAYMENT_ID, transactionId: 'charge-1' }),
+          );
+        });
+
+        it('keeps the Charge Pending when the outcome of the capture sent again is unknown', async () => {
+          mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(1))]));
+          withBookings('REPORT_CAPTURE');
+          client.capturePayment.mockRejectedValue(captureTimeoutError);
+
+          await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(captureTimeoutError);
+          expect(updatePayment).not.toHaveBeenCalled();
+        });
+
+        it('sets the Charge to Failure when easyCredit rejects the capture sent again', async () => {
+          mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(1))]));
+          withBookings('EXPIRED');
+          client.capturePayment.mockRejectedValue(ecError);
+
+          await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(ecError);
+          expect(updateActions()).toEqual([
+            [{ action: 'changeTransactionState', transactionId: 'charge-1', state: 'Failure' }],
+          ]);
+        });
+      });
 
       it('leaves the Charge Pending when easyCredit sends no bookings', async () => {
         mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(600))]));
@@ -305,26 +412,56 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       });
 
       it.each([
-        ['without bookings', 'REPORT_CAPTURE', []],
-        ['with only the FAILED booking of an earlier capture', 'REPORT_CAPTURE_FAILED', [earlierFailed]],
-        ['while the transaction is about to expire', 'REPORT_CAPTURE_EXPIRING', []],
-      ])(
-        'sets the Charge to Failure and captures again when easyCredit never received it, %s',
-        async (_n, status, b) => {
-          const payment = buildPayment(method, [pendingCharge(minutesAgo(1), [earlierFailed.uuid])]);
-          mock(getPaymentById).mockResolvedValue(payment);
-          withBookings(status, ...b);
-
-          await expectCapturedAgain(payment);
-        },
-      );
-
-      it('captures again for a Charge of an earlier version without timestamp', async () => {
-        const payment = buildPayment(method, [pendingCharge(undefined)]);
+        ['without custom fields', undefined],
+        [
+          'with a custom type that lacks the earlier bookings field',
+          { fields: { easyCreditTechnicalTransactionId: TECH_ID } },
+        ],
+      ])('takes every FAILED booking as its own for a Charge %s', async (_name, custom) => {
+        const payment = buildPayment(method, [{ ...pendingCharge(undefined), ...(custom && { custom }) }]);
         mock(getPaymentById).mockResolvedValue(payment);
-        withBookings('REPORT_CAPTURE');
+        withBookings('REPORT_CAPTURE_FAILED', ownFailed);
 
         await expectCapturedAgain(payment);
+      });
+
+      describe('when the stored list missed a booking of an earlier capture', () => {
+        it('completes the Charge from a DONE booking, as the payment is captured', async () => {
+          mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(1), [])]));
+          withBookings('IN_BILLING', captureBooking('DONE', minutesAgo(40)));
+
+          await handleCapturePayment(PAYMENT_ID);
+
+          expect(updateActions()).toEqual([
+            [{ action: 'changeTransactionState', transactionId: 'charge-1', state: 'Success' }],
+          ]);
+          expect(client.capturePayment).not.toHaveBeenCalled();
+        });
+
+        it('fails the Charge from a FAILED booking, and easyCredit refuses the second capture', async () => {
+          const payment = buildPayment(method, [pendingCharge(minutesAgo(1), [])]);
+          mock(getPaymentById).mockResolvedValue(payment);
+          withBookings('REPORT_CAPTURE_FAILED', earlierFailed);
+          client.capturePayment.mockRejectedValue(alreadyCapturedError);
+          mock(updatePayment)
+            .mockResolvedValueOnce({
+              ...payment,
+              transactions: [authorization, { ...payment.transactions[1], state: 'Failure' }],
+            })
+            .mockImplementationOnce(async (current: typeof payment, actions: Record<string, any>[]) => ({
+              ...current,
+              transactions: [...current.transactions, { id: 'charge-new', ...actions[0].transaction }],
+            }));
+
+          await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(alreadyCapturedError);
+          // The new Charge lists the booking, so the 409 to its first capture fails it and reaches the caller.
+          expect(updateActions()[1][0]).toMatchObject({
+            transaction: { custom: { fields: { easyCreditEarlierCaptureBookings: [earlierFailed.uuid] } } },
+          });
+          expect(updateActions()[2]).toEqual([
+            { action: 'changeTransactionState', transactionId: 'charge-new', state: 'Failure' },
+          ]);
+        });
       });
 
       it('does not capture again when a notification completed the Charge meanwhile', async () => {
@@ -332,7 +469,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         mock(getPaymentById)
           .mockResolvedValueOnce(payment)
           .mockResolvedValueOnce(buildPayment(method, [{ ...pendingCharge(minutesAgo(20)), state: 'Success' }]));
-        withBookings('REPORT_CAPTURE');
+        withBookings('REPORT_CAPTURE_FAILED', ownFailed);
         mock(updatePayment).mockRejectedValueOnce(conflictError);
 
         await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
@@ -352,6 +489,21 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
 
         expect(client.getMerchantTransaction).toHaveBeenCalledTimes(1);
         expect(client.getPayment).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a timeout', new DOMException('aborted', 'TimeoutError'), 504],
+        ['a network error', new TypeError('fetch failed'), 502],
+      ])('answers %s of the booking read with CaptureFailed', async (_name, error, status) => {
+        mock(getPaymentById).mockResolvedValue(buildPayment(method, [pendingCharge(minutesAgo(1))]));
+        client.getMerchantTransaction.mockRejectedValue(error);
+
+        await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
+          code: 'CaptureFailed',
+          httpErrorStatus: status,
+        });
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(client.capturePayment).not.toHaveBeenCalled();
       });
     });
 
@@ -381,10 +533,15 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         expect(client.capturePayment).toHaveBeenCalledTimes(1);
       });
 
-      it('captures a payment that never had a Charge when easyCredit sends no bookings', async () => {
-        const payment = buildPayment(method);
+      it('stores no bookings for a payment that never had a Charge, even when easyCredit lists one', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000) },
+        ]);
         mock(getPaymentById).mockResolvedValue(payment);
-        client.getMerchantTransaction.mockResolvedValue({ status: 'REPORT_CAPTURE' });
+        client.getMerchantTransaction.mockResolvedValue({
+          status: 'REPORT_CAPTURE',
+          bookings: [captureBooking('PENDING', minutesAgo(1))],
+        });
         addOnUpdate(payment, 'charge-new');
 
         await handleCapturePayment(PAYMENT_ID);
@@ -392,6 +549,19 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
         expect(updateActions()[0][0]).toMatchObject({
           transaction: { custom: { fields: { easyCreditTechnicalTransactionId: TECH_ID } } },
         });
+        expect(JSON.stringify(updateActions()[0][0])).not.toContain('easyCreditEarlierCaptureBookings');
+      });
+
+      it('captures a payment that never had a Charge when the read for open refunds fails', async () => {
+        const payment = buildPayment(method, [
+          { id: 'refund-1', type: 'Refund', state: 'Pending', amount: cents(1000) },
+        ]);
+        mock(getPaymentById).mockResolvedValue(payment);
+        client.getMerchantTransaction.mockRejectedValue(new TypeError('fetch failed'));
+        addOnUpdate(payment, 'charge-new');
+
+        await handleCapturePayment(PAYMENT_ID);
+
         expect(client.capturePayment).toHaveBeenCalledTimes(1);
       });
 
@@ -412,8 +582,10 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       it.each([
         ['a timeout', new DOMException('aborted', 'TimeoutError'), 504],
         ['a network error', new TypeError('fetch failed'), 502],
-      ])('answers %s of the booking read with CaptureFailed', async (_name, error, status) => {
-        mock(getPaymentById).mockResolvedValue(buildPayment(method));
+      ])('answers %s of the booking read after a failed capture with CaptureFailed', async (_name, error, status) => {
+        mock(getPaymentById).mockResolvedValue(
+          buildPayment(method, [{ id: 'charge-1', type: 'Charge', state: 'Failure' }]),
+        );
         client.getMerchantTransaction.mockRejectedValue(error);
 
         await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
@@ -443,19 +615,6 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT', 'easycredit', undefined])(
       await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(conflictError);
       expect(client.capturePayment).not.toHaveBeenCalled();
     });
-
-    it('sets the Charge to Failure when the capture outcome is unknown, so it can be retried', async () => {
-      const payment = buildPayment(method);
-      mock(getPaymentById).mockResolvedValue(payment);
-      addOnUpdate(payment, 'charge-new');
-      client.capturePayment.mockRejectedValue(timeoutError);
-
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toBe(timeoutError);
-      expect(updateActions()[1]).toEqual([
-        { action: 'changeTransactionState', transactionId: 'charge-new', state: 'Failure' },
-      ]);
-    });
-
     it.each([
       ['a timeout', new DOMException('aborted', 'TimeoutError'), 504],
       ['a network error', new TypeError('fetch failed'), 502],

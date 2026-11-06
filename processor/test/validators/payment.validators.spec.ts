@@ -573,6 +573,22 @@ describe('Validation Functions', () => {
       );
     });
 
+    it('should name the open refunds that keep their amount', () => {
+      const payment = paymentWith(
+        { ...refund(CTTransactionState.Initial, 6000), id: 'refund-open' },
+        { ...refund(CTTransactionState.Success, 3000), id: 'refund-done' },
+      );
+
+      expect(() => validateRefundAmountLeft(payment, 1001)).toThrow(
+        expect.objectContaining({
+          code: 'InvalidRefundAmount',
+          httpErrorStatus: 400,
+          message: expect.stringContaining('docs/RefundPayment.md#process'),
+          fields: { openRefunds: [{ transactionId: 'refund-open', state: 'Initial', centAmount: 6000 }] },
+        }),
+      );
+    });
+
     it('should count Initial, Pending and Success refunds but not failed ones', () => {
       const payment = paymentWith(
         refund(CTTransactionState.Initial, 1000),

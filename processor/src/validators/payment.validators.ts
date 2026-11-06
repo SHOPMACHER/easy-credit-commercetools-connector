@@ -325,15 +325,31 @@ export const validateRefundAmountFormat = (refundAmount: number): number => {
 
 // The Refund is added on the payment version read here, so a parallel refund cannot use the same remaining amount.
 export const validateRefundAmountLeft = (payment: Payment, refundCents: number): void => {
-  const refundedCents = payment.transactions
-    .filter(({ type, state }) => type === CTTransactionType.Refund && state !== CTTransactionState.Failure)
-    .reduce((sum, { amount }) => sum + amount.centAmount, 0);
+  const refunds = payment.transactions.filter(
+    ({ type, state }) => type === CTTransactionType.Refund && state !== CTTransactionState.Failure,
+  );
+  const refundedCents = refunds.reduce((sum, { amount }) => sum + amount.centAmount, 0);
 
-  if (refundCents > payment.amountPlanned.centAmount - refundedCents) {
+  if (refundCents <= payment.amountPlanned.centAmount - refundedCents) {
+    return;
+  }
+  // Open refunds reserve their amount until easyCredit completes their booking, so the caller needs to see them.
+  const openRefunds = refunds
+    .filter(({ state }) => state !== CTTransactionState.Success)
+    .map(({ id, state, amount }) => ({ transactionId: id, state, centAmount: amount.centAmount }));
+  if (openRefunds.length === 0) {
     throw invalidRefundAmountError(
       'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
     );
   }
+  throw new Errorx({
+    code: 'InvalidRefundAmount',
+    httpErrorStatus: 400,
+    message:
+      'The refund amount cannot be greater than the payment amount minus the refunds that did not fail. ' +
+      'Open refunds keep their amount until easyCredit completes their booking, see docs/RefundPayment.md#process',
+    fields: { openRefunds },
+  });
 };
 
 export const validateECTransactionId = (transactionId: string) => {

@@ -6,13 +6,13 @@ import {
   getCaptureResult,
   getChargeCaptureBookings,
   getCompletedRefunds,
+  getEarlierCaptureBookingIds,
   getOpenRefundTransactions,
   getPayment,
   getPaymentType,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
-  isCaptureInFlight,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
 import {
   CTTransactionState,
@@ -374,17 +374,10 @@ describe('Payment Utility Functions', () => {
       expect(getChargeCaptureBookings(bookings, undefined)).toStrictEqual(bookings);
     });
 
-    it.each([
-      [5, true],
-      [40, false],
-    ])('isCaptureInFlight should be %p for a Charge %p seconds old', (seconds, expected) => {
-      const timestamp = new Date(Date.now() - (seconds as number) * 1000).toISOString();
-
-      expect(isCaptureInFlight(charge(undefined, timestamp))).toBe(expected);
-    });
-
-    it.each([undefined, 'not a date'])('isCaptureInFlight should be false for the Charge date %p', (timestamp) => {
-      expect(isCaptureInFlight(charge(undefined, timestamp))).toBe(false);
+    it('getEarlierCaptureBookingIds should read the field and default to none', () => {
+      expect(getEarlierCaptureBookingIds(charge(['booking-1']))).toStrictEqual(['booking-1']);
+      expect(getEarlierCaptureBookingIds(charge())).toStrictEqual([]);
+      expect(getEarlierCaptureBookingIds(undefined)).toStrictEqual([]);
     });
   });
 
