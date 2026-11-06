@@ -59,18 +59,6 @@ export function getTransactionCustomTypeKey(): string {
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 
-// Merchant transaction states that still wait for a capture. They stay so while a capture booking is PENDING,
-// so only a missing booking of the Charge tells that easyCredit never received its capture.
-export const EASYCREDIT_CAPTURE_NOT_REPORTED_STATUSES = [
-  'REPORT_CAPTURE',
-  'REPORT_CAPTURE_FAILED',
-  'REPORT_CAPTURE_EXPIRING',
-  'REPORT_CAPTURE_EXPIRING_FAILED',
-];
-
-// Longer than the capture call may take, so the request that added a Charge has called easyCredit by then.
-export const EASYCREDIT_CAPTURE_IN_FLIGHT_MS = 3 * EASYCREDIT_REQUEST_TIMEOUT_MS;
-
 // The scopes that may capture and refund; a token needs one of them.
 export const PAYMENT_MODIFICATION_SCOPES = ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'];
 
