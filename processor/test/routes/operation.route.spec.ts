@@ -22,6 +22,13 @@ jest.mock('../../src/payment-sdk.ts', () => ({
 jest.mock('../../src/client/easycredit.client.ts', () => ({
   initEasyCreditClient: jest.fn(),
 }));
+// Keeps the widget route independent of the webshop config cache and the easyCredit client.
+jest.mock('../../src/services/webshop.service', () => ({
+  getPaymentTypesAvailability: jest.fn(async () => ({
+    INSTALLMENT_PAYMENT: { enabled: true, available: true },
+    BILL_PAYMENT: { enabled: true, available: true },
+  })),
+}));
 
 describe('test operationRoute', () => {
   it('should call healthCheck handler', async () => {
@@ -65,6 +72,7 @@ describe('test operationRoute', () => {
     expect(JSON.parse(response.body)).toStrictEqual({
       isEnabled: process.env.WIDGET_ENABLED === '1',
       webShopId: process.env.WEBSHOP_ID,
+      paymentTypes: process.env.WIDGET_ENABLED === '1' ? ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] : [],
     });
   });
 });

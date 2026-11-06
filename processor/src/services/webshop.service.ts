@@ -238,7 +238,11 @@ const getRetryAfterSeconds = (webShopId: string): number => {
 const isWithinLimits = (amount: number, minAmount: number, maxAmount: number): boolean =>
   amount >= minAmount && amount <= maxAmount;
 
-export const getPaymentTypesAvailability = async (amount: number): Promise<PaymentTypesAvailability> => {
+// quiet: for callers on every page (the widget), so an outage doesn't write one warning per page view.
+export const getPaymentTypesAvailability = async (
+  amount: number,
+  { quiet = false }: { quiet?: boolean } = {},
+): Promise<PaymentTypesAvailability> => {
   const { webShopId, billPaymentEnabled } = readConfiguration().easyCredit;
   // A background refresh may replace the cache before this request handles its previous failure.
   const installmentFallbackBlocked = cachedWebshopInfoById.get(webShopId)?.installmentFallbackBlocked === true;
@@ -262,7 +266,10 @@ export const getPaymentTypesAvailability = async (amount: number): Promise<Payme
     }
 
     // Keep installment available during an outage, as before the webshop config was used; bill stays closed.
-    log.warn('easyCredit webshop info is unavailable, offering installment with the default limits', error);
+    log[quiet ? 'debug' : 'warn'](
+      'easyCredit webshop info is unavailable, offering installment with the default limits',
+      error,
+    );
     webshopInfo = { data: DEFAULT_WEBSHOP_INFO, isStale: true };
   }
 

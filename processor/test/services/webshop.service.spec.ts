@@ -507,6 +507,15 @@ describe('webshop.service', () => {
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(1);
     });
 
+    it('should log the fallback at debug level for quiet callers', async () => {
+      getWebshopInfoMock.mockRejectedValue(new Error('fetch failed'));
+
+      await expect(getPaymentTypesAvailability(0, { quiet: true })).resolves.toEqual(
+        expect.objectContaining({ INSTALLMENT_PAYMENT: expect.objectContaining({ enabled: true }) }),
+      );
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
     it.each<[keyof ECWebshopInfo, boolean]>([
       ['availability', false],
       ['availability', true],
