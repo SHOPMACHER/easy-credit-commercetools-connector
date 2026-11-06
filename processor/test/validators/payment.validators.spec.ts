@@ -243,14 +243,14 @@ describe('Validation Functions', () => {
         'cartItems',
         'InstallmentPaymentExcludedItems',
         400,
-        'Die Zahlung per easyCredit-Ratenkauf ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+        'Der easyCredit-Ratenkauf ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
       ],
       [
         ECTransactionPaymentType.ECTransactionInstallmentPayment,
         'checkFailed',
         'InstallmentPaymentCheckFailed',
         503,
-        'Die Zahlung per easyCredit-Ratenkauf ist derzeit nicht verfügbar.',
+        'Der easyCredit-Ratenkauf ist derzeit nicht verfügbar.',
       ],
     ])('should push %s %s as %s instead of InvalidAmount', (paymentType, exclusion, code, httpErrorStatus, message) => {
       validatePaymentTypeAvailability(

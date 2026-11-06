@@ -103,7 +103,7 @@ export const paymentTypeNotAvailableError = (ecConfig: { webShopId: string }) =>
 const EXCLUSION_ERRORS: Record<ECTransactionPaymentType, { prefix: string; label: string }> = {
   [ECTransactionPaymentType.ECTransactionInstallmentPayment]: {
     prefix: 'InstallmentPayment',
-    label: 'Die Zahlung per easyCredit-Ratenkauf',
+    label: 'Der easyCredit-Ratenkauf',
   },
   [ECTransactionPaymentType.ECTransactionBillPayment]: {
     prefix: 'BillPayment',
