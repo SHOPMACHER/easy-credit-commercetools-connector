@@ -267,20 +267,26 @@ export type ECRefundPayload = {
 export type ECGetMerchantTransactionResponse = {
   transactionId: string;
   status: string;
-  bookings: ECBooking[];
+  // Not required in the merchant API, and a missing list says nothing about the bookings.
+  bookings?: ECBooking[];
   refundsTotalValue: number;
   orderDetails?: {
     orderId: string;
   };
 };
 
+export type ECBookingMessage = {
+  messageDE: string;
+  messageEN: string;
+};
+
 export type ECBooking = {
   bookingType: string;
   uuid: string;
-  created: Date;
+  created: string;
   type: string;
   status: string;
-  message?: string;
+  message?: ECBookingMessage | null;
   amount?: number;
   bookingId?: string;
 };

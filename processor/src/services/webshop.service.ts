@@ -119,10 +119,13 @@ const parseWebshopInfo = (data: unknown): ECWebshopInfo => {
   };
 };
 
+// Native fetch errors can come from another realm, so instanceof SyntaxError is not sufficient.
+const isInvalidResponse = (error: unknown): boolean =>
+  error instanceof InvalidWebshopInfoError || (isNativeError(error) && error.name === 'SyntaxError');
+
 // Other 4xx and invalid responses mean easyCredit changed the webshop config, so stale data must not hide them.
 const isTransientError = (error: unknown): boolean => {
-  // Native fetch errors can come from another realm, so instanceof SyntaxError is not sufficient.
-  if (error instanceof InvalidWebshopInfoError || (isNativeError(error) && error.name === 'SyntaxError')) {
+  if (isInvalidResponse(error)) {
     return false;
   }
 
@@ -134,6 +137,9 @@ const isTransientError = (error: unknown): boolean => {
 
   return true;
 };
+
+// An invalid response says nothing about the installment config, so installment keeps the default limits as before.
+const blocksInstallment = (error: unknown): boolean => !isTransientError(error) && !isInvalidResponse(error);
 
 const getErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -171,7 +177,7 @@ const fetchWebshopInfo = async (webShopId: string, cacheTtlSeconds: number): Pro
     }
 
     cache({
-      installmentFallbackBlocked: previous?.installmentFallbackBlocked === true || !isTransientError(error),
+      installmentFallbackBlocked: previous?.installmentFallbackBlocked === true || blocksInstallment(error),
       expiresAt: retryAt,
       staleUntil: 0,
       error,
@@ -249,7 +255,7 @@ export const getPaymentTypesAvailability = async (amount: number): Promise<Payme
   } catch (error: unknown) {
     const cause = error instanceof WebshopInfoRetryError ? error.cause : error;
 
-    if (!isTransientError(cause) || installmentFallbackBlocked) {
+    if (blocksInstallment(cause) || installmentFallbackBlocked) {
       throw new Errorx({
         code: 'EasyCreditUnavailable',
         httpErrorStatus: 503,

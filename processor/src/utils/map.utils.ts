@@ -1,15 +1,20 @@
 import {
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
+  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
+  EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
-  EASYCREDIT_REFUND_STATUS_DONE,
-  EASYCREDIT_REFUND_STATUS_FAILED,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
+  getTransactionCustomTypeKey,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
 import {
   CTTransactionState,
+  CTTransactionType,
   ECBooking,
   ECCreatePaymentResponse,
   ECTransaction,
@@ -23,7 +28,9 @@ import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetoo
 import { convertCentsToEur, eurToCents } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
-import { PaymentUpdateAction } from '@commercetools/platform-sdk';
+import { PaymentUpdateAction, TransactionDraft } from '@commercetools/platform-sdk';
+import { readConfiguration } from './config.utils';
+import { toPaymentMethod } from './payment.utils';
 
 export const mapAddress = (address: Address) => ({
   address: [address?.streetName?.trim(), address?.streetNumber?.trim()].filter(Boolean).join(' '),
@@ -94,7 +101,8 @@ export const mapCTCartToECPayment = async (
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
     paymentType,
-    paymentSwitchPossible: true,
+    // Offering the switch to bill payment on the easyCredit page needs bill payment to be enabled here.
+    paymentSwitchPossible: readConfiguration().easyCredit.billPaymentEnabled === '1',
   };
 };
 
@@ -108,7 +116,7 @@ export const mapCTCartToCTPayment = (
   },
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-    method: paymentType,
+    method: toPaymentMethod(paymentType),
     name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] },
   },
 });
@@ -131,6 +139,31 @@ export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
   currencyCode: 'EUR',
 });
 
+export const mapPendingChargeTransaction = (
+  authorization: Transaction,
+  earlierCaptureBookings: string[] = [],
+): TransactionDraft => {
+  // The interest fields belong to the Authorization transaction only.
+  const fields = Object.fromEntries(
+    Object.entries(authorization.custom?.fields ?? {}).filter(
+      ([name]) => name !== EASYCREDIT_INTEREST_FIELD && name !== EASYCREDIT_TOTAL_VALUE_FIELD,
+    ),
+  );
+  if (earlierCaptureBookings.length > 0) {
+    fields[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] = earlierCaptureBookings;
+  }
+  const type = authorization.custom?.type ?? { typeId: 'type' as const, key: getTransactionCustomTypeKey() };
+
+  return {
+    type: CTTransactionType.Charge,
+    state: CTTransactionState.Pending,
+    amount: authorization.amount,
+    interactionId: authorization.interactionId,
+    timestamp: new Date().toISOString(),
+    custom: authorization.custom || earlierCaptureBookings.length > 0 ? { type, fields } : undefined,
+  };
+};
+
 export const mapUpdateActionForRefunds = (
   ctPendingRefunds: Transaction[],
   ecCompletedRefunds: ECBooking[],
@@ -144,13 +177,13 @@ export const mapUpdateActionForRefunds = (
 
     if (
       ecRefund &&
-      (ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE || ecRefund.status === EASYCREDIT_REFUND_STATUS_FAILED)
+      (ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE || ecRefund.status === EASYCREDIT_BOOKING_STATUS_FAILED)
     ) {
       updateActions.push({
         action: 'changeTransactionState',
         transactionId: ctRefundTransaction.id,
         state:
-          ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
+          ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
       });
     }
   }

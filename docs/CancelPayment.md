@@ -23,7 +23,7 @@ To use this functionality, the customer must have a payment that is created but 
 
 ## Switching to another payment method
 
-The connector cannot see that a shopper picks a payment method in the shop checkout that is not easyCredit. The shop must call this webhook for the open easyCredit payment of the cart in that case. Otherwise the cart stays `Frozen` with the old easyCredit payment (the cart was frozen with `HardFreeze` when the payment was created, see [Create Payment](./CreatePayment.md#cart-freeze)). The call sets the `Authorization` transaction to `Failure` and unfreezes the cart, as described below.
+The connector cannot see that a shopper picks a payment method in the shop checkout that is not easyCredit. The shop must call this webhook for the open easyCredit payment of the cart in that case. Otherwise the cart stays `Frozen` with the old easyCredit payment (the cart was frozen when the payment was created, see [Create Payment](./CreatePayment.md#cart-freeze)). The call sets the `Authorization` transaction to `Failure` and unfreezes the cart, as described below.
 
 If the shopper switches to easyCredit again (installment or pay by invoice), no cancel call is needed: [Create Payment](./CreatePayment.md#switching-in-the-shop-checkout) discards the stale attempt itself. It refuses a `Pending` attempt with `400 PaymentInProgress`, and this webhook is the way out of that state, unless easyCredit already reports `AUTHORIZED`.
 

@@ -1,8 +1,8 @@
 import { Static, Type } from '@sinclair/typebox';
 
 export const CapturePaymentBodySchema = Type.Object({
-  orderId: Type.Optional(Type.String()),
-  trackingNumber: Type.Optional(Type.String()),
+  // easyCredit accepts at most 50 characters.
+  trackingNumber: Type.Optional(Type.String({ maxLength: 50 })),
 });
 
 export const CapturePaymentResponseSchema = Type.Object({});

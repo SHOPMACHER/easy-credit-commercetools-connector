@@ -77,7 +77,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   let availabilitySpy: jest.SpiedFunction<typeof webshopService.getPaymentTypesAvailability>;
   let createECPaymentMock: jest.Mock;
 
-  // The cart that hardFreezeCart (updateCart) returns, possibly with another total.
+  // The cart that freezeCart (updateCart) returns, possibly with another total.
   const mockFlow = (validated: Cart, frozen: Cart) => {
     jest.mocked(getCartById).mockResolvedValue(validated);
     jest.mocked(updateCart).mockImplementation(async (_cart, actions) => {
@@ -110,13 +110,9 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     availabilitySpy = jest.spyOn(webshopService, 'getPaymentTypesAvailability');
   });
 
-  it.each([
-    ['Active', 'Active -> freezeCart'],
-    ['Frozen', 'unfreeze + freezeCart'],
-  ])('rejects a repriced %s cart above the bill maximum (%s) and unfreezes it', async (cartState) => {
-    const validated = buildCart(cartState, 500000);
+  it('rejects a repriced Active cart above the bill maximum (Active -> freezeCart) and unfreezes it', async () => {
     const frozen = buildCart('Frozen', 510000);
-    mockFlow(cartState === 'Frozen' ? ({ ...validated, freezeStrategy: 'SoftFreeze' } as Cart) : validated, frozen);
+    mockFlow(buildCart('Active', 500000), frozen);
 
     await expect(
       getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
@@ -125,6 +121,19 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
     expect(createPayment).not.toHaveBeenCalled();
     expect(createECPaymentMock).not.toHaveBeenCalled();
     expect(updateCart).toHaveBeenLastCalledWith(frozen, [{ action: 'unfreezeCart' }]);
+  });
+
+  it('keeps a cart the shop froze as it is, without re-freezing or re-validating', async () => {
+    const shopFrozen = { ...buildCart('Frozen', 500000), freezeStrategy: 'SoftFreeze' } as Cart;
+    mockFlow(shopFrozen, shopFrozen);
+
+    await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+
+    const actions = jest.mocked(updateCart).mock.calls.flatMap(([, a]) => a.map(({ action }) => action));
+    expect(actions).toEqual(['addPayment']);
+    expect(availabilitySpy).toHaveBeenCalledTimes(1);
+    expect(createPayment).toHaveBeenCalledTimes(1);
+    expect(createECPaymentMock).toHaveBeenCalledTimes(1);
   });
 
   it('re-validates when only the currency differs', async () => {

@@ -17,6 +17,8 @@ export const EASYCREDIT_DEFAULT_MAX_INSTALLMENT_AMOUNT = 10000;
 
 export const EASYCREDIT_WEBSHOP_INFO_TIMEOUT_MS = 10000;
 
+export const EASYCREDIT_REQUEST_TIMEOUT_MS = 10000;
+
 export const EASYCREDIT_WEBSHOP_INFO_RETRY_MS = 30000;
 
 export const EASYCREDIT_WEBSHOP_INFO_MAX_STALE_MS = 3600000;
@@ -31,9 +33,9 @@ export const EASYCREDIT_CONNECTOR_URL = 'easycredit-connector-url';
 
 export const EASYCREDIT_REFUND_BOOKING_TYPE = 'RefundBooking';
 
-export const EASYCREDIT_REFUND_STATUS_DONE = 'DONE';
+export const EASYCREDIT_BOOKING_STATUS_DONE = 'DONE';
 
-export const EASYCREDIT_REFUND_STATUS_FAILED = 'FAILED';
+export const EASYCREDIT_BOOKING_STATUS_FAILED = 'FAILED';
 
 export const EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-technical-transaction-id';
 
@@ -48,11 +50,17 @@ export const EASYCREDIT_INTEREST_FIELD = 'easyCreditInterest';
 
 export const EASYCREDIT_TOTAL_VALUE_FIELD = 'easyCreditTotalValue';
 
+// The capture bookings easyCredit listed before a Charge was added, so they are not taken as its result.
+export const EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD = 'easyCreditEarlierCaptureBookings';
+
 export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }
 
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
+
+// The scopes that may capture and refund; a token needs one of them.
+export const PAYMENT_MODIFICATION_SCOPES = ['manage_payments', 'manage_checkout_payment_intents', 'manage_project'];
 
 export const EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS = 2000;
 

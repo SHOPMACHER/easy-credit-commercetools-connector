@@ -1,0 +1,106 @@
+{
+  "bookings": [
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:36:07+01:00",
+      "message": null,
+      "status": "DONE",
+      "type": "CAPTURE",
+      "uuid": "7ba131d8-0953-4fb6-b7cb-9b7835ec867c"
+    },
+    {
+      "bookingType": "RefundBooking",
+      "amount": 100.0,
+      "bookingId": "refund-100",
+      "created": "2026-10-28T04:37:31+01:00",
+      "message": null,
+      "status": "DONE",
+      "type": "REFUND",
+      "uuid": "87fc842b-2fb3-48b0-94e3-636c484c658c"
+    },
+    {
+      "bookingType": "RefundBooking",
+      "amount": 50.0,
+      "bookingId": "refund-50",
+      "created": "2026-10-28T04:37:33+01:00",
+      "message": null,
+      "status": "DONE",
+      "type": "REFUND",
+      "uuid": "8587f671-d938-4d87-a16c-8dee78c0277f"
+    },
+    {
+      "bookingType": "RefundBooking",
+      "amount": 450.0,
+      "bookingId": "refund-450",
+      "created": "2026-10-28T04:37:50+01:00",
+      "message": {
+        "messageDE": "Der Rückabwicklungsbetrag ist für diese Transaktion zu hoch.",
+        "messageEN": "The Refund amount is too high for this transaction."
+      },
+      "status": "FAILED",
+      "type": "REFUND",
+      "uuid": "ed2743e3-ff02-4f1a-a09c-ca0e06dd849f"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:38:05+01:00",
+      "message": {
+        "messageDE": "Ein unerwarteter Fehler ist aufgetreten.",
+        "messageEN": "An undefined error occurred."
+      },
+      "status": "PENDING",
+      "type": "NOTIFY",
+      "uuid": "b0bfcabb-58ed-458a-ba38-1ddcdf2504f8"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:38:05+01:00",
+      "message": {
+        "messageDE": "Ein unerwarteter Fehler ist aufgetreten.",
+        "messageEN": "An undefined error occurred."
+      },
+      "status": "PENDING",
+      "type": "NOTIFY",
+      "uuid": "1790af72-a32d-4b40-9b99-581b74605a52"
+    },
+    {
+      "bookingType": "ApiBooking",
+      "created": "2026-10-28T04:37:00+01:00",
+      "message": {
+        "messageDE": "Ein unerwarteter Fehler ist aufgetreten.",
+        "messageEN": "An undefined error occurred."
+      },
+      "status": "PENDING",
+      "type": "NOTIFY",
+      "uuid": "21e8cd9e-a4c1-4061-998e-41b323efb1b0"
+    }
+  ],
+  "expirationDateTime": null,
+  "orderDetails": {
+    "clearingDate": null,
+    "currentOrderValue": 399.0,
+    "orderDate": "2026-10-28",
+    "orderId": "payment-bill-1",
+    "originalOrderValue": 549.0
+  },
+  "refundDetails": [
+    {
+      "reason": "REVOCATION_PARTIAL",
+      "refundAmount": 50.0,
+      "refundBookingDate": "2026-10-28",
+      "refundDate": "2026-10-28",
+      "refundEntryDate": "2026-10-28"
+    },
+    {
+      "reason": "REVOCATION_PARTIAL",
+      "refundAmount": 100.0,
+      "refundBookingDate": "2026-10-28",
+      "refundDate": "2026-10-28",
+      "refundEntryDate": "2026-10-28"
+    }
+  ],
+  "refundsTotalValue": 150.0,
+  "status": "IN_BILLING",
+  "transactionId": "VFQ2XI",
+  "webshopId": "webshop-1"
+}

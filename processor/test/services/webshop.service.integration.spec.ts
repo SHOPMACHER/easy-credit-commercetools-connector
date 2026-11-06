@@ -43,7 +43,6 @@ describe('webshop refresh with the easyCredit client', () => {
     [401, '{"title":401}'],
     [403, '{"title":false}'],
     [404, '{"title":{"message":"Not found"}}'],
-    [200, '<html>Invalid JSON</html>'],
   ])('should discard stale data after HTTP %s with body %s', async (status, body) => {
     fetchMock.mockResolvedValueOnce(new Response(body, { status }));
     const unavailable = {
@@ -75,6 +74,49 @@ describe('webshop refresh with the easyCredit client', () => {
       BILL_PAYMENT: { available: true },
     });
   });
+
+  it.each([['<html>Invalid JSON</html>'], ['null'], ['{"installmentPaymentActive":"yes"}']])(
+    'should discard stale data but offer installment with the default limits after HTTP 200 with body %s',
+    async (body) => {
+      // Limits other than the defaults, so the fallback cannot be mistaken for the stale data.
+      resetWebshopInfoCache();
+      jest.setSystemTime(0);
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...webshopInfo, minInstallmentValue: 100, maxInstallmentValue: 3000 }), {
+          status: 200,
+        }),
+      );
+      await getPaymentTypesAvailability(500);
+      jest.setSystemTime(300001);
+
+      fetchMock.mockResolvedValueOnce(new Response(body, { status: 200 }));
+      const fallback = {
+        INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: false, available: false },
+      };
+
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual(fallback);
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual(fallback);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      // A later network failure must not resurrect the discarded configuration.
+      jest.setSystemTime(330001);
+      fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual(fallback);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual(fallback);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+
+      jest.setSystemTime(360002);
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(webshopInfo), { status: 200 }));
+      await expect(getPaymentTypesAvailability(500)).resolves.toEqual(fallback);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      await expect(getPaymentTypesAvailability(500)).resolves.toMatchObject({
+        INSTALLMENT_PAYMENT: { available: true },
+        BILL_PAYMENT: { available: true },
+      });
+    },
+  );
 
   it('should reject a cold-cache authentication error with a non-string title', async () => {
     resetWebshopInfoCache();
