@@ -4,7 +4,6 @@ import {
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
 } from './constant.utils';
@@ -77,26 +76,16 @@ export const getCaptureBooking = (ecBookings: ECBooking[]) => {
   return ecBookings.filter((item) => item.bookingType === EASYCREDIT_CAPTURE_BOOKING_TYPE && item.type === 'CAPTURE');
 };
 
-// Bookings listed before the Charge was added belong to an earlier capture attempt.
-export const getEarlierCaptureBookingIds = (charge?: Transaction): string[] =>
-  (charge?.custom?.fields?.[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] as string[] | undefined) ?? [];
-
-export const getChargeCaptureBookings = (captureBookings: ECBooking[], charge?: Transaction): ECBooking[] => {
-  const earlier = new Set(getEarlierCaptureBookingIds(charge));
-  return captureBookings.filter(({ uuid }) => !earlier.has(uuid));
-};
-
-// A DONE booking is final. Otherwise a FAILED booking of this Charge decides, unless one of its bookings is still open.
-export const getCaptureResult = (captureBookings: ECBooking[], charge?: Transaction): ECBooking | undefined => {
+// easyCredit takes one capture per transaction: a DONE booking is final, an open one decides nothing yet.
+export const getCaptureResult = (captureBookings: ECBooking[]): ECBooking | undefined => {
   const done = captureBookings.find(({ status }) => status === EASYCREDIT_BOOKING_STATUS_DONE);
   if (done) {
     return done;
   }
-  const own = getChargeCaptureBookings(captureBookings, charge);
-  if (own.some(({ status }) => status !== EASYCREDIT_BOOKING_STATUS_FAILED)) {
+  if (captureBookings.some(({ status }) => status !== EASYCREDIT_BOOKING_STATUS_FAILED)) {
     return undefined;
   }
-  return own.at(-1);
+  return captureBookings.at(-1);
 };
 
 export const getPendingCaptureTransactions = (payment: Payment): Transaction[] => {

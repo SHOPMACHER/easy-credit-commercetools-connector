@@ -333,11 +333,11 @@ export const validateRefundAmountLeft = (payment: Payment, refundCents: number):
   if (refundCents <= payment.amountPlanned.centAmount - refundedCents) {
     return;
   }
-  // Open refunds reserve their amount until easyCredit completes their booking, so the caller needs to see them.
-  const openRefunds = refunds
-    .filter(({ state }) => state !== CTTransactionState.Success)
-    .map(({ id, state, amount }) => ({ transactionId: id, state, centAmount: amount.centAmount }));
-  if (openRefunds.length === 0) {
+  // Open refunds reserve their amount until easyCredit completes their booking, so the caller needs to see them
+  // when the refund would fit without them.
+  const open = refunds.filter(({ state }) => state !== CTTransactionState.Success);
+  const openCents = open.reduce((sum, { amount }) => sum + amount.centAmount, 0);
+  if (open.length === 0 || refundCents > payment.amountPlanned.centAmount - refundedCents + openCents) {
     throw invalidRefundAmountError(
       'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
     );
@@ -348,7 +348,9 @@ export const validateRefundAmountLeft = (payment: Payment, refundCents: number):
     message:
       'The refund amount cannot be greater than the payment amount minus the refunds that did not fail. ' +
       'Open refunds keep their amount until easyCredit completes their booking, see docs/RefundPayment.md#process',
-    fields: { openRefunds },
+    fields: {
+      openRefunds: open.map(({ id, state, amount }) => ({ transactionId: id, state, centAmount: amount.centAmount })),
+    },
   });
 };
 

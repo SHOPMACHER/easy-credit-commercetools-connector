@@ -546,7 +546,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification res
     );
   });
 
-  it('sets the pending Charge to Success when a retried capture is DONE after a FAILED one', async () => {
+  it('sets the pending Charge to Success for a DONE booking next to a FAILED one', async () => {
     await notify([booking('FAILED'), booking('DONE')], [pendingCapture]);
 
     expect(updatePayment).toHaveBeenCalledWith(payment, [
@@ -572,7 +572,7 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification res
     ]);
   });
 
-  it('keeps the retried Charge Pending while its booking is pending after an earlier FAILED one', async () => {
+  it('keeps the pending Charge Pending while a booking is still open next to a FAILED one', async () => {
     await notify(
       [
         { ...booking('FAILED'), created: '2026-10-28T04:00:00+01:00' },
@@ -583,36 +583,6 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification res
 
     expect(updatePayment).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith('EasyCredit capture is still being processed', { paymentId: 'payment123' });
-  });
-
-  describe('for a retried capture', () => {
-    const earlier = { ...booking('FAILED'), uuid: 'capture-earlier', created: '2026-10-28T05:50:00+01:00' };
-    const retried = {
-      ...pendingCapture,
-      timestamp: '2026-10-28T05:00:00.000Z',
-      custom: { fields: { easyCreditEarlierCaptureBookings: [earlier.uuid] } },
-    };
-
-    it('keeps the Charge Pending while easyCredit lists only the FAILED booking of the earlier capture', async () => {
-      // Dated after the Charge, which only an easyCredit clock running ahead explains.
-      await notify([earlier], [retried]);
-
-      expect(updatePayment).not.toHaveBeenCalled();
-      expect(log.info).toHaveBeenCalledWith('EasyCredit capture is still being processed', {
-        paymentId: 'payment123',
-      });
-    });
-
-    it('sets the Charge to Failure for its own FAILED booking, whatever its date', async () => {
-      await notify(
-        [earlier, { ...booking('FAILED'), uuid: 'capture-own', created: '2026-10-28T04:00:00+01:00' }],
-        [retried],
-      );
-
-      expect(updatePayment).toHaveBeenCalledWith(payment, [
-        { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Failure },
-      ]);
-    });
   });
 
   it('changes nothing when a Charge is already Success', async () => {

@@ -149,7 +149,7 @@ const handleCaptureNotifications = async (
 
   const ctPayment = await getPaymentById(paymentId);
   const ctPendingCaptureTransactions = getPendingCaptureTransactions(ctPayment);
-  const captureResult = getCaptureResult(ecCaptureBookings, ctPendingCaptureTransactions[0]);
+  const captureResult = getCaptureResult(ecCaptureBookings);
 
   if (!captureResult) {
     log.info('EasyCredit capture is still being processed', { paymentId });

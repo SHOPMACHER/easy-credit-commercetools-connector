@@ -589,6 +589,22 @@ describe('Validation Functions', () => {
       );
     });
 
+    it('should not name open refunds when the amount exceeds what is left even without them', () => {
+      const payment = paymentWith(
+        { ...refund(CTTransactionState.Success, 9000), id: 'refund-done' },
+        { ...refund(CTTransactionState.Pending, 500), id: 'refund-open' },
+      );
+
+      expect(() => validateRefundAmountLeft(payment, 2000)).toThrow(
+        expect.objectContaining({ code: 'InvalidRefundAmount', fields: undefined }),
+      );
+      expect(() => validateRefundAmountLeft(payment, 1000)).toThrow(
+        expect.objectContaining({
+          fields: { openRefunds: [{ transactionId: 'refund-open', state: 'Pending', centAmount: 500 }] },
+        }),
+      );
+    });
+
     it('should count Initial, Pending and Success refunds but not failed ones', () => {
       const payment = paymentWith(
         refund(CTTransactionState.Initial, 1000),

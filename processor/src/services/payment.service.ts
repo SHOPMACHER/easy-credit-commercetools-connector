@@ -6,6 +6,7 @@ import {
   CTCartState,
   CTTransactionState,
   CTTransactionType,
+  ECBooking,
   ECGetMerchantTransactionResponse,
   ECGetPaymentResponse,
   ECRefundPayload,
@@ -45,8 +46,6 @@ import {
   getAddedTransaction,
   getCaptureBooking,
   getCaptureResult,
-  getChargeCaptureBookings,
-  getEarlierCaptureBookingIds,
   getOpenRefundTransactions,
   getPaymentType,
   getPendingCaptureTransactions,
@@ -71,6 +70,7 @@ import {
   EASYCREDIT_AUTHORIZATION_POLL_INTERVAL_MS,
   EASYCREDIT_AUTHORIZATION_TIMEOUT_MS,
   EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
@@ -1201,14 +1201,10 @@ const markTransactionAsFailed = async (payment: Payment, transaction: Transactio
 };
 
 // Returns undefined if a parallel capture request added its Charge first.
-const addPendingCharge = async (
-  payment: Payment,
-  authorization: Transaction,
-  earlierCaptureBookings: string[],
-): Promise<Payment | undefined> => {
+const addPendingCharge = async (payment: Payment, authorization: Transaction): Promise<Payment | undefined> => {
   try {
     return await updatePayment(payment, [
-      { action: 'addTransaction', transaction: mapPendingChargeTransaction(authorization, earlierCaptureBookings) },
+      { action: 'addTransaction', transaction: mapPendingChargeTransaction(authorization) },
     ]);
   } catch (error) {
     if ((error as Errorx).httpErrorStatus === 409 && getActiveCaptureTransaction(await getPaymentById(payment.id))) {
@@ -1225,7 +1221,7 @@ const sendCapture = async (
   charge: Transaction,
   ecTransactionId: string,
   trackingNumber: string | undefined,
-  sentBefore: boolean,
+  resend: boolean,
 ): Promise<void> => {
   const logContext = { paymentId: payment.id, transactionId: charge.id };
   try {
@@ -1235,66 +1231,70 @@ const sendCapture = async (
       log.warn('easyCredit capture outcome unknown, the Charge stays Pending', { ...logContext, error });
       throw error;
     }
+    // Its booking then completes the Charge, or fails it and further captures answer 400.
     if ((error as Errorx).httpErrorStatus === 409) {
-      // Without an earlier capture, the one easyCredit already has can only be the capture of this Charge.
-      if (getEarlierCaptureBookingIds(charge).length === 0) {
-        log.info('easyCredit already has the capture of this Charge, the Charge stays Pending', logContext);
-        return;
-      }
-      // After an earlier capture, the 409 refuses this one or answers a capture of this Charge not listed yet.
-      if (sentBefore) {
-        log.warn('easyCredit answered 409 after an earlier capture, the Charge stays Pending', {
-          ...logContext,
-          error,
-        });
-        throw error;
-      }
+      log.info('easyCredit already has a capture for the transaction, the Charge stays Pending', logContext);
+      return;
+    }
+    // An earlier send may have reached easyCredit, so only its booking may fail the Charge.
+    if (resend) {
+      log.warn('easyCredit rejected the capture sent again, the Charge stays Pending', { ...logContext, error });
+      throw error;
     }
     await markTransactionAsFailed(payment, charge);
     throw error;
   }
 };
 
+// easyCredit answers 409 to any capture after a failed one, so only the merchant portal can capture the payment.
+const captureBookingFailedError = (booking: ECBooking): Errorx =>
+  new Errorx({
+    code: 'CaptureBookingFailed',
+    message:
+      'easyCredit failed the capture of this payment and accepts no further capture. ' +
+      'Report the capture in the easyCredit merchant portal.',
+    httpErrorStatus: 400,
+    ...(booking.message?.messageEN && { fields: { reason: booking.message.messageEN } }),
+  });
+
 // Completes a Pending Charge from the easyCredit bookings, as its notification may never come.
-// Returns the payment to add a new Charge on, or undefined when nothing more is to be done.
 const settlePendingCharge = async (
   payment: Payment,
   charge: Transaction,
   ecTransaction: ECGetMerchantTransactionResponse,
   trackingNumber?: string,
-): Promise<Payment | undefined> => {
+): Promise<void> => {
   const logContext = { paymentId: payment.id, transactionId: charge.id, ecStatus: ecTransaction.status };
   if (!ecTransaction.bookings) {
     log.warn('easyCredit sent the transaction without bookings, the Pending Charge stays open', logContext);
-    return undefined;
+    return;
   }
   const captureBookings = getCaptureBooking(ecTransaction.bookings);
-  const result = getCaptureResult(captureBookings, charge);
+  const result = getCaptureResult(captureBookings);
 
   if (result?.status === EASYCREDIT_BOOKING_STATUS_DONE) {
     await changeTransactionState(payment, charge, CTTransactionState.Success);
     log.info('Pending Charge completed from the easyCredit capture booking', logContext);
-    return undefined;
+    return;
   }
 
   if (result) {
-    log.warn('Pending Charge set to Failure before capturing again', {
+    log.warn('Pending Charge set to Failure from the easyCredit capture booking', {
       ...logContext,
       reason: result.message?.messageEN,
     });
-    const failed = await changeTransactionState(payment, charge, CTTransactionState.Failure);
-    return getActiveCaptureTransaction(failed) ? undefined : failed;
+    await changeTransactionState(payment, charge, CTTransactionState.Failure);
+    throw captureBookingFailedError(result);
   }
 
-  if (getChargeCaptureBookings(captureBookings, charge).length > 0) {
+  if (captureBookings.length > 0) {
     log.info('Payment capture is still being processed, capture request ignored', logContext);
-    return undefined;
+    return;
   }
 
   // easyCredit either never received the capture of this Charge or has not listed its booking yet.
   log.info('No easyCredit capture booking for the Pending Charge, capture sent again', logContext);
   await sendCapture(payment, charge, charge.interactionId ?? ecTransaction.transactionId, trackingNumber, true);
-  return undefined;
 };
 
 // The notification is the usual way to complete refunds; this covers the ones it never completed.
@@ -1337,7 +1337,7 @@ const readTransactionForOpenRefunds = async (
 const hasCharge = (payment: Payment): boolean =>
   payment.transactions.some(({ type }) => type === CTTransactionType.Charge);
 
-// The bookings decide a Pending Charge and tell earlier captures apart, so only then must the read succeed.
+// The bookings decide a Pending Charge and show a failed capture, so only then must the read succeed.
 // A first capture needs them for open refunds only, like a refund request.
 const readTransactionForCapture = async (
   payment: Payment,
@@ -1353,19 +1353,12 @@ const readTransactionForCapture = async (
     });
 };
 
-// The capture bookings a new Charge must not take as its own. A payment without a Charge has no earlier capture.
-const getEarlierCaptureBookings = (payment: Payment, ecTransaction?: ECGetMerchantTransactionResponse): string[] => {
-  if (!hasCharge(payment)) {
-    return [];
+// A capture after a failed one is refused, so it is not sent. Without the bookings, its 409 keeps the new Charge Pending.
+const assertNoFailedCapture = (ecTransaction?: ECGetMerchantTransactionResponse): void => {
+  const result = ecTransaction?.bookings && getCaptureResult(getCaptureBooking(ecTransaction.bookings));
+  if (result?.status === EASYCREDIT_BOOKING_STATUS_FAILED) {
+    throw captureBookingFailedError(result);
   }
-  if (!ecTransaction?.bookings) {
-    throw new Errorx({
-      code: 'CaptureFailed',
-      message: 'easyCredit sent the transaction without bookings, capture not sent',
-      httpErrorStatus: 502,
-    });
-  }
-  return getCaptureBooking(ecTransaction.bookings).map(({ uuid }) => uuid);
 };
 
 export const handleCapturePayment = async (paymentId: string, trackingNumber?: string): Promise<void> => {
@@ -1381,28 +1374,24 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   }
 
   const transaction = getSuccessTransaction(fetchedPayment) as Transaction;
-  // Read once for the open refunds, the Pending Charge and the bookings of earlier captures.
+  // Read once for the open refunds, the Pending Charge and a failed capture.
   const ecTransaction = await readTransactionForCapture(fetchedPayment, transaction.interactionId as string);
 
   const payment = await settleRefunds(fetchedPayment, ecTransaction);
 
-  let current = payment;
   const pendingCharge = getPendingCaptureTransactions(payment)[0];
   if (pendingCharge) {
     // The read succeeded, as the payment has a Charge.
-    const settled = await settlePendingCharge(
+    await settlePendingCharge(
       payment,
       pendingCharge,
       ecTransaction as ECGetMerchantTransactionResponse,
       trackingNumber,
     );
-    if (!settled) {
-      return;
-    }
-    current = settled;
+    return;
   }
 
-  const earlierCaptureBookings = getEarlierCaptureBookings(current, ecTransaction);
+  assertNoFailedCapture(ecTransaction);
   const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
   const easyCreditTransaction = await initEasyCreditClient()
@@ -1420,12 +1409,12 @@ export const handleCapturePayment = async (paymentId: string, trackingNumber?: s
   }
 
   // Added before easyCredit is called, so an early notification finds the Charge and a parallel capture hits the version lock.
-  const chargedPayment = await addPendingCharge(current, transaction, earlierCaptureBookings);
+  const chargedPayment = await addPendingCharge(payment, transaction);
   if (!chargedPayment) {
     return;
   }
   const charge = getAddedTransaction(
-    current,
+    payment,
     chargedPayment,
     CTTransactionType.Charge,
     CTTransactionState.Pending,

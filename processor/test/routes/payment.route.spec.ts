@@ -474,6 +474,29 @@ describe('paymentsRoute', () => {
       });
     });
 
+    it('should answer 400 with the reason of a failed capture booking', async () => {
+      (handleCapturePayment as jest.Mock).mockRejectedValue(
+        new Errorx({
+          code: 'CaptureBookingFailed',
+          message: 'Capture failed',
+          httpErrorStatus: 400,
+          fields: { reason: 'Declined' },
+        }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/capture',
+        payload: {},
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().errors).toEqual([
+        { code: 'CaptureBookingFailed', message: 'Capture failed', fields: { reason: 'Declined' } },
+      ]);
+    });
+
     it('should keep the numeric code of a commercetools 404', async () => {
       // The commercetools SDK reports the status as code, so no response schema may coerce it to a string.
       (handleCapturePayment as jest.Mock).mockRejectedValue(
@@ -554,6 +577,30 @@ describe('paymentsRoute', () => {
       expect(response.statusCode).toBe(202);
       expect(response.json()).toStrictEqual(mockPayment);
       expect(handleRefundPayment).toHaveBeenCalledWith(paymentId, mockRequest.amount);
+    });
+
+    it('should answer 400 with the open refunds that keep their amount', async () => {
+      const openRefunds = [{ transactionId: 'refund-open', state: 'Pending', centAmount: 500 }];
+      (handleRefundPayment as jest.Mock).mockRejectedValue(
+        new Errorx({
+          code: 'InvalidRefundAmount',
+          message: 'Too much',
+          httpErrorStatus: 400,
+          fields: { openRefunds },
+        }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/refund',
+        payload: { amount: 2 },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().errors).toEqual([
+        { code: 'InvalidRefundAmount', message: 'Too much', fields: { openRefunds } },
+      ]);
     });
 
     it('should pass an error raised before the easyCredit refund on instead of a 202', async () => {

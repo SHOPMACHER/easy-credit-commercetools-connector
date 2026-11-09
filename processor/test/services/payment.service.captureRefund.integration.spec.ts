@@ -1,8 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { handleCapturePayment, handleRefundPayment } from '../../src/services/payment.service';
 import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
 import {
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -27,7 +26,6 @@ const TRANSACTION_FIELDS = new Set([
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
 ]);
 
 const store = new Map<string, StoredPayment>();
@@ -284,73 +282,70 @@ describe('capture and refund against the commercetools and easyCredit APIs behin
     expect(requests('/capture')).toHaveLength(1);
   });
 
-  describe('a capture retried right after a FAILED booking', () => {
-    // Dated just before the retry, so a clock tolerance would take it as the result of the retry.
-    const failed = captureBooking('FAILED', new Date(Date.now() - 30000).toISOString(), 'capture-failed');
+  it('captures once when a capture sent again reaches easyCredit before the first one', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // The first request has added its Charge but its capture is still on the way.
+    answerCapture = async () => {
+      answerCapture = takeCapture;
+      await gate;
+      return takeCapture();
+    };
+    const first = handleCapturePayment(PAYMENT_ID);
+    while (requests('/capture').length === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
 
-    beforeEach(() => {
-      seed({ id: 'charge-old', type: 'Charge', state: 'Failure', interactionId: EC_TX_ID, timestamp: minutesAgo(1) });
+    await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+    release();
+
+    // The 409 to the late first capture keeps the Charge Pending instead of failing a capture easyCredit took.
+    await expect(first).resolves.toBeUndefined();
+    expect(charges().map(({ state }) => state)).toEqual(['Pending']);
+    expect(capturesTaken).toBe(1);
+  });
+
+  describe('a capture that easyCredit failed', () => {
+    const failed = captureBooking('FAILED', new Date().toISOString(), 'capture-failed');
+
+    it('fails the Pending Charge and answers 400 without capturing again, also when repeated', async () => {
+      seed({ id: 'charge-1', type: 'Charge', state: 'Pending', interactionId: EC_TX_ID, timestamp: minutesAgo(1) });
+      capturesTaken = 1;
       ecStatus = 'REPORT_CAPTURE_FAILED';
       bookings = [failed];
-    });
 
-    it('stores the FAILED booking on the new Charge, so a notification keeps the Charge Pending', async () => {
-      await handleCapturePayment(PAYMENT_ID);
-      await handleEasyCreditNotification(EC_TX_ID);
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-      expect(charges()[1].custom.fields).toEqual({
-        easyCreditTechnicalTransactionId: TECH_ID,
-        easyCreditEarlierCaptureBookings: ['capture-failed'],
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({
+        code: 'CaptureBookingFailed',
+        httpErrorStatus: 400,
       });
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'CaptureBookingFailed' });
 
-      bookings = [failed, captureBooking('DONE', new Date().toISOString())];
+      expect(charges().map(({ state }) => state)).toEqual(['Failure']);
+      expect(requests('/capture')).toHaveLength(0);
+    });
+
+    it('answers 400 after a notification failed the Charge', async () => {
+      await handleCapturePayment(PAYMENT_ID);
+      ecStatus = 'REPORT_CAPTURE_FAILED';
+      bookings = [failed];
       await handleEasyCreditNotification(EC_TX_ID);
 
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Success']);
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'CaptureBookingFailed' });
+
+      expect(charges().map(({ state }) => state)).toEqual(['Failure']);
+      expect(requests('/capture')).toHaveLength(1);
     });
 
-    it('answers 409 when repeated before the new booking is listed, and 204 once it is', async () => {
-      await handleCapturePayment(PAYMENT_ID);
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 409 });
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-
-      bookings = [failed, captureBooking('PENDING', new Date().toISOString(), 'capture-retried')];
-      await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-      expect(capturesTaken).toBe(1);
-    });
-
-    it('does not answer 204 when easyCredit refuses the capture after a timeout', async () => {
-      // easyCredit refuses any capture after the FAILED one, and the first answer never arrives.
-      capturesTaken = 1;
-      answerCapture = hang;
+    it('answers 400 once easyCredit lists the FAILED booking of a capture that timed out', async () => {
+      answerCapture = takeCaptureAndHang;
       await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 504 });
       answerCapture = takeCapture;
+      bookings = [failed];
 
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 409 });
-      await handleEasyCreditNotification(EC_TX_ID);
+      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'CaptureBookingFailed' });
 
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Pending']);
-    });
-
-    it('fails the new Charge with the 409 when easyCredit refuses a capture after a FAILED one', async () => {
-      capturesTaken = 1;
-
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 409 });
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Failure']);
-    });
-
-    it('fails the new Charge for its own FAILED booking', async () => {
-      await handleCapturePayment(PAYMENT_ID);
-      bookings = [failed, captureBooking('FAILED', new Date().toISOString(), 'capture-failed-again')];
-
-      await handleEasyCreditNotification(EC_TX_ID);
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Failure']);
+      expect(charges().map(({ state }) => state)).toEqual(['Failure']);
+      expect(requests('/capture')).toHaveLength(1);
     });
   });
 
@@ -375,36 +370,6 @@ describe('capture and refund against the commercetools and easyCredit APIs behin
 
       expect(charges().map(({ state }) => state)).toEqual(['Success']);
       expect(capturesTaken).toBe(1);
-    });
-  });
-
-  describe('before the post-deploy script added the earlier bookings field to the custom type', () => {
-    beforeEach(() => {
-      TRANSACTION_FIELDS.delete(EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD);
-    });
-
-    afterEach(() => {
-      TRANSACTION_FIELDS.add(EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD);
-    });
-
-    it('captures a payment without a Charge, as the field is not written', async () => {
-      bookings = [captureBooking('FAILED', minutesAgo(40))];
-
-      await handleCapturePayment(PAYMENT_ID);
-
-      expect(charges().map(({ state }) => state)).toEqual(['Pending']);
-      expect(charges()[0].custom.fields).toEqual({ easyCreditTechnicalTransactionId: TECH_ID });
-      expect(capturesTaken).toBe(1);
-    });
-
-    it('rejects a capture after a failed one with the commercetools 400 and sends nothing', async () => {
-      seed({ id: 'charge-old', type: 'Charge', state: 'Failure', interactionId: EC_TX_ID, timestamp: minutesAgo(1) });
-      bookings = [captureBooking('FAILED', minutesAgo(40))];
-
-      await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ httpErrorStatus: 400 });
-
-      expect(charges().map(({ state }) => state)).toEqual(['Failure']);
-      expect(requests('/capture')).toHaveLength(0);
     });
   });
 

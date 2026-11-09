@@ -1,6 +1,5 @@
 import { createApiRoot } from '../client/create.client';
 import {
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -38,18 +37,6 @@ const FIELD_DEFINITIONS = [
     required: false,
     type: {
       name: 'Number' as const,
-    },
-  },
-  {
-    name: EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
-    label: {
-      en: 'EasyCredit capture bookings before this Charge',
-      de: 'EasyCredit Capture-Buchungen vor dieser Belastung',
-    },
-    required: false,
-    type: {
-      name: 'Set' as const,
-      elementType: { name: 'String' as const },
     },
   },
 ];

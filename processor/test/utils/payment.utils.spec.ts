@@ -1,12 +1,10 @@
-import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
+import { Cart, Payment } from '@commercetools/connect-payments-sdk';
 import {
   getActiveCaptureTransaction,
   getAddedTransaction,
   getCaptureBooking,
   getCaptureResult,
-  getChargeCaptureBookings,
   getCompletedRefunds,
-  getEarlierCaptureBookingIds,
   getOpenRefundTransactions,
   getPayment,
   getPaymentType,
@@ -314,70 +312,26 @@ describe('Payment Utility Functions', () => {
       expect(getCaptureBooking(bookings)).toStrictEqual([bookings[0]]);
     });
 
-    const charge = (earlier?: string[], timestamp?: string) =>
-      ({
-        id: 'charge-1',
-        type: CTTransactionType.Charge,
-        state: CTTransactionState.Pending,
-        timestamp,
-        custom: earlier && { fields: { easyCreditEarlierCaptureBookings: earlier } },
-      }) as unknown as Transaction;
-
     it('getCaptureResult should return a DONE booking even if a newer one failed', () => {
       const done = capture('DONE', '2026-10-28T04:36:07+01:00');
 
       expect(getCaptureResult([done, capture('FAILED', '2026-10-28T05:00:00+01:00')])).toBe(done);
     });
 
-    it('getCaptureResult should return a DONE booking that the Charge lists as earlier', () => {
-      const done = capture('DONE', '2026-10-28T04:00:00Z');
+    it('getCaptureResult should return the FAILED booking', () => {
+      const failed = capture('FAILED', '2026-10-28T04:00:00Z', 'Capture not possible');
 
-      expect(getCaptureResult([done], charge([done.uuid]))).toBe(done);
-    });
-
-    it('getCaptureResult should return the FAILED booking of the Charge', () => {
-      const earlier = capture('FAILED', '2026-10-28T04:00:00Z');
-      const failed = capture('FAILED', '2026-10-28T03:59:30Z', 'Capture not possible');
-
-      // Dated before the earlier one, as only the listed uuids decide.
-      expect(getCaptureResult([earlier, failed], charge([earlier.uuid]))).toBe(failed);
-    });
-
-    it('getCaptureResult should ignore the FAILED bookings that the Charge lists as earlier', () => {
-      const earlier = capture('FAILED', '2026-10-28T05:00:30Z');
-
-      expect(getCaptureResult([earlier], charge([earlier.uuid], '2026-10-28T05:00:00Z'))).toBeUndefined();
-    });
-
-    it('getCaptureResult should wait while a booking of the Charge is open', () => {
-      const earlier = capture('FAILED', '2026-10-28T04:00:00Z');
-      const bookings = [earlier, capture('PENDING', '2026-10-28T05:00:00Z')];
-
-      expect(getCaptureResult(bookings, charge([earlier.uuid]))).toBeUndefined();
-    });
-
-    it('getCaptureResult should count every booking for a Charge without earlier bookings', () => {
-      const failed = capture('FAILED', '2026-10-28T04:00:00Z');
-
-      expect(getCaptureResult([failed], charge())).toBe(failed);
       expect(getCaptureResult([failed])).toBe(failed);
     });
 
-    it('getCaptureResult should return undefined without bookings', () => {
-      expect(getCaptureResult([], charge())).toBeUndefined();
-    });
-
-    it('getChargeCaptureBookings should drop the bookings that the Charge lists as earlier', () => {
+    it('getCaptureResult should wait while a booking is open', () => {
       const bookings = [capture('FAILED', '2026-10-28T04:00:00Z'), capture('PENDING', '2026-10-28T05:00:00Z')];
 
-      expect(getChargeCaptureBookings(bookings, charge([bookings[0].uuid]))).toStrictEqual([bookings[1]]);
-      expect(getChargeCaptureBookings(bookings, undefined)).toStrictEqual(bookings);
+      expect(getCaptureResult(bookings)).toBeUndefined();
     });
 
-    it('getEarlierCaptureBookingIds should read the field and default to none', () => {
-      expect(getEarlierCaptureBookingIds(charge(['booking-1']))).toStrictEqual(['booking-1']);
-      expect(getEarlierCaptureBookingIds(charge())).toStrictEqual([]);
-      expect(getEarlierCaptureBookingIds(undefined)).toStrictEqual([]);
+    it('getCaptureResult should return undefined without bookings', () => {
+      expect(getCaptureResult([])).toBeUndefined();
     });
   });
 

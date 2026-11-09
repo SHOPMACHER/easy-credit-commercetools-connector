@@ -3,12 +3,10 @@ import {
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
   EASYCREDIT_TOTAL_VALUE_FIELD,
-  getTransactionCustomTypeKey,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
@@ -154,30 +152,22 @@ export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
   currencyCode: 'EUR',
 });
 
-export const mapPendingChargeTransaction = (
-  authorization: Transaction,
-  earlierCaptureBookings: string[] = [],
-): TransactionDraft => {
+export const mapPendingChargeTransaction = (authorization: Transaction): TransactionDraft => ({
+  type: CTTransactionType.Charge,
+  state: CTTransactionState.Pending,
+  amount: authorization.amount,
+  interactionId: authorization.interactionId,
+  timestamp: new Date().toISOString(),
   // The interest fields belong to the Authorization transaction only.
-  const fields = Object.fromEntries(
-    Object.entries(authorization.custom?.fields ?? {}).filter(
-      ([name]) => name !== EASYCREDIT_INTEREST_FIELD && name !== EASYCREDIT_TOTAL_VALUE_FIELD,
+  custom: authorization.custom && {
+    ...authorization.custom,
+    fields: Object.fromEntries(
+      Object.entries(authorization.custom.fields).filter(
+        ([name]) => name !== EASYCREDIT_INTEREST_FIELD && name !== EASYCREDIT_TOTAL_VALUE_FIELD,
+      ),
     ),
-  );
-  if (earlierCaptureBookings.length > 0) {
-    fields[EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD] = earlierCaptureBookings;
-  }
-  const type = authorization.custom?.type ?? { typeId: 'type' as const, key: getTransactionCustomTypeKey() };
-
-  return {
-    type: CTTransactionType.Charge,
-    state: CTTransactionState.Pending,
-    amount: authorization.amount,
-    interactionId: authorization.interactionId,
-    timestamp: new Date().toISOString(),
-    custom: authorization.custom || earlierCaptureBookings.length > 0 ? { type, fields } : undefined,
-  };
-};
+  },
+});
 
 export const mapUpdateActionForRefunds = (
   ctPendingRefunds: Transaction[],

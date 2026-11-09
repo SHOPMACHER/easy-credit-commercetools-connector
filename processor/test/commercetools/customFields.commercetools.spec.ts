@@ -1,7 +1,6 @@
 import { createOrUpdateTransactionCustomType } from '../../src/commercetools/customFields.commercetools';
 import { createApiRoot } from '../../src/client/create.client';
 import {
-  EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -33,16 +32,6 @@ const totalValueDefinition = {
   label: { en: 'EasyCredit Total Value', de: 'EasyCredit Gesamtsumme' },
   required: false,
   type: { name: 'Number' },
-};
-
-const earlierCaptureBookingsDefinition = {
-  name: EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD,
-  label: {
-    en: 'EasyCredit capture bookings before this Charge',
-    de: 'EasyCredit Capture-Buchungen vor dieser Belastung',
-  },
-  required: false,
-  type: { name: 'Set', elementType: { name: 'String' } },
 };
 
 describe('createOrUpdateTransactionCustomType', () => {
@@ -77,7 +66,6 @@ describe('createOrUpdateTransactionCustomType', () => {
                 { name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD },
                 { name: EASYCREDIT_INTEREST_FIELD },
                 { name: EASYCREDIT_TOTAL_VALUE_FIELD },
-                { name: EASYCREDIT_EARLIER_CAPTURE_BOOKINGS_FIELD },
               ],
             },
           ],
@@ -124,7 +112,6 @@ describe('createOrUpdateTransactionCustomType', () => {
           { action: 'addFieldDefinition', fieldDefinition: technicalIdDefinition },
           { action: 'addFieldDefinition', fieldDefinition: interestDefinition },
           { action: 'addFieldDefinition', fieldDefinition: totalValueDefinition },
-          { action: 'addFieldDefinition', fieldDefinition: earlierCaptureBookingsDefinition },
         ],
       },
     });
@@ -159,13 +146,12 @@ describe('createOrUpdateTransactionCustomType', () => {
         actions: [
           { action: 'addFieldDefinition', fieldDefinition: interestDefinition },
           { action: 'addFieldDefinition', fieldDefinition: totalValueDefinition },
-          { action: 'addFieldDefinition', fieldDefinition: earlierCaptureBookingsDefinition },
         ],
       },
     });
   });
 
-  it('should add only the capture bookings definition to a type of the previous release', async () => {
+  it('should add only the total value definition if just that one is missing', async () => {
     mockTypesGet.mockReturnValue({
       execute: jest.fn().mockResolvedValue({
         body: {
@@ -177,7 +163,6 @@ describe('createOrUpdateTransactionCustomType', () => {
               fieldDefinitions: [
                 { name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD },
                 { name: EASYCREDIT_INTEREST_FIELD },
-                { name: EASYCREDIT_TOTAL_VALUE_FIELD },
               ],
             },
           ],
@@ -194,7 +179,7 @@ describe('createOrUpdateTransactionCustomType', () => {
     expect(mockWithKeyPost).toHaveBeenCalledWith({
       body: {
         version: 6,
-        actions: [{ action: 'addFieldDefinition', fieldDefinition: earlierCaptureBookingsDefinition }],
+        actions: [{ action: 'addFieldDefinition', fieldDefinition: totalValueDefinition }],
       },
     });
   });
@@ -244,12 +229,7 @@ describe('createOrUpdateTransactionCustomType', () => {
           de: 'Custom type for transaction resources',
         },
         resourceTypeIds: ['transaction'],
-        fieldDefinitions: [
-          technicalIdDefinition,
-          interestDefinition,
-          totalValueDefinition,
-          earlierCaptureBookingsDefinition,
-        ],
+        fieldDefinitions: [technicalIdDefinition, interestDefinition, totalValueDefinition],
       },
     });
   });
