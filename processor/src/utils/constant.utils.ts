@@ -44,8 +44,6 @@ export const EASYCREDIT_INTEREST_FIELD = 'easyCreditInterest';
 
 export const EASYCREDIT_TOTAL_VALUE_FIELD = 'easyCreditTotalValue';
 
-// The capture bookings easyCredit listed before a Charge was added, so they are not taken as its result.
-
 export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }

@@ -189,14 +189,14 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 ```
 
-**Body** (optional):
+**Body** (required, may be `{}`):
 ```json
 {
   "waitForAuthorization": true
 }
 ```
 
-`waitForAuthorization` defaults to `false`, see [Overview](#overview).
+`waitForAuthorization` defaults to `false`, see [Overview](#overview). A request without a body returns `400 InvalidJsonInput`; send at least `{}`.
 
 To obtain the access token, refer to the [commercetools authorization documentation](https://docs.commercetools.com/api/authorization).
 <br />

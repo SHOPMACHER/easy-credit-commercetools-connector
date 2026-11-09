@@ -486,7 +486,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount and must be greater than 0\"\n        }\n    ]\n}"
+							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\"\n        }\n    ]\n}"
 						}
 					]
 				},
@@ -650,7 +650,16 @@
 								"authorize"
 							]
 						},
-						"description": "Authorizes the easyCredit transaction of the payment. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. By default the call returns 204 once the authorization request is sent: the CT transaction is then Pending and the easyCredit callback sets it to Success, as in earlier versions. With the optional body {\"waitForAuthorization\": true} the call waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED; 204 then means the CT transaction is Success and is the signal to create the order. Errors: TransactionNotPreauthorized (400, also for DECLINED or EXPIRED, then the transaction is Failure and the cart unfrozen), TransactionNotAuthorized (400, the attempt was failed concurrently after the request was sent), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). With waitForAuthorization, a permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Authorizes the easyCredit transaction of the payment. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. By default the call returns 204 once the authorization request is sent: the CT transaction is then Pending and the easyCredit callback sets it to Success, as in earlier versions. The body is required: send at least {}; a missing or empty body returns an error. With the body {\"waitForAuthorization\": true} the call waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED; 204 then means the CT transaction is Success and is the signal to create the order. Errors: TransactionNotPreauthorized (400, also for DECLINED or EXPIRED, then the transaction is Failure and the cart unfrozen), TransactionNotAuthorized (400, the attempt was failed concurrently after the request was sent), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). With waitForAuthorization, a permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
 					},
 					"response": [
 						{
