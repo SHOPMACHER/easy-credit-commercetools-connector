@@ -6,7 +6,7 @@ import { getCartById, updateCart } from '../../src/commercetools/cart.commerceto
 import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
-import { resetBillPaymentRestrictionCache } from '../../src/services/billPaymentRestriction.service';
+import { resetPaymentTypeRestrictionCache } from '../../src/services/paymentTypeRestriction.service';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
 
@@ -96,7 +96,7 @@ describe('handleCreatePayment re-validates a cart repriced by the freeze', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     webshopService.resetWebshopInfoCache();
-    resetBillPaymentRestrictionCache();
+    resetPaymentTypeRestrictionCache();
     createECPaymentMock = jest.fn(async () => ({
       technicalTransactionId: 'tech123',
       transactionId: 'tx123',

@@ -7,7 +7,12 @@ import { getPaymentTypesAvailability, getWebshopInfo, resetWebshopInfoCache } fr
 import { ECWebshopInfo } from '../../src/types/payment.types';
 
 jest.mock('../../src/client/easycredit.client');
-jest.mock('../../src/utils/config.utils');
+jest.mock('../../src/utils/config.utils', () => ({
+  readConfiguration: jest.fn(),
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
+}));
 
 const webshopInfo: ECWebshopInfo = {
   availability: true,
@@ -19,9 +24,6 @@ const webshopInfo: ECWebshopInfo = {
   maxInstallmentValue: 10000,
 };
 
-const fresh = { data: webshopInfo, isStale: false };
-const stale = { data: webshopInfo, isStale: true };
-
 const flushPromises = async () => {
   for (let i = 0; i < 10; i++) {
     await Promise.resolve();
@@ -31,9 +33,14 @@ const flushPromises = async () => {
 describe('webshop.service', () => {
   let getWebshopInfoMock: jest.Mock<() => Promise<unknown>>;
 
-  const mockConfig = (billPaymentEnabled = '1', webshopCacheTtl = '300', webShopId = 'webShopId123') => {
+  const mockConfig = (
+    billPaymentEnabled = '1',
+    webshopCacheTtl = '300',
+    webShopId = 'webShopId123',
+    installmentPaymentEnabled = '1',
+  ) => {
     (readConfiguration as jest.Mock).mockReturnValue({
-      easyCredit: { webShopId, billPaymentEnabled, webshopCacheTtl },
+      easyCredit: { webShopId, billPaymentEnabled, webshopCacheTtl, installmentPaymentEnabled },
     });
   };
 
@@ -52,14 +59,14 @@ describe('webshop.service', () => {
   describe('getWebshopInfo', () => {
     it('should cache each webshop configuration independently', async () => {
       const otherWebshop = { ...webshopInfo, maxInstallmentValue: 300 };
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
 
       mockConfig('1', '300', 'other-webshop');
       getWebshopInfoMock.mockResolvedValueOnce(otherWebshop);
-      await expect(getWebshopInfo()).resolves.toEqual({ data: otherWebshop, isStale: false });
+      await expect(getWebshopInfo()).resolves.toEqual(otherWebshop);
 
       mockConfig();
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
     });
 
@@ -68,7 +75,7 @@ describe('webshop.service', () => {
       await expect(getWebshopInfo()).rejects.toThrow('Unavailable');
 
       mockConfig('1', '300', 'other-webshop');
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
 
       mockConfig();
       await expect(getWebshopInfo()).rejects.toThrow('waiting for the next retry');
@@ -96,8 +103,8 @@ describe('webshop.service', () => {
       const otherRequest = getWebshopInfo();
       resolveFirst(webshopInfo);
 
-      await expect(firstRequest).resolves.toEqual(fresh);
-      await expect(otherRequest).resolves.toEqual({ data: otherWebshop, isStale: false });
+      await expect(firstRequest).resolves.toEqual(webshopInfo);
+      await expect(otherRequest).resolves.toEqual(otherWebshop);
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
 
       jest.setSystemTime(1001);
@@ -105,13 +112,13 @@ describe('webshop.service', () => {
       await getWebshopInfo();
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(3);
       mockConfig('1', '300', 'other-webshop');
-      await expect(getWebshopInfo()).resolves.toEqual({ data: otherWebshop, isStale: false });
+      await expect(getWebshopInfo()).resolves.toEqual(otherWebshop);
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(3);
     });
 
     it('should return the cached webshop info within the TTL', async () => {
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
 
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(1);
     });
@@ -150,7 +157,10 @@ describe('webshop.service', () => {
       getWebshopInfoMock.mockRejectedValueOnce(error);
 
       await expect(getWebshopInfo()).rejects.toThrow('Service unavailable');
-      expect(log.error).toHaveBeenCalledWith('Failed to fetch easyCredit webshop info', error);
+      expect(log.error).toHaveBeenCalledWith(
+        'Failed to fetch easyCredit webshop info, no easyCredit payment method is offered',
+        error,
+      );
 
       jest.setSystemTime(new Date('2026-10-07T10:00:29Z'));
       const retryError = await getWebshopInfo().catch((error: unknown) => error);
@@ -166,7 +176,7 @@ describe('webshop.service', () => {
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
 
       await flushPromises();
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
     });
 
@@ -184,61 +194,16 @@ describe('webshop.service', () => {
 
       resolveRetry(webshopInfo);
       await flushPromises();
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
-    });
-
-    it('should keep serving the last known data if a refresh fails after the TTL expired', async () => {
-      jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
-      await getWebshopInfo();
-
-      const error = new Error('Service unavailable');
-      getWebshopInfoMock.mockRejectedValue(error);
-      jest.setSystemTime(new Date('2026-10-07T10:05:01Z'));
-
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-      expect(log.warn).toHaveBeenCalledWith(
-        'Failed to refresh easyCredit webshop info, using the last known data',
-        error,
-      );
-      expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
-
-      jest.setSystemTime(new Date('2026-10-07T10:05:30Z'));
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-      expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
-
-      jest.setSystemTime(new Date('2026-10-07T10:05:32Z'));
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-      expect(getWebshopInfoMock).toHaveBeenCalledTimes(3);
-
-      getWebshopInfoMock.mockResolvedValue(webshopInfo);
-      jest.setSystemTime(new Date('2026-10-07T10:06:03Z'));
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-      await flushPromises();
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
     });
 
     it.each([
+      ['a network error', new TypeError('fetch failed')],
       ['a 500 response', new Errorx({ code: 'Server Error', message: 'Server Error', httpErrorStatus: 500 })],
-      ['a 502 response', new Errorx({ code: 'Bad Gateway', message: 'Bad Gateway', httpErrorStatus: 502 })],
-      ['a 408 response', new Errorx({ code: 'Timeout', message: 'Timeout', httpErrorStatus: 408 })],
       ['a 429 response', new Errorx({ code: 'Too Many', message: 'Too Many', httpErrorStatus: 429 })],
       ['a timeout', new DOMException('The operation was aborted due to timeout', 'TimeoutError')],
-    ])('should fall back to the last known data on %s', async (_, error) => {
-      jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
-      await getWebshopInfo();
-
-      getWebshopInfoMock.mockRejectedValue(error);
-      jest.setSystemTime(new Date('2026-10-07T10:05:01Z'));
-
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-    });
-
-    it.each([
       ['a 401 response', new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: 401 })],
-      ['a 403 response', new Errorx({ code: 'Forbidden', message: 'Forbidden', httpErrorStatus: 403 })],
-      ['a 404 response', new Errorx({ code: 'Not Found', message: 'Not Found', httpErrorStatus: 404 })],
-      ['a 499 response', new Errorx({ code: 'Client Closed', message: 'Client Closed', httpErrorStatus: 499 })],
-    ])('should drop the last known data on %s', async (_, error) => {
+    ])('should not serve the last known data after a refresh fails with %s', async (_, error) => {
       jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
       await getWebshopInfo();
 
@@ -247,10 +212,10 @@ describe('webshop.service', () => {
 
       await expect(getWebshopInfo()).rejects.toBe(error);
       await expect(getWebshopInfo()).rejects.toThrow('waiting for the next retry');
-      expect(log.warn).not.toHaveBeenCalled();
+      expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
     });
 
-    it('should drop the last known data on an invalid response', async () => {
+    it('should not serve the last known data after an invalid response', async () => {
       jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
       await getWebshopInfo();
 
@@ -258,22 +223,6 @@ describe('webshop.service', () => {
       jest.setSystemTime(new Date('2026-10-07T10:05:01Z'));
 
       await expect(getWebshopInfo()).rejects.toThrow('Invalid easyCredit webshop info');
-    });
-
-    it('should stop serving the last known data one hour after it expired', async () => {
-      jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
-      await getWebshopInfo();
-
-      const error = new Error('Service unavailable');
-      getWebshopInfoMock.mockRejectedValue(error);
-
-      jest.setSystemTime(new Date('2026-10-07T11:04:50Z'));
-      await expect(getWebshopInfo()).resolves.toEqual(stale);
-
-      // The retry window ends with the stale period instead of 30 seconds later.
-      jest.setSystemTime(new Date('2026-10-07T11:05:00Z'));
-      await expect(getWebshopInfo()).rejects.toThrow('waiting for the next retry');
-      expect(getWebshopInfoMock).toHaveBeenCalledTimes(3);
     });
 
     it.each([
@@ -297,7 +246,7 @@ describe('webshop.service', () => {
       const equalLimits = { ...webshopInfo, minInstallmentValue: 500, maxInstallmentValue: 500 };
       getWebshopInfoMock.mockResolvedValue(equalLimits);
 
-      await expect(getWebshopInfo()).resolves.toEqual({ data: equalLimits, isStale: false });
+      await expect(getWebshopInfo()).resolves.toEqual(equalLimits);
     });
 
     it.each([
@@ -312,8 +261,10 @@ describe('webshop.service', () => {
       getWebshopInfoMock.mockResolvedValue({ ...webshopInfo, ...billFields });
 
       await expect(getWebshopInfo()).resolves.toEqual({
-        data: { availability, installmentPaymentActive, minInstallmentValue, maxInstallmentValue },
-        isStale: false,
+        availability,
+        installmentPaymentActive,
+        minInstallmentValue,
+        maxInstallmentValue,
       });
       expect(log.warn).toHaveBeenCalledWith(
         'Invalid easyCredit bill payment config, bill payment is not offered',
@@ -330,7 +281,7 @@ describe('webshop.service', () => {
     ])('should accept %s without a warning', async (_, billFields) => {
       getWebshopInfoMock.mockResolvedValue({ ...webshopInfo, ...billFields });
 
-      const { data } = await getWebshopInfo();
+      const data = await getWebshopInfo();
 
       expect(data).toEqual(expect.objectContaining({ installmentPaymentActive: true, minInstallmentValue: 200 }));
       expect(log.warn).not.toHaveBeenCalled();
@@ -341,13 +292,13 @@ describe('webshop.service', () => {
       const installmentOnly = { availability, installmentPaymentActive, minInstallmentValue, maxInstallmentValue };
       getWebshopInfoMock.mockResolvedValue(installmentOnly);
 
-      await expect(getWebshopInfo()).resolves.toEqual({ data: installmentOnly, isStale: false });
+      await expect(getWebshopInfo()).resolves.toEqual(installmentOnly);
     });
 
     it('should assume the webshop is available if easyCredit does not return availability', async () => {
       getWebshopInfoMock.mockResolvedValue({ ...webshopInfo, availability: undefined });
 
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
       expect(log.warn).toHaveBeenCalledWith(
         'easyCredit webshop info has no availability, assuming the webshop is available',
       );
@@ -366,7 +317,7 @@ describe('webshop.service', () => {
       resolveStaleRequest?.({ ...webshopInfo, maxInstallmentValue: 300 });
       await staleRequest;
 
-      await expect(getWebshopInfo()).resolves.toEqual(fresh);
+      await expect(getWebshopInfo()).resolves.toEqual(webshopInfo);
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(2);
     });
   });
@@ -415,6 +366,29 @@ describe('webshop.service', () => {
 
       expect(result.BILL_PAYMENT).toEqual({ enabled: false, available: false, minAmount: 50, maxAmount: 5000 });
       expect(result.INSTALLMENT_PAYMENT.available).toBe(true);
+    });
+
+    it('should not offer installment if the merchant toggle is off', async () => {
+      mockConfig('1', '300', 'webShopId123', '0');
+
+      const result = await getPaymentTypesAvailability(500);
+
+      expect(result.INSTALLMENT_PAYMENT).toEqual({
+        enabled: false,
+        available: false,
+        minAmount: 200,
+        maxAmount: 10000,
+      });
+      expect(result.BILL_PAYMENT.available).toBe(true);
+    });
+
+    it('should offer no payment type if both merchant toggles are off', async () => {
+      mockConfig('0', '300', 'webShopId123', '0');
+
+      const result = await getPaymentTypesAvailability(500);
+
+      expect(result.INSTALLMENT_PAYMENT.enabled).toBe(false);
+      expect(result.BILL_PAYMENT.enabled).toBe(false);
     });
 
     it('should not offer bill payment if it is not activated for the webshop', async () => {
@@ -474,92 +448,34 @@ describe('webshop.service', () => {
       expect(result.BILL_PAYMENT).toEqual({ enabled: false, available: false });
     });
 
-    it('should not offer bill payment while serving stale data', async () => {
+    it('should offer no payment type while serving stale data', async () => {
       jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });
       await getPaymentTypesAvailability(500);
 
       getWebshopInfoMock.mockRejectedValue(new Error('Service unavailable'));
       jest.setSystemTime(new Date('2026-10-07T10:05:01Z'));
 
-      const result = await getPaymentTypesAvailability(500);
-
-      expect(result.BILL_PAYMENT).toEqual({ enabled: false, available: false, minAmount: 50, maxAmount: 5000 });
-      expect(result.INSTALLMENT_PAYMENT.available).toBe(true);
+      await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({
+        code: 'EasyCreditUnavailable',
+        httpErrorStatus: 503,
+        fields: { webShopId: 'webShopId123' },
+      });
     });
 
-    it('should offer installment with the default limits if easyCredit is temporarily unavailable', async () => {
+    it('should offer no payment type if easyCredit is temporarily unavailable', async () => {
       const error = new Error('fetch failed');
       getWebshopInfoMock.mockRejectedValue(error);
 
-      await expect(getPaymentTypesAvailability(500)).resolves.toEqual({
-        INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
-        BILL_PAYMENT: { enabled: false, available: false },
+      await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({
+        code: 'EasyCreditUnavailable',
+        httpErrorStatus: 503,
+        cause: error,
       });
-      expect(log.warn).toHaveBeenCalledWith(
-        'easyCredit webshop info is unavailable, offering installment with the default limits',
-        error,
-      );
 
-      // The retry window answers from the failed state and still falls back.
-      await expect(getPaymentTypesAvailability(10001)).resolves.toEqual(
-        expect.objectContaining({ INSTALLMENT_PAYMENT: expect.objectContaining({ available: false }) }),
-      );
+      // The retry window answers from the failed state without calling easyCredit again.
+      await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({ code: 'EasyCreditUnavailable' });
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(1);
     });
-
-    it('should log the fallback at debug level for quiet callers', async () => {
-      getWebshopInfoMock.mockRejectedValue(new Error('fetch failed'));
-
-      await expect(getPaymentTypesAvailability(0, { quiet: true })).resolves.toEqual(
-        expect.objectContaining({ INSTALLMENT_PAYMENT: expect.objectContaining({ enabled: true }) }),
-      );
-      expect(log.warn).not.toHaveBeenCalled();
-    });
-
-    it.each<[keyof ECWebshopInfo, boolean]>([
-      ['availability', false],
-      ['availability', true],
-      ['installmentPaymentActive', false],
-      ['installmentPaymentActive', true],
-    ])(
-      'should not override a disabled %s after the stale limit (earlier refresh failed: %s)',
-      async (field, failedRefresh) => {
-        jest.useFakeTimers({ now: 0 });
-        getWebshopInfoMock.mockResolvedValueOnce({ ...webshopInfo, [field]: false });
-        await expect(getPaymentTypesAvailability(500)).resolves.toMatchObject({
-          INSTALLMENT_PAYMENT: { available: false },
-        });
-
-        getWebshopInfoMock.mockRejectedValue(new TypeError('fetch failed'));
-        if (failedRefresh) {
-          jest.setSystemTime(300001);
-          await expect(getPaymentTypesAvailability(500)).resolves.toMatchObject({
-            INSTALLMENT_PAYMENT: { available: false },
-          });
-        }
-
-        jest.setSystemTime(3900000);
-        const unavailable = { code: 'EasyCreditUnavailable', httpErrorStatus: 503 };
-        await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject(unavailable);
-        await flushPromises();
-        await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject(unavailable);
-
-        // A second failed retry must not lose the remembered deactivation either.
-        jest.setSystemTime(3930001);
-        await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject(unavailable);
-        await flushPromises();
-        await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject(unavailable);
-
-        // Only a valid response can enable installment again.
-        getWebshopInfoMock.mockResolvedValue(webshopInfo);
-        jest.setSystemTime(3960002);
-        await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject(unavailable);
-        await flushPromises();
-        await expect(getPaymentTypesAvailability(500)).resolves.toMatchObject({
-          INSTALLMENT_PAYMENT: { available: true },
-        });
-      },
-    );
 
     it('should throw an EasyCreditUnavailable error with the cause if the webshop config is rejected', async () => {
       jest.useFakeTimers({ now: new Date('2026-10-07T10:00:00Z') });

@@ -46,7 +46,7 @@ const getWidgetPaymentTypes = async (): Promise<ECTransactionPaymentType[]> => {
   });
 
   try {
-    const lookup = getPaymentTypesAvailability(0, { quiet: true });
+    const lookup = getPaymentTypesAvailability(0);
     // If the timeout wins, a later rejection of the lookup must not become an unhandled rejection.
     lookup.catch(() => undefined);
     const availability = await Promise.race([lookup, timeout]);

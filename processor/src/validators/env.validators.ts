@@ -146,6 +146,29 @@ const envValidators = [
       'Bill payment excluded custom line items should be a comma-separated list of custom line item slugs or keys.',
     referencedBy: 'environmentVariables',
   }),
+
+  standardOneOf(
+    ['easyCredit', 'installmentPaymentEnabled'],
+    {
+      code: 'InvalidInstallmentPaymentEnabled',
+      message: 'Installment payment enabled should be either "0" or "1".',
+      referencedBy: 'environmentVariables',
+    },
+    ['0', '1'],
+  ),
+
+  array(standardKey)(['easyCredit', 'installmentPaymentExcludedProductTypes'], {
+    code: 'InvalidInstallmentPaymentExcludedProductTypes',
+    message: 'Installment payment excluded product types should be a comma-separated list of product type keys.',
+    referencedBy: 'environmentVariables',
+  }),
+
+  array(standardKey)(['easyCredit', 'installmentPaymentExcludedCustomLineItems'], {
+    code: 'InvalidInstallmentPaymentExcludedCustomLineItems',
+    message:
+      'Installment payment excluded custom line items should be a comma-separated list of custom line item slugs or keys.',
+    referencedBy: 'environmentVariables',
+  }),
 ];
 
 export default envValidators;

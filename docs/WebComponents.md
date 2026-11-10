@@ -148,12 +148,13 @@ This guide provides instructions on how to integrate and display the connector's
 - `paymentType` selects the easyCredit payment method: `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`. The component asks the connector whether this payment type can be offered for the cart, see [Get Payment Method](./GetPaymentMethod.md).
 - `isAvailable()` resolves to `false` if the payment type cannot be offered at all, or if the processor response contains no `webShopId` to render the widget with (for example `401` or `500`), or if the request fails (network error or a body that is not JSON). For `BILL_PAYMENT`, a successful response must also report `paymentTypes.BILL_PAYMENT.available: true`. It does not reject. Hide the payment option in that case. For `BILL_PAYMENT`, `mount()` then renders nothing. For `INSTALLMENT_PAYMENT`, `mount()` keeps its previous behavior: it renders the widget with the error as an alert, or throws if the response has no `webShopId`.
 
-  | Payment type          | Hidden on                                                                                                                                                |
-  | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `INSTALLMENT_PAYMENT` | `PaymentTypeNotAvailable` (installment not activated for the webshop)                                                                                    |
-  | `BILL_PAYMENT`        | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `InvalidAmount` (cart total outside the billing limits), `EasyCreditUnavailable` |
+  | Payment type | Hidden on |
+  | --- | --- |
+  | `INSTALLMENT_PAYMENT` | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `EasyCreditUnavailable` |
+  | `BILL_PAYMENT` | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `InvalidAmount` (cart total outside the billing limits), `EasyCreditUnavailable` |
 
-- Any other error is shown as an alert inside the widget, for example billing and shipping address differ or are not in Germany, or the cart total is outside the installment limits.
+- Any other error is shown as an alert inside the widget, for example billing and shipping address differ or are not in Germany, the cart total is outside the installment limits, or the cart contains an item excluded for installment.
+- For the codes in this table `isAvailable()` returns `false` and `mount()` renders nothing, for both payment types. Both are hidden during an easyCredit outage (`EasyCreditUnavailable`) and when they are switched off in the connector.
 - Each `isAvailable()` and `mount()` call queries the current cart state from the processor.
 - After the cart changes, call `isAvailable()` again. Hide the payment option when it returns `false`, and clear any previously mounted label and widget containers. Clear the containers before remounting an available option as well, so outdated content is not retained.
 
@@ -163,7 +164,7 @@ This guide provides instructions on how to integrate and display the connector's
 
 No numbered release contains this integration yet, so neither a commit nor the package version tells whether a deployed processor supports it. Check the processor instead: with a valid session, `GET /payments/payment-method/{cartId}?paymentType=UNKNOWN` returns `400 InvalidField` on a supported processor, while an older processor ignores the parameter and answers with the installment checks.
 
-When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Existing callers that only use `mount()` and `submit()` need no additional call for installment. For bill payment, call `isAvailable()` before displaying the payment option.
+When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Callers that only use `mount()` and `submit()` now get an empty installment container when installment is switched off (`INSTALLMENT_PAYMENT_ENABLED=0`) or easyCredit is unavailable. Call `isAvailable()` before displaying either payment option, so the option itself is hidden too.
 
 For a test double, choose the result for the scenario under test:
 
@@ -182,7 +183,7 @@ const unavailableCheckout: CheckoutComponent = {
 #### Pay by invoice as a separate payment method
 
 - Build a second checkout component with `paymentType: 'BILL_PAYMENT'` and a label with `{ paymentType: 'BILL_PAYMENT' }`. Both payment methods can be mounted on the same page, each into its own container.
-- Pay by invoice is only offered if `BILL_PAYMENT_ENABLED=1` in the connector, easyCredit has activated it for the webshop and the cart total is within the billing limits.
+- Pay by invoice is only offered if `BILL_PAYMENT_ENABLED=1` in the connector, easyCredit has activated it for the webshop and the cart total is within the billing limits. Installment works the same way with `INSTALLMENT_PAYMENT_ENABLED` (default `1`). Set it to `0` to offer pay by invoice only.
 - Any `paymentType` other than `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` makes the builder throw an error.
 - Pay by invoice is only available for private persons who receive the goods at their billing address in Germany. For a cart with a Business Unit, a company in the billing or any shipping address, or a shipping address that differs from the billing address, the widget shows an error message. With `shippingMode: Multiple` or item shipping addresses, every shipping address is checked.
 

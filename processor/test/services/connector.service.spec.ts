@@ -25,6 +25,9 @@ const availability = (installment: boolean, bill: boolean) => ({
 });
 
 jest.mock('../../src/utils/config.utils', () => ({
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: {
       widgetEnabled: '1',
@@ -105,12 +108,6 @@ describe('Health Check and Widget Functions', () => {
       (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(availability(false, false) as never);
 
       expect((await isWidgetEnabled()).paymentTypes).toEqual([]);
-    });
-
-    it('should ask the webshop service quietly, as the widget runs on every page', async () => {
-      await isWidgetEnabled();
-
-      expect(getPaymentTypesAvailability).toHaveBeenCalledWith(0, { quiet: true });
     });
 
     it('should advertise nothing when the webshop config is unavailable', async () => {

@@ -42,7 +42,7 @@ import {
   mapCTCartToECPayment,
 } from '../../src/utils/map.utils';
 import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
-import { getBillPaymentExclusion } from '../../src/services/billPaymentRestriction.service';
+import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestriction.service';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -68,6 +68,9 @@ jest.mock('../../src/validators/payment.validators', () => ({
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
     commerceTools: {
@@ -80,7 +83,7 @@ jest.mock('../../src/utils/config.utils', () => ({
 }));
 jest.mock('../../src/utils/payment.utils');
 jest.mock('../../src/services/webshop.service');
-jest.mock('../../src/services/billPaymentRestriction.service');
+jest.mock('../../src/services/paymentTypeRestriction.service');
 
 const allPaymentTypesAvailable: PaymentTypesAvailability = {
   INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
@@ -90,7 +93,7 @@ const allPaymentTypesAvailable: PaymentTypesAvailability = {
 beforeEach(() => {
   // @ts-expect-error mocked
   (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(allPaymentTypesAvailable);
-  jest.mocked(getBillPaymentExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
+  jest.mocked(getPaymentTypeExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
 });
 
 describe('Payment handlers', () => {
@@ -123,6 +126,7 @@ describe('Payment handlers', () => {
         allPaymentTypesAvailable.INSTALLMENT_PAYMENT,
         { webShopId: 'webShopId123' },
         expect.any(Array),
+        'INSTALLMENT_PAYMENT',
       );
     });
 
@@ -150,10 +154,11 @@ describe('Payment handlers', () => {
         paymentTypes.INSTALLMENT_PAYMENT,
         { webShopId: 'webShopId123' },
         expect.any(Array),
+        'INSTALLMENT_PAYMENT',
       );
     });
 
-    it('should not fetch the webshop info if the address or currency is invalid', async () => {
+    it('should check the availability before the address or currency for installment too', async () => {
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue({
         totalPrice: { currencyCode: 'USD', centAmount: 50000, fractionDigits: 2 },
@@ -163,8 +168,10 @@ describe('Payment handlers', () => {
         errors.push(new Errorx({ httpErrorStatus: 400, code: 'InvalidCurrency', message: 'Invalid currency' }));
       });
 
-      await expect(handlePaymentMethod('cart123')).rejects.toThrow(MultiErrorx);
-      expect(getPaymentTypesAvailability).not.toHaveBeenCalled();
+      await expect(handlePaymentMethod('cart123')).rejects.toMatchObject({
+        errors: [expect.objectContaining({ code: 'InvalidCurrency' })],
+      });
+      expect(getPaymentTypesAvailability).toHaveBeenCalled();
     });
 
     it('should rethrow an EasyCreditUnavailable error', async () => {
@@ -210,6 +217,7 @@ describe('Payment handlers', () => {
         allPaymentTypesAvailable.BILL_PAYMENT,
         { webShopId: 'webShopId123' },
         expect.any(Array),
+        'BILL_PAYMENT',
       );
     });
 
@@ -270,6 +278,7 @@ describe('Payment handlers', () => {
         allPaymentTypesAvailable.INSTALLMENT_PAYMENT,
         { webShopId: 'webShopId123' },
         expect.any(Array),
+        'INSTALLMENT_PAYMENT',
       );
     });
 
@@ -581,6 +590,7 @@ describe('Payment handlers', () => {
         allPaymentTypesAvailable.INSTALLMENT_PAYMENT,
         { webShopId: 'webShopId123' },
         expect.any(Array),
+        'INSTALLMENT_PAYMENT',
       );
       expect(mapCTCartToECPayment).toHaveBeenCalledWith(
         mockCart,
@@ -696,6 +706,7 @@ describe('Payment handlers', () => {
           allPaymentTypesAvailable.BILL_PAYMENT,
           { webShopId: 'webShopId123' },
           expect.any(Array),
+          'BILL_PAYMENT',
         );
         expect(mapCTCartToCTPayment).toHaveBeenCalledWith(frozenCart, bill);
         expect(mapCTCartToECPayment).toHaveBeenCalledWith(
@@ -714,6 +725,7 @@ describe('Payment handlers', () => {
         expect(validatePaymentTypeAvailability).not.toHaveBeenCalledWith(
           expect.anything(),
           allPaymentTypesAvailable.BILL_PAYMENT,
+          expect.anything(),
           expect.anything(),
           expect.anything(),
         );

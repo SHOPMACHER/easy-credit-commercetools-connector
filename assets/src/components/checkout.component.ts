@@ -11,8 +11,8 @@ import { assertPaymentType, DEFAULT_PAYMENT_TYPE, toWebComponentPaymentType } fr
 
 // Errors that mean the payment type can't be offered at all, so the option is hidden instead of showing an alert.
 const UNAVAILABLE_ERROR_CODES: Record<PaymentType, string[]> = {
-  INSTALLMENT_PAYMENT: ['PaymentTypeNotAvailable'],
-  // Bill payment fails closed, so an easyCredit outage hides it as well.
+  // Both types fail closed, so an easyCredit outage hides them as well.
+  INSTALLMENT_PAYMENT: ['PaymentTypeNotAvailable', 'EasyCreditUnavailable'],
   BILL_PAYMENT: ['PaymentTypeNotAvailable', 'InvalidAmount', 'EasyCreditUnavailable'],
 };
 
@@ -89,8 +89,9 @@ export class ECCheckoutComponent implements CheckoutComponent {
       throw new Error('Failed to retrieve payment method.');
     }
 
-    // Installment keeps rendering the widget with the alert, so only bill payment renders nothing.
-    if (this.paymentType === 'BILL_PAYMENT' && !this.isPaymentTypeAvailable(response)) {
+    // A type that can't be offered renders nothing. Installment still renders other errors (for example the
+    // amount limits) as an alert, and a response without a webShopId keeps throwing below.
+    if (!this.isPaymentTypeAvailable(response) && (this.paymentType === 'BILL_PAYMENT' || getWebShopId(response))) {
       return;
     }
 
