@@ -1010,6 +1010,16 @@ const isExpiredECTransactionError = (error: unknown): boolean => {
   return expired;
 };
 
+// The cancel route sends the shopper to the shop's success page on this code, so keep it stable.
+export const TRANSACTION_IS_AUTHORIZED = 'TransactionIsAuthorized';
+
+const transactionIsAuthorizedError = () =>
+  new Errorx({
+    code: TRANSACTION_IS_AUTHORIZED,
+    message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
+    httpErrorStatus: 400,
+  });
+
 export const handleCancelPayment = async (paymentId: string): Promise<string> => {
   try {
     const payment = await getPaymentById(paymentId);
@@ -1026,6 +1036,10 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
         );
 
       return paymentId;
+    }
+
+    if (getTransaction(payment)?.state === CTTransactionState.Success) {
+      throw transactionIsAuthorizedError();
     }
 
     const transaction = validateInitialOrPendingTransaction(payment);
@@ -1045,11 +1059,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
       });
 
     if (easyCreditTransaction?.status === ECTransactionStatus.AUTHORIZED) {
-      throw new Errorx({
-        code: 'TransactionIsAuthorized',
-        message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
-        httpErrorStatus: 400,
-      });
+      throw transactionIsAuthorizedError();
     }
 
     await updatePayment(payment, [

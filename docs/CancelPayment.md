@@ -82,11 +82,18 @@ To cancel a payment, you can make a call to the following URL.
 ### Request
 
 **HTTP Method:** `GET`  
-**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&sig={{signature}}`  
+**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&successUrl={{success_url}}&sig={{signature}}`  
 
-The connector builds this URL itself when it creates the payment and passes it to Easy Credit. `sig` is the hex HMAC-SHA256 of `{{payment_id}}:{{redirect_url}}` (the plain, not URL-encoded, redirect URL) keyed with `API_PASSWORD`. A `redirectUrl` without a valid `sig` is rejected with `400 InvalidRedirectUrl`, so the route can't be used as an open redirect.  
+The connector builds this URL itself when it creates the payment and passes it to Easy Credit. `successUrl` is the shop's `urlSuccess`. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]` (plain, not URL-encoded URLs; `null` when there is no success URL) keyed with `API_PASSWORD`. A `redirectUrl` or `successUrl` without a valid `sig` is rejected with `400 InvalidRedirectUrl`, so the route can't be used as an open redirect.  
 
-With a valid `redirectUrl` the shopper is always redirected back to the shop, also when the cancel itself fails (for example the payment is already authorized). The error is logged and the payment is left as it was.  
+With a valid `redirectUrl` the shopper always lands back in the shop:
+
+| Outcome | Redirect target |
+|---|---|
+| Cancelled, or already cancelled | `redirectUrl` |
+| Payment already authorized (commercetools `Success`, or easyCredit `AUTHORIZED`) | `successUrl`; the payment and cart are not changed |
+| Any other error | `redirectUrl` with `error=cancel_failed` added to its query, so the shop can show a message; the error is logged and the payment is left as it was |
+
 **Headers:**
 ```http
 Content-Type: application/json

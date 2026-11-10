@@ -1121,6 +1121,22 @@ describe('Payment handlers', () => {
       expect(updateCart).not.toHaveBeenCalled();
     });
 
+    it('should refuse to cancel a payment that is already authorized in commercetools, without writes', async () => {
+      const authorized = {
+        id: 'payment123',
+        transactions: [{ id: 'tx', type: CTTransactionType.Authorization, state: CTTransactionState.Success }],
+      };
+      // @ts-expect-error mocked
+      (getPaymentById as jest.Mock).mockResolvedValue(authorized);
+      const ecClient = { getPayment: jest.fn() };
+      (initEasyCreditClient as jest.Mock).mockReturnValue(ecClient);
+
+      await expect(handleCancelPayment('payment123')).rejects.toMatchObject({ code: 'TransactionIsAuthorized' });
+      expect(ecClient.getPayment).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
     it('should throw an error if the transaction is authorized', async () => {
       const mockPayment = {
         id: 'payment123',

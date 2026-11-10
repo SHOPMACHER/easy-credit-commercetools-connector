@@ -172,8 +172,8 @@ describe('Payment Mapping', () => {
         },
         customerRelationship: mockCustomerRelationship,
         redirectLinks: {
-          urlDenial: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&sig=${signRedirectUrl('payment123', 'https://example.com/cancel')}`,
-          urlCancellation: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&sig=${signRedirectUrl('payment123', 'https://example.com/cancel')}`,
+          urlDenial: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&successUrl=${encodeURIComponent(mockRedirectLinks.urlSuccess)}&sig=${signRedirectUrl('payment123', 'https://example.com/cancel', mockRedirectLinks.urlSuccess)}`,
+          urlCancellation: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&successUrl=${encodeURIComponent(mockRedirectLinks.urlSuccess)}&sig=${signRedirectUrl('payment123', 'https://example.com/cancel', mockRedirectLinks.urlSuccess)}`,
           urlSuccess: mockRedirectLinks.urlSuccess,
           urlAuthorizationCallback: 'https://example.com/webhook/payment123/authorize',
         },

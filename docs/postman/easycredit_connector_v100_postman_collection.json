@@ -17,7 +17,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string&sig=string",
+							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string&successUrl=string&sig=string",
 							"host": [
 								"{{connector_url}}"
 							],
@@ -33,9 +33,14 @@
 									"description": "The URL where the customer is redirected after successfully completing the payment cancellation."
 								},
 								{
+									"key": "successUrl",
+									"value": "string",
+									"description": "Shop success URL. The shopper is sent here when the payment is already authorized. Covered by sig."
+								},
+								{
 									"key": "sig",
 									"value": "string",
-									"description": "HMAC-SHA256 of '<paymentId>:<redirectUrl>' keyed with API_PASSWORD. Required when redirectUrl is set. The connector adds it to the URLs it sends to easyCredit."
+									"description": "HMAC-SHA256 of the JSON array [paymentId, redirectUrl, successUrl] keyed with API_PASSWORD. Required when redirectUrl is set. The connector adds it to the URLs it sends to easyCredit."
 								}
 							]
 						}

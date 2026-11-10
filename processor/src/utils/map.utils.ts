@@ -26,8 +26,9 @@ import { getCustomObjectByKey } from '../commercetools/customObject.commercetool
 import { PaymentUpdateAction } from '@commercetools/platform-sdk';
 import { signRedirectUrl } from './redirect.utils';
 
-const buildCancelUrl = (connectorUrl: string, paymentId: string, redirectUrl: string): string =>
-  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl)}`;
+// successUrl lets the cancel route send the shopper to the success page when the payment turns out to be authorized.
+const buildCancelUrl = (connectorUrl: string, paymentId: string, redirectUrl: string, successUrl: string): string =>
+  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&successUrl=${encodeURIComponent(successUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl, successUrl)}`;
 
 export const mapAddress = (address: Address) => ({
   address: [address?.streetName?.trim(), address?.streetNumber?.trim()].filter(Boolean).join(' '),
@@ -92,8 +93,18 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: buildCancelUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlDenial),
-      urlCancellation: buildCancelUrl(connectorUrlWithoutSplash, payment.id, redirectLinks.urlCancellation),
+      urlDenial: buildCancelUrl(
+        connectorUrlWithoutSplash,
+        payment.id,
+        redirectLinks.urlDenial,
+        redirectLinks.urlSuccess,
+      ),
+      urlCancellation: buildCancelUrl(
+        connectorUrlWithoutSplash,
+        payment.id,
+        redirectLinks.urlCancellation,
+        redirectLinks.urlSuccess,
+      ),
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
