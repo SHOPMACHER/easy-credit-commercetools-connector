@@ -1,5 +1,12 @@
 import { findElement, importEasyCreditScript } from '../utils/app.utils';
-import { WebComponentOptions, WidgetComponent, WidgetComponentBuilder, WidgetComponentOptions } from '../types/main';
+import { isPaymentType, toWebComponentPaymentType } from '../utils/payment-type.utils';
+import {
+  PaymentType,
+  WebComponentOptions,
+  WidgetComponent,
+  WidgetComponentBuilder,
+  WidgetComponentOptions,
+} from '../types/main';
 
 export class ECWidgetComponentBuilder implements WidgetComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
@@ -30,13 +37,17 @@ export class ECWidgetComponent implements WidgetComponent {
     try {
       const widgetConfig = await this.fetchConfig();
 
-      if (widgetConfig.isEnabled === true) {
+      // An empty list means checkout offers no easyCredit payment type right now. Older processors send no list.
+      const paymentTypes = widgetConfig.paymentTypes?.filter(isPaymentType);
+      const offersNothing = paymentTypes?.length === 0;
+
+      if (widgetConfig.isEnabled === true && !offersNothing) {
         importEasyCreditScript();
 
         const element = findElement(selector);
 
         if (element) {
-          element.insertAdjacentHTML('afterbegin', this._getTemplate(widgetConfig.webShopId));
+          element.insertAdjacentHTML('afterbegin', this._getTemplate(widgetConfig.webShopId, paymentTypes));
         }
       }
     } catch (error) {
@@ -45,7 +56,7 @@ export class ECWidgetComponent implements WidgetComponent {
     }
   }
 
-  public async fetchConfig() {
+  public async fetchConfig(): Promise<{ isEnabled: boolean; webShopId: string; paymentTypes?: unknown[] }> {
     const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.sessionId },
@@ -54,8 +65,15 @@ export class ECWidgetComponent implements WidgetComponent {
     return await res.json();
   }
 
-  private _getTemplate(webShopId: string) {
-    return `<easycredit-widget amount="${this.widgetComponentOptions.amount}" webshop-id="${webShopId}" />`;
+  // paymentTypes comes from the processor: the types checkout offers. Older processors don't send it, and the
+  // web component then falls back to installment. It must be set on render; easyCredit ignores later changes.
+  private _getTemplate(webShopId: string, paymentTypes?: PaymentType[]) {
+    const paymentTypesAttribute =
+      paymentTypes && paymentTypes.length > 0
+        ? ` payment-types="${paymentTypes.map(toWebComponentPaymentType).join(',')}"`
+        : '';
+
+    return `<easycredit-widget amount="${this.widgetComponentOptions.amount}" webshop-id="${webShopId}"${paymentTypesAttribute} />`;
   }
 
   submit(): void {
