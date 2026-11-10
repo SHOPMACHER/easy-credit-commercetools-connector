@@ -24,7 +24,7 @@ jest.mock('../../src/libs/logger');
 jest.mock('../../src/validators/payment.validators', () => ({
   validateAddresses: jest.fn(),
   validateCurrency: jest.fn(),
-  validateCartAmount: jest.fn(),
+  validatePaymentTypeAvailability: jest.fn(),
   validatePayment: jest.fn(),
   validatePendingTransaction: jest.fn(),
   validateSuccessTransaction: jest.fn(),
@@ -36,6 +36,9 @@ jest.mock('../../src/validators/payment.validators', () => ({
 }));
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/utils/config.utils', () => ({
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: { webShopId: 'webShopId123' },
     commerceTools: {

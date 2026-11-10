@@ -2,12 +2,18 @@ import { Cart, Payment } from '@commercetools/connect-payments-sdk';
 import {
   getCompletedRefunds,
   getPayment,
+  getPaymentType,
   getPendingRefundTransactions,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
-import { CTTransactionState, CTTransactionType, ECBooking } from '../../src/types/payment.types';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECBooking,
+  ECTransactionPaymentType,
+} from '../../src/types/payment.types';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { describe, expect, it } from '@jest/globals';
 
@@ -209,5 +215,21 @@ describe('Payment Utility Functions', () => {
 
       expect(getCompletedRefunds(ecBookings)).toStrictEqual(expectedResult);
     });
+  });
+
+  describe('getPaymentType', () => {
+    const withMethod = (method?: string) =>
+      ({ paymentMethodInfo: method === undefined ? undefined : { method } }) as unknown as Payment;
+
+    it('should return bill for BILL_PAYMENT', () => {
+      expect(getPaymentType(withMethod('BILL_PAYMENT'))).toBe(ECTransactionPaymentType.ECTransactionBillPayment);
+    });
+
+    it.each([['INSTALLMENT_PAYMENT'], ['easycredit'], ['something-else'], [undefined]])(
+      'should return installment for %p',
+      (method) => {
+        expect(getPaymentType(withMethod(method))).toBe(ECTransactionPaymentType.ECTransactionInstallmentPayment);
+      },
+    );
   });
 });

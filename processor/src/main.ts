@@ -1,12 +1,16 @@
-import * as dotenv from 'dotenv';
-dotenv.config();
+import 'dotenv/config';
 
 import { readConfiguration } from './utils/config.utils';
 
 import { setupFastify } from './server/server';
+import { log } from './libs/logger';
 
 // Read env variables
-readConfiguration();
+const { installmentPaymentEnabled, billPaymentEnabled } = readConfiguration().easyCredit;
+
+if (installmentPaymentEnabled === '0' && billPaymentEnabled === '0') {
+  log.warn('Installment and bill payment are both disabled, the connector offers no easyCredit payment method');
+}
 
 (async () => {
   const server = await setupFastify();

@@ -34,7 +34,7 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ## Product details
 
-- **Purchase amounts**: 200 euros to 10,000 euros
+- **Purchase amounts**: Defined by easyCredit per webshop and not configurable in the connector. Without a fresh easyCredit webshop configuration no easyCredit payment method is offered.
 
 - **Terms**: 2 to 60 months freely selectable
 
@@ -44,10 +44,18 @@ You can rely on our many years of experience in liquidity management and the pro
 
 ### Installment payment
 
+Installment payment is on by default (`INSTALLMENT_PAYMENT_ENABLED=1`) and is offered if easyCredit has activated it for the webshop. Set `INSTALLMENT_PAYMENT_ENABLED=0` to offer pay by invoice only. Carts with excluded product types or custom line items (`INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES`, `INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`, both empty by default) cannot use installment payment. A product type list needs the `view_product_types` scope. If easyCredit cannot be reached, no easyCredit payment method is offered.
+
 - [Create payments](/docs/CreatePayment.md)
 - [Authorize payments](/docs/AuthorizePayment.md)
 - [Capture payments](/docs/CapturePayment.md)
 - [Refund payments](/docs/RefundPayment.md)
+
+### Pay by invoice (easyCredit-Rechnung)
+
+The checkout offers pay by invoice as a separate payment method with its own label and checkout widget. The backend creates and authorizes transactions with `paymentType: BILL_PAYMENT`. Set `BILL_PAYMENT_ENABLED=1` and have easyCredit activate pay by invoice for the webshop. Pay by invoice is limited to physical goods: carts with excluded product types or custom line items (`BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`, `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`) cannot use it.
+
+See the [web components integration guide](./docs/WebComponents.md#pay-by-invoice-as-a-separate-payment-method) and [Create payments](/docs/CreatePayment.md).
 
 ## Prerequisite
 

@@ -1,5 +1,5 @@
 import { Cart, Payment, Transaction } from '@commercetools/connect-payments-sdk';
-import { CTTransactionState, CTTransactionType, ECBooking } from '../types/payment.types';
+import { CTTransactionState, CTTransactionType, ECBooking, ECTransactionPaymentType } from '../types/payment.types';
 import {
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
   EASYCREDIT_PAYMENT_METHOD,
@@ -73,3 +73,8 @@ export const getSuccessCaptureTransactions = (payment: Payment): Transaction[] =
     (transaction) => transaction.type === CTTransactionType.Charge && transaction.state === CTTransactionState.Success,
   );
 };
+
+export const getPaymentType = (payment: Payment): ECTransactionPaymentType =>
+  payment.paymentMethodInfo?.method === ECTransactionPaymentType.ECTransactionBillPayment
+    ? ECTransactionPaymentType.ECTransactionBillPayment
+    : ECTransactionPaymentType.ECTransactionInstallmentPayment;

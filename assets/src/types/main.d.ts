@@ -56,6 +56,8 @@ export interface CheckoutComponent {
   mount(selector: string): void;
 
   submit(): void;
+
+  isAvailable(): Promise<boolean>;
 }
 
 export interface SummaryComponent {
@@ -83,8 +85,10 @@ export interface LabelComponent {
 }
 
 export interface LabelComponentBuilder {
-  build(): LabelComponent;
+  build(options?: LabelComponentOptions): LabelComponent;
 }
+
+export type PaymentType = 'INSTALLMENT_PAYMENT' | 'BILL_PAYMENT';
 
 export type WebComponentOptions = {
   processorUrl: string;
@@ -117,6 +121,7 @@ export type CheckoutComponentOptions = {
     customerSince?: string;
     numberOfOrders: number;
   };
+  paymentType?: PaymentType;
   onLoading?: () => void;
   onError: (error: Error) => void;
   onSuccess: (response: CreatePaymentResponse) => void;
@@ -124,6 +129,11 @@ export type CheckoutComponentOptions = {
 
 export type SummaryComponentOptions = {
   paymentId: string;
+  paymentType?: PaymentType;
+};
+
+export type LabelComponentOptions = {
+  paymentType?: PaymentType;
 };
 
 export type WidgetComponentOptions = {

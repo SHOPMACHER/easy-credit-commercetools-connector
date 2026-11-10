@@ -9,4 +9,6 @@ module.exports = {
   modulePathIgnorePatterns: ['<rootDir>/src/jest.setup.ts'],
   roots: ['./test'],
   reporters: ['default'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/jest.setup*.ts'],
+  coverageThreshold: { global: { branches: 80, functions: 80, lines: 80, statements: 80 } },
 };

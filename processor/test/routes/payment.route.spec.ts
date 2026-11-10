@@ -1,4 +1,4 @@
-import fastify from 'fastify';
+import fastify, { RouteOptions } from 'fastify';
 import { paymentsRoute } from '../../src/routes/payment.route';
 import {
   handleAuthorizeECPayment,
@@ -10,12 +10,15 @@ import {
 } from '../../src/services/payment.service';
 import {
   AuthorityAuthorizationHook,
+  Errorx,
   JWTAuthenticationHook,
   Oauth2AuthenticationHook,
   Payment,
   SessionHeaderAuthenticationHook,
 } from '@commercetools/connect-payments-sdk';
 import { IncomingHttpHeaders } from 'node:http';
+import { errorHandler } from '../../src/libs/fastify/error-handler';
+import { GetPaymentMethodParamsSchema } from '../../src/dtos/payments/getPaymentMethod.dto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 
 // Mocks for imported service functions
@@ -32,8 +35,13 @@ describe('paymentsRoute', () => {
   const app = fastify({ logger: false });
   const token = 'token';
   const sessionId = 'session-id';
+  const routeOptions: RouteOptions[] = [];
 
   beforeAll(async () => {
+    app.addHook('onRoute', (route) => {
+      routeOptions.push(route);
+    });
+    app.setErrorHandler(errorHandler);
     await app.register(paymentsRoute, {
       prefix: '/payments',
       oauth2AuthHook: {
@@ -61,9 +69,20 @@ describe('paymentsRoute', () => {
   });
 
   describe('GET /payments/payment-method/:cartId', () => {
+    it('should declare the cartId path param in the schema', () => {
+      expect(GetPaymentMethodParamsSchema.properties).toEqual({ cartId: expect.objectContaining({ type: 'string' }) });
+    });
+
     it('should return payment method config', async () => {
       const cartId = '12345';
-      const mockResponse = { webShopId: 'mock-webshop-id', amount: 100 };
+      const mockResponse = {
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { available: false, minAmount: 200, maxAmount: 10000 },
+          BILL_PAYMENT: { available: true, minAmount: 50, maxAmount: 5000 },
+        },
+      };
       // @ts-expect-error mocked
       (handlePaymentMethod as jest.Mock).mockResolvedValue(mockResponse);
 
@@ -78,14 +97,88 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual(mockResponse);
-      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId);
+      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId, undefined);
+    });
+
+    it('should pass the requested payment type to the handler', async () => {
+      // @ts-expect-error mocked
+      (handlePaymentMethod as jest.Mock).mockResolvedValue({
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { available: false },
+          BILL_PAYMENT: { available: true },
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345?paymentType=BILL_PAYMENT',
+        headers: { 'x-session-id': sessionId },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(handlePaymentMethod).toHaveBeenCalledWith('12345', 'BILL_PAYMENT');
+    });
+
+    it('should reject an unknown payment type', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345?paymentType=UNKNOWN',
+        headers: { 'x-session-id': sessionId },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        statusCode: 400,
+        message: expect.stringContaining('paymentType'),
+        errors: [
+          {
+            code: 'InvalidField',
+            message: expect.any(String),
+            fields: {
+              field: 'paymentType',
+              invalidValue: 'UNKNOWN',
+              allowedValues: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+            },
+          },
+        ],
+      });
+      expect(handlePaymentMethod).not.toHaveBeenCalled();
+    });
+
+    it('should not expose the internal enabled flag', async () => {
+      // @ts-expect-error mocked
+      (handlePaymentMethod as jest.Mock).mockResolvedValue({
+        webShopId: 'mock-webshop-id',
+        amount: 100,
+        paymentTypes: {
+          INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+          BILL_PAYMENT: { enabled: true, available: true, minAmount: 50, maxAmount: 5000 },
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/payments/payment-method/12345',
+        headers: {
+          'x-session-id': sessionId,
+          'content-type': 'application/json',
+        },
+      });
+
+      expect(response.json().paymentTypes).toEqual({
+        INSTALLMENT_PAYMENT: { available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { available: true, minAmount: 50, maxAmount: 5000 },
+      });
     });
   });
 
   describe('POST /payments', () => {
-    it('should create payment', async () => {
+    it.each([undefined, 'INSTALLMENT_PAYMENT'])('should create payment with paymentType=%s', async (paymentType) => {
       const mockRequest = {
         cartId: '12345',
+        paymentType,
         redirectLinks: {
           urlSuccess: 'https://urlSuccess.com',
           urlCancellation: 'https://urlCancellation.com',
@@ -128,6 +221,7 @@ describe('paymentsRoute', () => {
         mockRequest.cartId,
         mockRequest.redirectLinks,
         mockRequest.customerRelationship,
+        paymentType,
       );
     });
   });
@@ -172,6 +266,83 @@ describe('paymentsRoute', () => {
       expect(response.json()).toEqual(mockResponse);
       expect(handleGetPayment).toHaveBeenCalledWith(paymentId);
     });
+
+    const getPayment = (paymentId: string) =>
+      app.inject({
+        method: 'GET',
+        url: `/payments/${paymentId}`,
+        headers: { 'x-session-id': sessionId, 'content-type': 'application/json' },
+      });
+
+    it('should serialize an installment decision with paymentType', async () => {
+      const mockResponse = {
+        webShopId: 'webShopId',
+        amount: 100,
+        status: 'status',
+        paymentType: 'INSTALLMENT_PAYMENT',
+        decision: {
+          interest: 10,
+          totalValue: 110,
+          orderValue: 100,
+          decisionOutcome: 'POSITIVE',
+          numberOfInstallments: 10,
+          installment: 11,
+          lastInstallment: 11,
+          mtan: { required: true, successful: false },
+          bankAccountCheck: { required: true },
+        },
+      };
+      // @ts-expect-error mocked
+      (handleGetPayment as jest.Mock).mockResolvedValue(mockResponse);
+
+      const response = await getPayment('payment123');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockResponse);
+    });
+
+    it('should serialize a bill decision without installment fields', async () => {
+      const mockResponse = {
+        webShopId: 'webShopId',
+        amount: 100,
+        status: 'status',
+        paymentType: 'BILL_PAYMENT',
+        decision: {
+          transactionId: 'ec-tx-1',
+          orderValue: 100,
+          decisionOutcome: 'POSITIVE',
+        },
+      };
+      // @ts-expect-error mocked
+      (handleGetPayment as jest.Mock).mockResolvedValue(mockResponse);
+
+      const response = await getPayment('payment123');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        webShopId: 'webShopId',
+        amount: 100,
+        status: 'status',
+        paymentType: 'BILL_PAYMENT',
+        decision: { orderValue: 100, decisionOutcome: 'POSITIVE' },
+      });
+    });
+
+    it('should serialize a bill decision when paymentType is omitted', async () => {
+      const mockResponse = {
+        webShopId: 'webShopId',
+        amount: 100,
+        status: 'status',
+        decision: { orderValue: 100, decisionOutcome: 'POSITIVE' },
+      };
+      // @ts-expect-error mocked
+      (handleGetPayment as jest.Mock).mockResolvedValue(mockResponse);
+
+      const response = await getPayment('payment123');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockResponse);
+    });
   });
 
   describe('POST /payments/:paymentId/authorize', () => {
@@ -193,6 +364,35 @@ describe('paymentsRoute', () => {
       expect(response.statusCode).toBe(204);
       expect(response.body).toBe('');
       expect(handleAuthorizeECPayment).toHaveBeenCalledWith(paymentId);
+    });
+
+    it('should declare a 504 response schema on the authorize route', () => {
+      const route = routeOptions.find((r) => r.url === '/payments/:paymentId/authorize' && r.method === 'POST');
+
+      expect((route?.schema?.response as Record<number, unknown> | undefined)?.[504]).toBeDefined();
+    });
+
+    it('should answer 504 with the error body when the authorization times out', async () => {
+      (handleAuthorizeECPayment as jest.Mock).mockRejectedValue(
+        new Errorx({ code: 'AuthorizationTimeout', message: 'Timeout', httpErrorStatus: 504 }) as never,
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/payments/payment123/authorize',
+        body: {},
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+      });
+
+      expect(response.statusCode).toBe(504);
+      expect(response.json()).toEqual({
+        message: 'Timeout',
+        statusCode: 504,
+        errors: [{ code: 'AuthorizationTimeout', message: 'Timeout' }],
+      });
     });
   });
 
