@@ -16,6 +16,9 @@ export type ConnectorEnvVars = {
     webshopCacheTtl: string;
     billPaymentExcludedProductTypes: string[];
     billPaymentExcludedCustomLineItems: string[];
+    installmentPaymentEnabled: string;
+    installmentPaymentExcludedProductTypes: string[];
+    installmentPaymentExcludedCustomLineItems: string[];
   };
 };
 

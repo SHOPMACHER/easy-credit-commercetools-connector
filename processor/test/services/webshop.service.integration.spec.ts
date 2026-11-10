@@ -44,7 +44,7 @@ describe('webshop refresh with the easyCredit client', () => {
     [403, '{"title":false}'],
     [404, '{"title":{"message":"Not found"}}'],
     [200, '<html>Invalid JSON</html>'],
-  ])('should discard stale data after HTTP %s with body %s', async (status, body) => {
+  ])('should discard the last known data after HTTP %s with body %s', async (status, body) => {
     fetchMock.mockResolvedValueOnce(new Response(body, { status }));
     const unavailable = {
       code: 'EasyCreditUnavailable',
@@ -92,12 +92,12 @@ describe('webshop refresh with the easyCredit client', () => {
     [503, '<html>Service unavailable</html>'],
     [408, 'null'],
     [429, 'null'],
-  ])('should still use stale installment data after HTTP %s with body %s', async (status, body) => {
+  ])('should offer no payment type after HTTP %s with body %s', async (status, body) => {
     fetchMock.mockResolvedValueOnce(new Response(body, { status }));
 
-    await expect(getPaymentTypesAvailability(500)).resolves.toEqual({
-      INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
-      BILL_PAYMENT: { enabled: false, available: false, minAmount: 50, maxAmount: 5000 },
+    await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({
+      code: 'EasyCreditUnavailable',
+      httpErrorStatus: 503,
     });
   });
 });

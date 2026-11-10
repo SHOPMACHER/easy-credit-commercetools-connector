@@ -1,4 +1,5 @@
 import { ConnectorEnvVars } from '../types/index.types';
+import { ECTransactionPaymentType } from '../types/payment.types';
 import envValidators from '../validators/env.validators';
 import { getValidateMessages } from '../validators/helpers.validators';
 
@@ -40,6 +41,10 @@ export const readConfiguration = () => {
       webshopCacheTtl: withDefault(process.env.WEBSHOP_CACHE_TTL, '300'),
       billPaymentExcludedProductTypes: parseList(process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES),
       billPaymentExcludedCustomLineItems: parseList(process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS),
+      // Defaults to on, so installations from before the toggle keep offering installment.
+      installmentPaymentEnabled: withDefault(process.env.INSTALLMENT_PAYMENT_ENABLED, '1'),
+      installmentPaymentExcludedProductTypes: parseList(process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES),
+      installmentPaymentExcludedCustomLineItems: parseList(process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS),
     },
   };
 
@@ -53,3 +58,27 @@ export const readConfiguration = () => {
 
   return envVars;
 };
+
+type PaymentTypeConfig = {
+  enabled: boolean;
+  excludedProductTypes: string[];
+  excludedCustomLineItems: string[];
+};
+
+// The merchant settings of one payment type, so callers don't branch on the type.
+// Installment is only off for an explicit "0": readConfiguration defaults it to "1" for installations without the key.
+export const getPaymentTypeConfig = (
+  easyCredit: ConnectorEnvVars['easyCredit'],
+  paymentType: ECTransactionPaymentType,
+): PaymentTypeConfig =>
+  paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+    ? {
+        enabled: easyCredit.billPaymentEnabled === '1',
+        excludedProductTypes: easyCredit.billPaymentExcludedProductTypes ?? [],
+        excludedCustomLineItems: easyCredit.billPaymentExcludedCustomLineItems ?? [],
+      }
+    : {
+        enabled: easyCredit.installmentPaymentEnabled !== '0',
+        excludedProductTypes: easyCredit.installmentPaymentExcludedProductTypes ?? [],
+        excludedCustomLineItems: easyCredit.installmentPaymentExcludedCustomLineItems ?? [],
+      };

@@ -21,8 +21,8 @@ To use this functionality, the following conditions must be met:
 
 ## Workflow
 
-1. **Validate and get `cart`**: Retrieve CT `cart` instance by `cartId` and validate its addresses and currency.
-2. **Check payment type availability**: The selected payment type must be activated for the webshop and the cart total must be within its effective limits. Activation status and limits come from the cached easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), subject to the fallback policy in [Payment type availability](#payment-type-availability). `BILL_PAYMENT` additionally requires `BILL_PAYMENT_ENABLED=1` and a cart without excluded items, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). The cart is fetched again for this request, so items added after the GET payment method call are checked too.
+1. **Get `cart`**: Retrieve CT `cart` instance by `cartId`. If the selected payment type is switched off in the connector, the request is rejected before the cart is read.
+2. **Check payment type availability, then the cart**: The selected payment type must be switched on in the connector (`INSTALLMENT_PAYMENT_ENABLED=1` or `BILL_PAYMENT_ENABLED=1`), activated for the webshop, the cart total must be within its limits and the cart must not contain excluded items, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). Activation status and limits come from a fresh easyCredit webshop configuration (`GET /payment/v3/webshop/{webShopId}`), see [Payment type availability](#payment-type-availability). Then the addresses and currency are validated. The cart is fetched again for this request, so items added after the GET payment method call are checked too.
 3. **Discard stale attempts and freeze the cart**: Earlier easyCredit payments on the cart are discarded or refused, see [Switching in the shop checkout](#switching-in-the-shop-checkout). The cart is then frozen with the `HardFreeze` strategy, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).
 5. **Create EC transaction**: Convert CT data into EC data (including the `paymentType`) and create the transaction. `paymentSwitchPossible` is always sent as `true`, there is no configuration flag. The connector supports a switch between installment and pay by invoice when easyCredit offers one on its page, see [Switching on the easyCredit page](#switching-on-the-easycredit-page).
@@ -96,15 +96,15 @@ The interest fields are written when [Get Payment](./GetPayment.md), [Authorize 
 
 The request is rejected before any cart or payment change if:
 
-- easyCredit rejected the webshop request with a permanent error or sent an invalid installment configuration, or a known deactivation/permanent failure blocks fallback without usable cached data, see [Webshop configuration](GetPaymentMethod.md#webshop-configuration) (`503 EasyCreditUnavailable`),
-- the selected payment type is disabled or not activated for the webshop (error code below). For installment this means `availability: false` or `installmentPaymentActive: false`. For bill this means `BILL_PAYMENT_ENABLED` is not `1`, `availability: false`, `billPaymentActive: false`, absent or invalid bill configuration, or stale/default webshop data (bill fails closed). The error is `400 PaymentTypeNotAvailable`,
-- `BILL_PAYMENT` is enabled but the cart contains an excluded product type or custom line item (`400 BillPaymentExcludedItems`). This takes precedence over `InvalidAmount`. A matching custom line item skips the product type lookup,
-- `BILL_PAYMENT` is enabled but the product type lookup fails, for example because of a missing `view_product_types` scope or a commercetools outage (`503 BillPaymentCheckFailed`). This takes precedence over `InvalidAmount`,
+- the connector has no fresh easyCredit webshop configuration, for example because easyCredit cannot be reached, answered with an error or sent an invalid installment configuration, see [Webshop configuration](GetPaymentMethod.md#webshop-configuration) (`503 EasyCreditUnavailable`). This applies to both payment types,
+- the selected payment type is disabled or not activated for the webshop (error code below). For installment this means `INSTALLMENT_PAYMENT_ENABLED` is `0`, `availability: false` or `installmentPaymentActive: false`. For bill this means `BILL_PAYMENT_ENABLED` is not `1`, `availability: false`, `billPaymentActive: false`, or absent or invalid bill configuration. The error is `400 PaymentTypeNotAvailable`,
+- the payment type is enabled but the cart contains an excluded product type or custom line item (`400 InstallmentPaymentExcludedItems` or `400 BillPaymentExcludedItems`). This takes precedence over `InvalidAmount`. A matching custom line item skips the product type lookup,
+- the payment type is enabled but the product type lookup fails, for example because of a missing `view_product_types` scope or a commercetools outage (`503 InstallmentPaymentCheckFailed` or `503 BillPaymentCheckFailed`). This takes precedence over `InvalidAmount`,
 - the payment type is enabled but the cart total is outside its effective limits (`400 InvalidAmount`). A disabled type never returns `InvalidAmount`, only `PaymentTypeNotAvailable`.
 
-The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`. Any other value is rejected by the body schema with `400 InvalidJsonInput`. The checkout component sends the payment type it was built with. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop and the customer is a private person. A GET payment method response for `BILL_PAYMENT` and this endpoint use the same check.
+The optional request field `paymentType` defaults to `INSTALLMENT_PAYMENT`, so a request without it is rejected with `PaymentTypeNotAvailable` if `INSTALLMENT_PAYMENT_ENABLED=0`. Any other value is rejected by the body schema with `400 InvalidJsonInput`. The checkout component sends the payment type it was built with. `BILL_PAYMENT` is accepted if it is enabled and activated for the webshop and the customer is a private person. A GET payment method response for a payment type and this endpoint use the same check.
 
-Limits are defined by easyCredit per webshop and cannot be configured in the connector. During temporary failures, installment uses usable cached limits or, if none remain, the legacy 200 € to 10.000 € defaults, unless a known deactivation or permanent failure blocks fallback. Bill payment is unavailable with stale or default data. See [Get Payment Method](./GetPaymentMethod.md#webshop-configuration) for caching and retries.
+Limits are defined by easyCredit per webshop and cannot be configured in the connector. There are no default limits and stale webshop data is never used, see [Get Payment Method](./GetPaymentMethod.md#webshop-configuration) for caching and retries.
 
 The billing address must be complete for both payment types, see the `InvalidAddress` error below.
 <br />
@@ -195,7 +195,7 @@ If the provided `cartId` is invalid, or if there is an issue with the session to
 
 #### Error Response 400:
 
-If the cart fails validation, the API returns a `400 Bad Request` error. The checks run in the same order as in [Get Payment Method](./GetPaymentMethod.md#workflow): for installment the address and currency checks run first, for pay by invoice the payment type checks run first. `InvalidAmount` and `PaymentTypeNotAvailable` are never returned together with an address, currency or customer error.
+If the cart fails validation, the API returns a `400 Bad Request` error. The checks run in the same order as in [Get Payment Method](./GetPaymentMethod.md#workflow): for both payment types the payment type checks run first, then the address and currency checks. `InvalidAmount` and `PaymentTypeNotAvailable` are never returned together with an address, currency or customer error.
 
 | Code | Reason |
 | --- | --- |
@@ -204,8 +204,10 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The che
 | `InvalidAddress` | The billing address is incomplete or invalid: `firstName`, `lastName`, `streetName` and `city` must not be blank and `postalCode` must be 5 digits. Only reported if both addresses exist, in addition to the codes above. |
 | `InvalidCurrency` | The cart currency is not `EUR`. |
 | `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or shipping address. |
-| `InvalidAmount` | The cart total is outside the effective limits of the selected payment type, which is enabled. The message contains the limits from fresh or usable stale webshop data, or the installment defaults. |
+| `InvalidAmount` | The cart total is outside the limits of the selected payment type, which is enabled. The message contains the limits from the fresh webshop configuration. |
 | `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop. |
+| `InstallmentPaymentExcludedItems` | `INSTALLMENT_PAYMENT` was selected but the cart contains a voucher or another excluded item, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). |
+| `InstallmentPaymentCheckFailed` | `503`: `INSTALLMENT_PAYMENT` was selected but the excluded product types could not be loaded from commercetools, so the cart items could not be checked. Check the `view_product_types` scope and the processor logs. |
 | `BillPaymentExcludedItems` | `BILL_PAYMENT` was selected but the cart contains a voucher or another excluded item, see [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). |
 | `BillPaymentCheckFailed` | `503`: `BILL_PAYMENT` was selected but the excluded product types could not be loaded from commercetools, so the cart items could not be checked. Check the `view_product_types` scope and the processor logs. |
 | `PaymentInProgress` | An earlier easyCredit payment on the cart is `Pending` or `Success`, is `Initial` and authorized at easyCredit, or could not be checked at easyCredit. No new payment is created. See [Switching in the shop checkout](#switching-in-the-shop-checkout). The message offers to cancel or wait, which does not fit every case: for a `Success` attempt the payment is already authorized, so create the order from it (the cancel webhook refuses it). For an `Initial` attempt that easyCredit reports as `AUTHORIZED`, call [Authorize Payment](./AuthorizePayment.md). For a `Pending` attempt, wait or call the [cancel webhook](./CancelPayment.md). |

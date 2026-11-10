@@ -1,6 +1,6 @@
 import { Cart, Errorx, MultiErrorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { getCartById, getCartByPaymentId, updateCart } from '../commercetools/cart.commercetools';
-import { readConfiguration } from '../utils/config.utils';
+import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
 
 import {
   CTCartState,
@@ -59,50 +59,58 @@ import {
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { getPaymentTypesAvailability } from './webshop.service';
-import { getBillPaymentExclusion } from './billPaymentRestriction.service';
+import { getPaymentTypeExclusion } from './paymentTypeRestriction.service';
 
 // Callers that omit a type stay on installment.
 const DEFAULT_PAYMENT_TYPE = ECTransactionPaymentType.ECTransactionInstallmentPayment;
 
-// Bill payment is for physical goods only; a failed product type lookup keeps it closed.
-const applyBillPaymentExclusion = async (
+const ALL_PAYMENT_TYPES = Object.values(ECTransactionPaymentType);
+
+// Each payment type can rule out non-physical items; a failed product type lookup keeps that type closed.
+const applyExclusion = async (
   cart: Cart,
   paymentTypes: PaymentTypesAvailability,
+  paymentType: ECTransactionPaymentType,
 ): Promise<PaymentTypesAvailability> => {
-  const bill = paymentTypes[ECTransactionPaymentType.ECTransactionBillPayment];
+  const availability = paymentTypes[paymentType];
 
-  if (!bill.enabled) {
+  if (!availability.enabled) {
     return paymentTypes;
   }
 
-  const withUnavailableBill = (exclusion: PaymentTypeExclusion): PaymentTypesAvailability => ({
+  const withUnavailableType = (exclusion: PaymentTypeExclusion): PaymentTypesAvailability => ({
     ...paymentTypes,
-    [ECTransactionPaymentType.ECTransactionBillPayment]: { ...bill, available: false, exclusion },
+    [paymentType]: { ...availability, available: false, exclusion },
   });
 
   try {
-    const { productTypeKeys, customLineItems } = await getBillPaymentExclusion(cart);
+    const { productTypeKeys, customLineItems } = await getPaymentTypeExclusion(cart, paymentType);
 
     if (productTypeKeys.length === 0 && customLineItems.length === 0) {
       return paymentTypes;
     }
 
-    log.info('Bill payment is excluded for the cart items', { cartId: cart.id, productTypeKeys, customLineItems });
+    log.info('Payment type is excluded for the cart items', {
+      cartId: cart.id,
+      paymentType,
+      productTypeKeys,
+      customLineItems,
+    });
 
-    return withUnavailableBill('cartItems');
+    return withUnavailableType('cartItems');
   } catch (error: unknown) {
-    log.error(`Failed to check the items of cart ${cart.id} for bill payment, bill payment is not offered`, error);
+    log.error(`Failed to check the items of cart ${cart.id} for ${paymentType}, it is not offered`, error);
 
-    return withUnavailableBill('checkFailed');
+    return withUnavailableType('checkFailed');
   }
 };
 
-// Checked before the cart is read, so a deployment with bill payment switched off never loads the cart for it.
+// Checked before the cart is read, so a deployment with a payment type switched off never loads the cart for it.
 const assertPaymentTypeEnabled = (paymentType: ECTransactionPaymentType) => {
-  const { webShopId, billPaymentEnabled } = readConfiguration().easyCredit;
+  const { easyCredit } = readConfiguration();
 
-  if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment && billPaymentEnabled !== '1') {
-    throw new MultiErrorx([paymentTypeNotAvailableError({ webShopId })]);
+  if (!getPaymentTypeConfig(easyCredit, paymentType).enabled) {
+    throw new MultiErrorx([paymentTypeNotAvailableError({ webShopId: easyCredit.webShopId })]);
   }
 };
 
@@ -124,6 +132,7 @@ const validateCartData = (cart: Cart, paymentType: ECTransactionPaymentType, ecC
   }
 };
 
+// Only the requested type is checked against the cart items; handlePaymentMethod adds the other one for the response.
 const validateAvailability = async (
   cart: Cart,
   amount: number,
@@ -131,14 +140,9 @@ const validateAvailability = async (
   ecConfig: { webShopId: string },
 ): Promise<PaymentTypesAvailability> => {
   const errors: Errorx[] = [];
-  const availability = await getPaymentTypesAvailability(amount);
-  // Installment requests skip the product type lookup; handlePaymentMethod applies it for the response.
-  const paymentTypes =
-    paymentType === ECTransactionPaymentType.ECTransactionBillPayment
-      ? await applyBillPaymentExclusion(cart, availability)
-      : availability;
+  const paymentTypes = await applyExclusion(cart, await getPaymentTypesAvailability(amount), paymentType);
 
-  validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors);
+  validatePaymentTypeAvailability(amount, paymentTypes[paymentType], ecConfig, errors, paymentType);
 
   if (errors.length > 0) {
     throw new MultiErrorx(errors);
@@ -147,22 +151,16 @@ const validateAvailability = async (
   return paymentTypes;
 };
 
-// Throws a MultiErrorx if easyCredit cannot be offered for the cart
+// Throws a MultiErrorx if easyCredit cannot be offered for the cart.
+// The enabler hides a payment type only on availability errors, so they must win over cart errors that render an alert.
 const validateCart = async (cart: Cart, paymentType: ECTransactionPaymentType): Promise<PaymentTypesAvailability> => {
   const ecConfig = { webShopId: readConfiguration().easyCredit.webShopId };
   const amount = convertCentsToEur(cart.totalPrice.centAmount, cart.totalPrice.fractionDigits);
 
-  // The enabler hides bill payment only on availability errors, so they must win over cart errors that render an alert.
-  if (paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
-    const paymentTypes = await validateAvailability(cart, amount, paymentType, ecConfig);
-    validateCartData(cart, paymentType, ecConfig);
-
-    return paymentTypes;
-  }
-
+  const paymentTypes = await validateAvailability(cart, amount, paymentType, ecConfig);
   validateCartData(cart, paymentType, ecConfig);
 
-  return validateAvailability(cart, amount, paymentType, ecConfig);
+  return paymentTypes;
 };
 
 // Not logged here: the error handler already logs every error it answers with.
@@ -172,11 +170,11 @@ export const handlePaymentMethod = async (
 ): Promise<GetPaymentMethodResponse> => {
   assertPaymentTypeEnabled(paymentType);
   const cart = await getCartById(cartId);
-  const validated = await validateCart(cart, paymentType);
-  const paymentTypes =
-    paymentType === ECTransactionPaymentType.ECTransactionBillPayment
-      ? validated
-      : await applyBillPaymentExclusion(cart, validated);
+  let paymentTypes = await validateCart(cart, paymentType);
+
+  for (const otherType of ALL_PAYMENT_TYPES.filter((type) => type !== paymentType)) {
+    paymentTypes = await applyExclusion(cart, paymentTypes, otherType);
+  }
 
   return {
     webShopId: readConfiguration().easyCredit.webShopId,
@@ -378,6 +376,7 @@ const recordInterest = async (
 const TRANSACTION_FAILING_CODES = [
   'InvalidAmount',
   'BillPaymentExcludedItems',
+  'InstallmentPaymentExcludedItems',
   'CorporateCustomerNotAllowed',
   'AddressesUnmatched',
   'InvalidBillingAddress',

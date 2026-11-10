@@ -13,6 +13,9 @@ jest.mock('../../src/libs/logger', () => ({
 }));
 
 jest.mock('../../src/utils/config.utils', () => ({
+  getPaymentTypeConfig:
+    jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+      .getPaymentTypeConfig,
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: {
       widgetEnabled: '1',

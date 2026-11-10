@@ -1,10 +1,11 @@
 import { Cart } from '@commercetools/connect-payments-sdk';
 import { getProductTypesByKeys } from '../commercetools/productType.commercetools';
 import { log } from '../libs/logger';
-import { readConfiguration } from '../utils/config.utils';
+import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
+import { ECTransactionPaymentType } from '../types/payment.types';
 
-// Cart items that rule out pay by invoice; both lists empty means it is allowed.
-type BillPaymentExclusion = {
+// Cart items that rule out a payment type; both lists empty means it is allowed.
+type PaymentTypeItemExclusion = {
   productTypeKeys: string[];
   customLineItems: string[];
 };
@@ -14,16 +15,22 @@ type CachedProductTypes = {
   expiresAt: number;
 };
 
-let cachedProductTypes: CachedProductTypes | undefined;
+// Per payment type, as each type has its own list of excluded product types.
+const cachedProductTypes = new Map<ECTransactionPaymentType, CachedProductTypes>();
 
-export const resetBillPaymentRestrictionCache = (): void => {
-  cachedProductTypes = undefined;
+export const resetPaymentTypeRestrictionCache = (): void => {
+  cachedProductTypes.clear();
 };
 
 // Line items only carry the product type id, so the configured keys are resolved once per cache TTL.
-const getExcludedProductTypeKeysById = async (keys: string[], ttlSeconds: number): Promise<Map<string, string>> => {
-  if (cachedProductTypes && cachedProductTypes.expiresAt > Date.now()) {
-    return cachedProductTypes.keysById;
+const getExcludedProductTypeKeysById = async (
+  paymentType: ECTransactionPaymentType,
+  keys: string[],
+  ttlSeconds: number,
+): Promise<Map<string, string>> => {
+  const cached = cachedProductTypes.get(paymentType);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.keysById;
   }
 
   const productTypes = await getProductTypesByKeys(keys);
@@ -32,22 +39,22 @@ const getExcludedProductTypeKeysById = async (keys: string[], ttlSeconds: number
   // Not cached, so a product type created after the lookup excludes carts on the next request.
   const unknownKeys = keys.filter((key) => !productTypes.some((productType) => productType.key === key));
   if (unknownKeys.length > 0) {
-    log.warn('Bill payment excluded product types do not exist', { productTypeKeys: unknownKeys });
+    log.warn('Excluded product types do not exist', { paymentType, productTypeKeys: unknownKeys });
     return keysById;
   }
 
-  cachedProductTypes = { keysById, expiresAt: Date.now() + ttlSeconds * 1000 };
+  cachedProductTypes.set(paymentType, { keysById, expiresAt: Date.now() + ttlSeconds * 1000 });
 
   return keysById;
 };
 
 // Throws if the product types cannot be resolved, so the caller can fail closed.
-export const getBillPaymentExclusion = async (cart: Cart): Promise<BillPaymentExclusion> => {
-  const {
-    billPaymentExcludedProductTypes: excludedProductTypes,
-    billPaymentExcludedCustomLineItems: excludedCustomLineItems,
-    webshopCacheTtl,
-  } = readConfiguration().easyCredit;
+export const getPaymentTypeExclusion = async (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType,
+): Promise<PaymentTypeItemExclusion> => {
+  const { easyCredit } = readConfiguration();
+  const { excludedProductTypes, excludedCustomLineItems } = getPaymentTypeConfig(easyCredit, paymentType);
 
   const customLineItems = cart.customLineItems
     .filter(({ slug, key }) =>
@@ -60,7 +67,11 @@ export const getBillPaymentExclusion = async (cart: Cart): Promise<BillPaymentEx
     return { productTypeKeys: [], customLineItems };
   }
 
-  const keysById = await getExcludedProductTypeKeysById(excludedProductTypes, Number(webshopCacheTtl));
+  const keysById = await getExcludedProductTypeKeysById(
+    paymentType,
+    excludedProductTypes,
+    Number(easyCredit.webshopCacheTtl),
+  );
   const productTypeKeys = [...new Set(cart.lineItems.flatMap(({ productType }) => keysById.get(productType.id) ?? []))];
 
   return { productTypeKeys, customLineItems };
