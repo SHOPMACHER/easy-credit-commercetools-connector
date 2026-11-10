@@ -199,6 +199,9 @@ export const validatePrivateCustomer = (
   }
 };
 
+export const isEasyCreditPayment = (payment: Payment): boolean =>
+  payment.paymentMethodInfo?.paymentInterface?.toLowerCase() === EASYCREDIT_PAYMENT_METHOD;
+
 // validateAddresses only compares the first destination, bill payment requires all of them to match the billing address.
 export const validateShippingDestinations = (
   billingAddress: Address | undefined,
@@ -216,10 +219,7 @@ export const validateShippingDestinations = (
 };
 
 export const validatePayment = (payment: Payment) => {
-  if (
-    !payment.paymentMethodInfo?.paymentInterface ||
-    payment.paymentMethodInfo?.paymentInterface.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD
-  ) {
+  if (!isEasyCreditPayment(payment)) {
     throw new Errorx({
       code: 'InvalidPaymentMethod',
       httpErrorStatus: 400,

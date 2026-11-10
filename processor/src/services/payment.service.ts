@@ -23,6 +23,7 @@ import { PaymentUpdateAction } from '@commercetools/platform-sdk';
 import { CartUpdateAction } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/cart';
 import { log } from '../libs/logger';
 import {
+  isEasyCreditPayment,
   paymentTypeNotAvailableError,
   validateAddresses,
   validateCurrency,
@@ -969,20 +970,88 @@ export const handleAuthorizePayment = async (paymentId: string): Promise<void> =
   }
 };
 
+// A cart can carry several payments (one per checkout attempt). Only unfreeze when none of the others is still in flight.
+const unfreezeCartIfNoActivePayment = async (cart: Cart, paymentId?: string): Promise<void> => {
+  if (cart.cartState !== CTCartState.Frozen) {
+    return;
+  }
+
+  const otherPayments = await Promise.all(
+    (cart.paymentInfo?.payments ?? []).filter((ref) => ref.id !== paymentId).map((ref) => getPaymentById(ref.id)),
+  );
+
+  const isActive = (payment: Payment) =>
+    [CTTransactionState.Initial, CTTransactionState.Pending].includes(
+      getTransaction(payment)?.state as CTTransactionState,
+    );
+
+  if (otherPayments.some((payment) => isEasyCreditPayment(payment) && isActive(payment))) {
+    log.info('Cart stays frozen, another payment on it is still in progress', { cartId: cart.id, paymentId });
+    return;
+  }
+
+  await updateCart(cart, [{ action: 'unfreezeCart' }]);
+};
+
+// easyCredit stops finding a transaction about 30 minutes after the shopper's last action and answers with this error.
+// An expired transaction can't be authorized anymore, so it is safe to cancel.
+const isExpiredECTransactionError = (error: unknown): boolean => {
+  const expired =
+    error instanceof Errorx &&
+    error.code === 'CONSTRAINT_VIOLATION' &&
+    Array.isArray(error.fields) &&
+    error.fields.some((violation: { field?: string }) => violation.field === 'decision');
+
+  if (expired) {
+    // Only seen in the sandbox so far; log so production confirms easyCredit uses it for expiry only.
+    log.warn('easyCredit no longer finds the transaction, treating it as expired', { error });
+  }
+
+  return expired;
+};
+
+// The cancel route sends the shopper to the shop's success page on this code, so keep it stable.
+export const TRANSACTION_IS_AUTHORIZED = 'TransactionIsAuthorized';
+
+const transactionIsAuthorizedError = () =>
+  new Errorx({
+    code: TRANSACTION_IS_AUTHORIZED,
+    message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
+    httpErrorStatus: 400,
+  });
+
 export const handleCancelPayment = async (paymentId: string): Promise<string> => {
   try {
     const payment = await getPaymentById(paymentId);
 
     validatePayment(payment);
 
+    // Repeat hit from browser history or a stale easyCredit page: already cancelled, only finish a leftover unfreeze.
+    if (getTransaction(payment)?.state === CTTransactionState.Failure) {
+      // The redirect back to the shop matters more than this cleanup, so a failure here must not strand the shopper.
+      await getCartByPaymentId(payment.id)
+        .then((cart) => unfreezeCartIfNoActivePayment(cart, payment.id))
+        .catch((error: unknown) =>
+          log.warn('Could not finish cart unfreeze for cancelled payment', { paymentId, error }),
+        );
+
+      return paymentId;
+    }
+
+    if (getTransaction(payment)?.state === CTTransactionState.Success) {
+      throw transactionIsAuthorizedError();
+    }
+
     const transaction = validateInitialOrPendingTransaction(payment);
     const ecTechnicalTransactionId = transaction.custom?.fields.easyCreditTechnicalTransactionId as string;
 
-    // A transaction that easyCredit invalidated cannot be authorized any more: cancel it and free the cart anyway.
+    // An expired or superseded easyCredit transaction can't be authorized anymore: cancel it and free the cart anyway.
+    // Only an Initial transaction may be treated as expired; a Pending one may already be authorized at easyCredit.
     const easyCreditTransaction = await initEasyCreditClient()
       .getPayment(ecTechnicalTransactionId)
       .catch((error: unknown) => {
-        if (!isGoneAtEasyCredit(error)) {
+        const isExpired = transaction.state === CTTransactionState.Initial && isExpiredECTransactionError(error);
+        if (!isGoneAtEasyCredit(error) && !isExpired) {
           throw error;
         }
         log.warn('The easyCredit transaction is gone, cancelling without the status check', { paymentId });
@@ -990,11 +1059,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
       });
 
     if (easyCreditTransaction?.status === ECTransactionStatus.AUTHORIZED) {
-      throw new Errorx({
-        code: 'TransactionIsAuthorized',
-        message: 'You are not allow to cancel a payment with Easy Credit AUTHORIZED transaction.',
-        httpErrorStatus: 400,
-      });
+      throw transactionIsAuthorizedError();
     }
 
     await updatePayment(payment, [
@@ -1007,9 +1072,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
       await logLateAuthorization(paymentId, ecTechnicalTransactionId);
     }
 
-    const cart = await getCartByPaymentId(payment.id);
-
-    await updateCart(cart, [{ action: 'unfreezeCart' }]);
+    await unfreezeCartIfNoActivePayment(await getCartByPaymentId(payment.id), payment.id);
 
     return paymentId;
   } catch (error) {

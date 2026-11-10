@@ -30,6 +30,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { LineItem } from '@commercetools/connect-payments-sdk';
 
+import { signRedirectUrl } from '../../src/utils/redirect.utils';
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),
 }));
@@ -171,9 +172,8 @@ describe('Payment Mapping', () => {
         },
         customerRelationship: mockCustomerRelationship,
         redirectLinks: {
-          urlDenial: 'https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel',
-          urlCancellation:
-            'https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel',
+          urlDenial: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&successUrl=${encodeURIComponent(mockRedirectLinks.urlSuccess)}&sig=${signRedirectUrl('payment123', 'https://example.com/cancel', mockRedirectLinks.urlSuccess)}`,
+          urlCancellation: `https://example.com/webhook/payment123/cancel?redirectUrl=https%3A%2F%2Fexample.com%2Fcancel&successUrl=${encodeURIComponent(mockRedirectLinks.urlSuccess)}&sig=${signRedirectUrl('payment123', 'https://example.com/cancel', mockRedirectLinks.urlSuccess)}`,
           urlSuccess: mockRedirectLinks.urlSuccess,
           urlAuthorizationCallback: 'https://example.com/webhook/payment123/authorize',
         },
