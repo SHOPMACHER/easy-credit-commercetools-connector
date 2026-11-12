@@ -15,7 +15,7 @@ jest.mock('../../src/payment-sdk.ts', () => ({
       authenticate: jest.fn(),
     },
     authorityAuthorizationHookFn: {
-      authenticate: jest.fn(),
+      authorize: jest.fn(() => async () => {}),
     },
   },
 }));

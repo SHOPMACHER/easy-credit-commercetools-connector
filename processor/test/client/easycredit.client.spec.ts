@@ -1,5 +1,6 @@
 /* eslint-disable no-global-assign */
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
+import { ECOutcomeUnknownError } from '../../src/client/easycredit.errors';
 import { EASYCREDIT_BASE_API_URL, EASYCREDIT_PARTNER_BASE_API_URL } from '../../src/utils/constant.utils';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { ECTransaction } from '../../src/types/payment.types';
@@ -356,66 +357,93 @@ describe('initEasyCreditClient', () => {
     });
   });
 
-  describe('refundPayment', () => {
-    it('should make a POST request and return true when status code is 202', async () => {
-      const ecTransactionId = '12345';
-      const payload = {
-        value: 100,
-        bookingId: '123-abc',
-      };
+  describe.each([
+    {
+      name: 'capturePayment',
+      call: (client: ReturnType<typeof initEasyCreditClient>) => client.capturePayment('TX1234', 'pay1', 'track1'),
+      url: `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/TX1234/capture`,
+      body: { orderId: 'pay1', trackingNumber: 'track1' },
+      code: 'CaptureFailed',
+      message: 'Capture failed',
+    },
+    {
+      name: 'refundPayment',
+      call: (client: ReturnType<typeof initEasyCreditClient>) =>
+        client.refundPayment('TX1234', { value: 100, bookingId: '123-abc' }),
+      url: `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/TX1234/refund`,
+      body: { value: 100, bookingId: '123-abc' },
+      code: 'RefundFailed',
+      message: 'Refund failed',
+    },
+  ])('$name', ({ call, url, body, code, message }) => {
+    it('should POST to the merchant API with a timeout and resolve on 202', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
 
-      // Mock successful fetch response
-      (fetch as jest.Mock).mockImplementation(async () =>
-        Promise.resolve({
-          status: 202,
-        }),
-      );
-
-      const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
-          },
-          body: JSON.stringify(payload),
+      await expect(call(easyCreditClient)).resolves.toBeUndefined();
+      expect(fetch).toHaveBeenCalledWith(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
         },
-      );
-
-      expect(result).toEqual(true);
+        body: JSON.stringify(body),
+        signal: expect.any(AbortSignal),
+      });
+      expect(timeoutSpy).toHaveBeenCalledWith(10000);
     });
 
-    it('should return false when the status code is not 202', async () => {
-      const ecTransactionId = '12345';
-      const payload = {
-        value: 100,
-        bookingId: '123-abc',
-      };
+    it('should throw an Errorx keeping the easyCredit status, title and violations', async () => {
+      const violations = [{ field: 'value', message: 'too high' }];
+      jest
+        .mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ title: 'Booking not allowed', violations }), { status: 409 }),
+        );
 
-      const mockedFetchResult = new Error('Refund request returned invalid status code');
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(Errorx);
+      // A 4xx is a clear rejection.
+      await expect(promise).rejects.not.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({
+        code: 'Booking not allowed',
+        message: 'Booking not allowed',
+        httpErrorStatus: 409,
+        fields: violations,
+      });
+    });
 
-      // Mock successful fetch response
-      (fetch as jest.Mock).mockImplementation(async () => Promise.resolve(mockedFetchResult));
+    it('should fall back to its own code on a non-JSON error body', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response('<html></html>', { status: 503 }));
 
-      const result = await easyCreditClient.refundPayment(ecTransactionId, payload);
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, message, httpErrorStatus: 503 });
+    });
 
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${EASYCREDIT_PARTNER_BASE_API_URL}/merchant/v3/transaction/${ecTransactionId}/refund`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
-          },
-          body: JSON.stringify(payload),
-        },
-      );
+    it.each([200, 204])('should map a %s response to a 502, never a 2xx error', async (status) => {
+      jest.mocked(fetch).mockResolvedValueOnce(new Response(null, { status }));
 
-      expect(log.error).toBeCalledTimes(1);
-      expect(result).toBe(false);
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, httpErrorStatus: 502 });
+    });
+
+    it('should map a network error to a 502 with an unknown outcome', async () => {
+      jest.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));
+
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, message, httpErrorStatus: 502 });
+      expect(log.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('should map a timeout to a 504 with an unknown outcome', async () => {
+      jest.mocked(fetch).mockRejectedValueOnce(new DOMException('aborted', 'TimeoutError'));
+
+      const promise = call(easyCreditClient);
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code, httpErrorStatus: 504 });
     });
   });
 
@@ -541,6 +569,7 @@ describe('initEasyCreditClient', () => {
             'Content-Type': 'application/json',
             Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
           },
+          signal: expect.any(AbortSignal),
         },
       );
 
