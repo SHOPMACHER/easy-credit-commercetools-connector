@@ -8,7 +8,7 @@ import * as validators from '../../src/validators/payment.validators';
 import { log } from '../../src/libs/logger';
 import { readConfiguration } from '../../src/utils/config.utils';
 import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
-import { getBillPaymentExclusion } from '../../src/services/billPaymentRestriction.service';
+import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestriction.service';
 import { getShippingAddress, getShippingDestinations } from '../../src/utils/map.utils';
 
 jest.mock('../../src/commercetools/cart.commercetools');
@@ -17,13 +17,18 @@ jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');
 jest.mock('../../src/utils/map.utils');
 jest.mock('../../src/services/webshop.service');
-jest.mock('../../src/services/billPaymentRestriction.service');
+jest.mock('../../src/services/paymentTypeRestriction.service');
 jest.mock('../../src/utils/config.utils', () => {
   const config = {
     easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
     commerceTools: { projectKey: 'projectKey123', clientId: 'clientId123', clientSecret: 'clientSecret', region: 'eu' },
   };
-  return { readConfiguration: jest.fn(() => config) };
+  return {
+    readConfiguration: jest.fn(() => config),
+    getPaymentTypeConfig:
+      jest.requireActual<typeof import('../../src/utils/config.utils')>('../../src/utils/config.utils')
+        .getPaymentTypeConfig,
+  };
 });
 
 type AnyFn = (...args: any[]) => any;
@@ -111,7 +116,7 @@ describe('handleGetPayment payment type sync', () => {
     mock(getCartByPaymentId).mockResolvedValue(buildCart());
     mock(getShippingAddress).mockImplementation((cart: any) => cart.shippingAddress);
     mock(getShippingDestinations).mockImplementation((cart: any) => [cart.shippingAddress]);
-    mock(getBillPaymentExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
+    mock(getPaymentTypeExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
     mock(getPaymentTypesAvailability).mockImplementation(async (amount: number) => ({
       INSTALLMENT_PAYMENT: {
         enabled: true,
@@ -477,7 +482,7 @@ describe('handleGetPayment payment type sync', () => {
 
     it('excluded items: fails the transaction and does not write', async () => {
       switchToBill();
-      mock(getBillPaymentExclusion).mockResolvedValue({ productTypeKeys: ['voucher'], customLineItems: [] });
+      mock(getPaymentTypeExclusion).mockResolvedValue({ productTypeKeys: ['voucher'], customLineItems: [] });
 
       await expect(handleGetPayment(PAYMENT_ID)).rejects.toMatchObject({
         errors: [expect.objectContaining({ code: 'BillPaymentExcludedItems' })],
@@ -620,7 +625,7 @@ describe('handleGetPayment payment type sync', () => {
 
     it('503 BillPaymentCheckFailed: rethrown, transaction untouched', async () => {
       switchToBill();
-      mock(getBillPaymentExclusion).mockRejectedValue(new Error('product type lookup down'));
+      mock(getPaymentTypeExclusion).mockRejectedValue(new Error('product type lookup down'));
 
       await expect(handleGetPayment(PAYMENT_ID)).rejects.toMatchObject({
         errors: [expect.objectContaining({ code: 'BillPaymentCheckFailed', httpErrorStatus: 503 })],
@@ -989,7 +994,7 @@ describe('handleCreatePayment discarding stale attempts', () => {
     setBillPaymentEnabled('1');
     mock(getShippingAddress).mockImplementation((cart: any) => cart.shippingAddress);
     mock(getShippingDestinations).mockImplementation((cart: any) => [cart.shippingAddress]);
-    mock(getBillPaymentExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
+    mock(getPaymentTypeExclusion).mockResolvedValue({ productTypeKeys: [], customLineItems: [] });
     mock(getPaymentTypesAvailability).mockImplementation(async (amount: number) => ({
       INSTALLMENT_PAYMENT: {
         enabled: true,

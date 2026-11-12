@@ -27,6 +27,12 @@ The connector cannot see that a shopper picks a payment method in the shop check
 
 If the shopper switches to easyCredit again (installment or pay by invoice), no cancel call is needed: [Create Payment](./CreatePayment.md#switching-in-the-shop-checkout) discards the stale attempt itself. It refuses a `Pending` attempt with `400 PaymentInProgress`, and this webhook is the way out of that state, unless easyCredit already reports `AUTHORIZED`.
 
+If Easy Credit no longer finds the transaction because it expired (about 30 minutes after the shopper's last action), the payment is cancelled anyway, since an expired transaction can't be authorized.
+
+The call is idempotent: if the `Authorization` transaction is already `Failure` (for example the shopper hits the cancel link again through browser history), the connector does not change the payment and still responds with success or the redirect.
+
+After cancelling, the cart is unfrozen unless another Easy Credit payment on the same cart is still `Initial` or `Pending`. Starting a new checkout discards older `Initial` Easy Credit payments on the cart (see the create flow); it is refused while one is `Pending` or authorized at Easy Credit.
+
 <br />
 
 ## Representation: CT Payment
@@ -76,7 +82,18 @@ To cancel a payment, you can make a call to the following URL.
 ### Request
 
 **HTTP Method:** `GET`  
-**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}`  
+**URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&successUrl={{success_url}}&sig={{signature}}`  
+
+The connector builds this URL itself when it creates the payment and passes it to Easy Credit. `successUrl` is the shop's `urlSuccess`. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]` (plain, not URL-encoded URLs; `null` when there is no success URL) keyed with `API_PASSWORD`. A `redirectUrl` or `successUrl` without a valid `sig` is rejected with `400 InvalidRedirectUrl`, so the route can't be used as an open redirect.  
+
+With a valid `redirectUrl` the shopper always lands back in the shop:
+
+| Outcome | Redirect target |
+|---|---|
+| Cancelled, or already cancelled | `redirectUrl` |
+| Payment already authorized (commercetools `Success`, or easyCredit `AUTHORIZED`) | `successUrl`; the payment and cart are not changed |
+| Any other error | `redirectUrl` with `error=cancel_failed` added to its query, so the shop can show a message; the error is logged and the payment is left as it was |
+
 **Headers:**
 ```http
 Content-Type: application/json

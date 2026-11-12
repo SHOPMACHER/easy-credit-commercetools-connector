@@ -17,7 +17,7 @@ This guide provides instructions on how to integrate and display the connector's
     Simply run `npm i @shopmacher/easy-credit-commercetools-component`.
   - Install via CT connector asset service url \
     After installing the connector, an URL will be generated hosting the required package. \
-    Simply include this URL as follow 
+    Simply include this URL as follow
     ```
     <script type="module" src="YOUR_ASSET_URL_HERE" />
     ```
@@ -81,6 +81,17 @@ This guide provides instructions on how to integrate and display the connector's
 
 - By doing this, the component will make API calls to the connector to check whether the widget can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Widget](./assets/easycredit-widget.png)
 
+#### Pay by invoice in the widget
+
+- The shop doesn't pass a payment type. `GET /operations/widget-enabled` returns `{ isEnabled, webShopId, paymentTypes }`. `paymentTypes` lists what checkout offers, using the same rules as [Get Payment Method](./GetPaymentMethod.md):
+  - `INSTALLMENT_PAYMENT` when installment is active for the webshop;
+  - `BILL_PAYMENT` only when `BILL_PAYMENT_ENABLED=1`, easyCredit reports `availability` and `billPaymentActive`, and the webshop data is fresh. It fails closed, so it is never advertised on stale or default data.
+- The widget renders these as `payment-types` (for example `payment-types="INSTALLMENT,BILL"`). With both types, easyCredit's widget reads "Finanzieren ab … / Monat oder heute bestellen, in 30 Tagen zahlen". The amount limits are applied by easyCredit's widget itself.
+- An empty `paymentTypes` means checkout offers no easyCredit payment type, and the widget is not rendered. That happens when neither type is active for the webshop, while easyCredit reports the webshop as unavailable (checkout answers 503 `EasyCreditUnavailable`), and with `WIDGET_ENABLED` not `1` (easyCredit isn't called then).
+- On any error, or when the lookup takes longer than 1.5 s, `paymentTypes` is empty and the widget is not rendered. A slow lookup keeps running and fills the cache (`WEBSHOP_CACHE_TTL`), so the next widget gets the full list. The first widget after a deploy or a cache expiry can therefore be missing.
+- Older processors don't send `paymentTypes`. The widget then renders without the attribute, and easyCredit's component defaults to installment.
+- The attribute is set when the widget is mounted. easyCredit's component ignores later changes to `payment-types`, so remount the widget (clear the container and call `mount` again) after the invoice setting changes.
+
 ### Checkout component
 
 - Created from [EasyCredit Label component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-label--docs) and [EasyCredit Checkout component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/checkout-checkout--docs)
@@ -139,10 +150,11 @@ This guide provides instructions on how to integrate and display the connector's
 
   | Payment type | Hidden on |
   | --- | --- |
-  | `INSTALLMENT_PAYMENT` | `PaymentTypeNotAvailable` (installment not activated for the webshop) |
+  | `INSTALLMENT_PAYMENT` | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `EasyCreditUnavailable` |
   | `BILL_PAYMENT` | `PaymentTypeNotAvailable` (disabled in the connector or by easyCredit), `InvalidAmount` (cart total outside the billing limits), `EasyCreditUnavailable` |
 
-- Any other error is shown as an alert inside the widget, for example billing and shipping address differ or are not in Germany, or the cart total is outside the installment limits.
+- Any other error is shown as an alert inside the widget, for example billing and shipping address differ or are not in Germany, the cart total is outside the installment limits, or the cart contains an item excluded for installment.
+- For the codes in this table `isAvailable()` returns `false` and `mount()` renders nothing, for both payment types. Both are hidden during an easyCredit outage (`EasyCreditUnavailable`) and when they are switched off in the connector.
 - Each `isAvailable()` and `mount()` call queries the current cart state from the processor.
 - After the cart changes, call `isAvailable()` again. Hide the payment option when it returns `false`, and clear any previously mounted label and widget containers. Clear the containers before remounting an available option as well, so outdated content is not retained.
 
@@ -152,7 +164,7 @@ This guide provides instructions on how to integrate and display the connector's
 
 No numbered release contains this integration yet, so neither a commit nor the package version tells whether a deployed processor supports it. Check the processor instead: with a valid session, `GET /payments/payment-method/{cartId}?paymentType=UNKNOWN` returns `400 InvalidField` on a supported processor, while an older processor ignores the parameter and answers with the installment checks.
 
-When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Existing callers that only use `mount()` and `submit()` need no additional call for installment. For bill payment, call `isAvailable()` before displaying the payment option.
+When upgrading TypeScript integrations, `CheckoutComponent` now requires `isAvailable(): Promise<boolean>`. Components returned by the supplied builder already implement it. Add the method to custom implementations and typed test doubles; custom implementations must follow the availability rules above. Callers that only use `mount()` and `submit()` now get an empty installment container when installment is switched off (`INSTALLMENT_PAYMENT_ENABLED=0`) or easyCredit is unavailable. Call `isAvailable()` before displaying either payment option, so the option itself is hidden too.
 
 For a test double, choose the result for the scenario under test:
 
@@ -171,33 +183,33 @@ const unavailableCheckout: CheckoutComponent = {
 #### Pay by invoice as a separate payment method
 
 - Build a second checkout component with `paymentType: 'BILL_PAYMENT'` and a label with `{ paymentType: 'BILL_PAYMENT' }`. Both payment methods can be mounted on the same page, each into its own container.
-- Pay by invoice is only offered if `BILL_PAYMENT_ENABLED=1` in the connector, easyCredit has activated it for the webshop and the cart total is within the billing limits.
+- Pay by invoice is only offered if `BILL_PAYMENT_ENABLED=1` in the connector, easyCredit has activated it for the webshop and the cart total is within the billing limits. Installment works the same way with `INSTALLMENT_PAYMENT_ENABLED` (default `1`). Set it to `0` to offer pay by invoice only.
 - Any `paymentType` other than `INSTALLMENT_PAYMENT` or `BILL_PAYMENT` makes the builder throw an error.
 - Pay by invoice is only available for private persons who receive the goods at their billing address in Germany. For a cart with a Business Unit, a company in the billing or any shipping address, or a shipping address that differs from the billing address, the widget shows an error message. With `shippingMode: Multiple` or item shipping addresses, every shipping address is checked.
 
   ```ts
-    const [labelBuilder, checkoutBuilder] = await Promise.all([
-      enabler.createLabelBuilder(),
-      enabler.createCheckoutBuilder(),
-    ]);
+  const [labelBuilder, checkoutBuilder] = await Promise.all([
+    enabler.createLabelBuilder(),
+    enabler.createCheckoutBuilder(),
+  ]);
 
-    for (const [paymentType, elementId] of [
-      ['INSTALLMENT_PAYMENT', 'easycredit-checkout'],
-      ['BILL_PAYMENT', 'easycredit-bill-checkout'],
-    ] as const) {
-      const checkoutComponent = checkoutBuilder.build({
-        ...checkoutOptions, // same options as above
-        paymentType,
-      });
+  for (const [paymentType, elementId] of [
+    ["INSTALLMENT_PAYMENT", "easycredit-checkout"],
+    ["BILL_PAYMENT", "easycredit-bill-checkout"],
+  ] as const) {
+    const checkoutComponent = checkoutBuilder.build({
+      ...checkoutOptions, // same options as above
+      paymentType,
+    });
 
-      if (!(await checkoutComponent.isAvailable())) {
-        continue; // do not offer this payment method
-      }
-
-      // show the payment option, then mount label and widget into it
-      labelBuilder.build({ paymentType }).mount(`#${elementId}-label`);
-      await checkoutComponent.mount(`#${elementId}`);
+    if (!(await checkoutComponent.isAvailable())) {
+      continue; // do not offer this payment method
     }
+
+    // show the payment option, then mount label and widget into it
+    labelBuilder.build({ paymentType }).mount(`#${elementId}-label`);
+    await checkoutComponent.mount(`#${elementId}`);
+  }
   ```
 
 The example uses TypeScript; omit `as const` when using plain JavaScript.

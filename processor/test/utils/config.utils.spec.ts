@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { readConfiguration } from '../../src/utils/config.utils';
+import { getPaymentTypeConfig, readConfiguration } from '../../src/utils/config.utils';
+import { ECTransactionPaymentType } from '../../src/types/payment.types';
 
 describe('readConfiguration', () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -18,14 +19,19 @@ describe('readConfiguration', () => {
   ])('should use the defaults if the optional variables are %s', (_, value) => {
     process.env.BILL_PAYMENT_ENABLED = value;
     process.env.WEBSHOP_CACHE_TTL = value;
+    process.env.INSTALLMENT_PAYMENT_ENABLED = value;
     if (value === undefined) {
       delete process.env.BILL_PAYMENT_ENABLED;
       delete process.env.WEBSHOP_CACHE_TTL;
+      delete process.env.INSTALLMENT_PAYMENT_ENABLED;
     }
 
     const { easyCredit } = readConfiguration();
 
     expect(easyCredit.billPaymentEnabled).toBe('0');
+    expect(easyCredit.installmentPaymentEnabled).toBe('1');
+    expect(easyCredit.installmentPaymentExcludedProductTypes).toEqual([]);
+    expect(easyCredit.installmentPaymentExcludedCustomLineItems).toEqual([]);
     expect(easyCredit.webshopCacheTtl).toBe('300');
   });
 
@@ -33,6 +39,12 @@ describe('readConfiguration', () => {
     process.env.BILL_PAYMENT_ENABLED = value;
 
     expect(() => readConfiguration()).toThrow('InvalidBillPaymentEnabled');
+  });
+
+  it.each(['2', 'x', 'true'])('should reject INSTALLMENT_PAYMENT_ENABLED=%s', (value) => {
+    process.env.INSTALLMENT_PAYMENT_ENABLED = value;
+
+    expect(() => readConfiguration()).toThrow('InvalidInstallmentPaymentEnabled');
   });
 
   it.each(['-1', '3601', '1.5', 'abc'])('should reject WEBSHOP_CACHE_TTL=%s', (value) => {
@@ -68,9 +80,32 @@ describe('readConfiguration', () => {
   it.each([
     ['BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES', 'InvalidBillPaymentExcludedProductTypes'],
     ['BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS', 'InvalidBillPaymentExcludedCustomLineItems'],
+    ['INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES', 'InvalidInstallmentPaymentExcludedProductTypes'],
+    ['INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS', 'InvalidInstallmentPaymentExcludedCustomLineItems'],
   ])('should reject an invalid entry in %s', (name, code) => {
     process.env[name] = 'voucher,gift card';
 
     expect(() => readConfiguration()).toThrow(code);
+  });
+
+  it('should read the settings of each payment type from its own variables', () => {
+    process.env.INSTALLMENT_PAYMENT_ENABLED = '0';
+    process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'gift-card';
+    process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'gift-wrap';
+    process.env.BILL_PAYMENT_ENABLED = '1';
+    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher';
+    process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'voucher-item';
+    const { easyCredit } = readConfiguration();
+
+    expect(getPaymentTypeConfig(easyCredit, ECTransactionPaymentType.ECTransactionInstallmentPayment)).toEqual({
+      enabled: false,
+      excludedProductTypes: ['gift-card'],
+      excludedCustomLineItems: ['gift-wrap'],
+    });
+    expect(getPaymentTypeConfig(easyCredit, ECTransactionPaymentType.ECTransactionBillPayment)).toEqual({
+      enabled: true,
+      excludedProductTypes: ['voucher'],
+      excludedCustomLineItems: ['voucher-item'],
+    });
   });
 });

@@ -8,7 +8,12 @@ import {
   getSuccessTransaction,
   getTransaction,
 } from '../utils/payment.utils';
-import { CTTransactionState, CTTransactionType, PaymentTypeAvailability } from '../types/payment.types';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECTransactionPaymentType,
+  PaymentTypeAvailability,
+} from '../types/payment.types';
 
 const addressesUnmatchedError = (ecConfig: { webShopId: string }) =>
   new Errorx({
@@ -94,26 +99,39 @@ export const paymentTypeNotAvailableError = (ecConfig: { webShopId: string }) =>
     skipLog: true,
   });
 
+// The error codes keep the payment type in their name, so a storefront can tell which method was ruled out.
+const EXCLUSION_ERRORS: Record<ECTransactionPaymentType, { prefix: string; label: string }> = {
+  [ECTransactionPaymentType.ECTransactionInstallmentPayment]: {
+    prefix: 'InstallmentPayment',
+    label: 'Der easyCredit-Ratenkauf',
+  },
+  [ECTransactionPaymentType.ECTransactionBillPayment]: {
+    prefix: 'BillPayment',
+    label: 'Die Zahlung per easyCredit-Rechnung',
+  },
+};
+
 export const validatePaymentTypeAvailability = (
   amountInEur: number,
   availability: PaymentTypeAvailability,
   ecConfig: { webShopId: string },
   errors: Errorx[],
+  paymentType: ECTransactionPaymentType,
 ) => {
   if (availability.available) {
     return;
   }
 
   const { enabled, exclusion, minAmount, maxAmount } = availability;
+  const { prefix, label } = EXCLUSION_ERRORS[paymentType];
 
   // Removing the item is the actionable fix, so it takes precedence over the amount limits.
   if (exclusion === 'cartItems') {
     errors.push(
       new Errorx({
-        code: 'BillPaymentExcludedItems',
+        code: `${prefix}ExcludedItems`,
         httpErrorStatus: 400,
-        message:
-          'Die Zahlung per easyCredit-Rechnung ist für Gutscheine und andere nicht physische Artikel nicht möglich.',
+        message: `${label} ist für Gutscheine und andere nicht physische Artikel nicht möglich.`,
         fields: ecConfig,
       }),
     );
@@ -125,9 +143,9 @@ export const validatePaymentTypeAvailability = (
   if (exclusion === 'checkFailed') {
     errors.push(
       new Errorx({
-        code: 'BillPaymentCheckFailed',
+        code: `${prefix}CheckFailed`,
         httpErrorStatus: 503,
-        message: 'Die Zahlung per easyCredit-Rechnung ist derzeit nicht verfügbar.',
+        message: `${label} ist derzeit nicht verfügbar.`,
         fields: ecConfig,
       }),
     );
@@ -181,6 +199,9 @@ export const validatePrivateCustomer = (
   }
 };
 
+export const isEasyCreditPayment = (payment: Payment): boolean =>
+  payment.paymentMethodInfo?.paymentInterface?.toLowerCase() === EASYCREDIT_PAYMENT_METHOD;
+
 // validateAddresses only compares the first destination, bill payment requires all of them to match the billing address.
 export const validateShippingDestinations = (
   billingAddress: Address | undefined,
@@ -198,10 +219,7 @@ export const validateShippingDestinations = (
 };
 
 export const validatePayment = (payment: Payment) => {
-  if (
-    !payment.paymentMethodInfo?.paymentInterface ||
-    payment.paymentMethodInfo?.paymentInterface.toLowerCase() !== EASYCREDIT_PAYMENT_METHOD
-  ) {
+  if (!isEasyCreditPayment(payment)) {
     throw new Errorx({
       code: 'InvalidPaymentMethod',
       httpErrorStatus: 400,

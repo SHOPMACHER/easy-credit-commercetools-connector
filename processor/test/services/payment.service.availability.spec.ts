@@ -7,7 +7,7 @@ import { getCartById, updateCart } from '../../src/commercetools/cart.commerceto
 import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
-import { resetBillPaymentRestrictionCache } from '../../src/services/billPaymentRestriction.service';
+import { resetPaymentTypeRestrictionCache } from '../../src/services/paymentTypeRestriction.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { ECTransactionCustomerRelationship, ECTransactionPaymentType } from '../../src/types/payment.types';
@@ -108,6 +108,7 @@ const buildApp = async () => {
 };
 
 const BILL = ECTransactionPaymentType.ECTransactionBillPayment;
+const INSTALLMENT = ECTransactionPaymentType.ECTransactionInstallmentPayment;
 
 const unauthorized = () => new Errorx({ code: 'Unauthorized', message: 'Unauthorized', httpErrorStatus: 401 });
 
@@ -142,7 +143,7 @@ describe('payment type availability', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetWebshopInfoCache();
-    resetBillPaymentRestrictionCache();
+    resetPaymentTypeRestrictionCache();
     getWebshopInfoMock = jest.fn<() => Promise<unknown>>().mockResolvedValue(webshopInfo);
     createECPaymentMock = jest.fn();
     (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -367,16 +368,14 @@ describe('payment type availability', () => {
     it.each([
       ['a network error', () => new TypeError('fetch failed')],
       ['a 500 response', () => new Errorx({ code: 'Server Error', message: 'Server Error', httpErrorStatus: 500 })],
-    ])('should offer installment with the default limits on %s', async (_, error) => {
+    ])('should offer no payment type on %s', async (_, error) => {
       getWebshopInfoMock.mockRejectedValue(error());
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart(500));
 
-      const result = await handlePaymentMethod('cart123');
-
-      expect(result.paymentTypes).toEqual({
-        INSTALLMENT_PAYMENT: { enabled: true, available: true, minAmount: 200, maxAmount: 10000 },
-        BILL_PAYMENT: { enabled: false, available: false },
+      await expect(handlePaymentMethod('cart123')).rejects.toMatchObject({
+        code: 'EasyCreditUnavailable',
+        httpErrorStatus: 503,
       });
     });
 
@@ -676,8 +675,9 @@ describe('payment type availability', () => {
 
         expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
         expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
-        expect(log.info).toHaveBeenCalledWith('Bill payment is excluded for the cart items', {
+        expect(log.info).toHaveBeenCalledWith('Payment type is excluded for the cart items', {
           cartId: 'cart123',
+          paymentType: BILL,
           productTypeKeys,
           customLineItems,
         });
@@ -777,7 +777,7 @@ describe('payment type availability', () => {
         { code: 'BillPaymentCheckFailed', httpErrorStatus: 503 },
       ]);
       expect(log.error).toHaveBeenCalledWith(
-        'Failed to check the items of cart cart123 for bill payment, bill payment is not offered',
+        'Failed to check the items of cart cart123 for BILL_PAYMENT, it is not offered',
         expect.any(Error),
       );
     });
@@ -791,8 +791,9 @@ describe('payment type availability', () => {
       await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
         { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
       ]);
-      expect(log.info).toHaveBeenCalledWith('Bill payment is excluded for the cart items', {
+      expect(log.info).toHaveBeenCalledWith('Payment type is excluded for the cart items', {
         cartId: 'cart123',
+        paymentType: BILL,
         productTypeKeys: [],
         customLineItems: ['voucher-item'],
       });
@@ -825,6 +826,112 @@ describe('payment type availability', () => {
       await handlePaymentMethod('cart123');
 
       expect(getProductTypesByKeys).not.toHaveBeenCalled();
+    });
+  });
+  describe('activation and exclusion per payment type', () => {
+    const originalEnv = { ...process.env };
+
+    const createPaymentOf = (paymentType?: ECTransactionPaymentType) =>
+      handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, paymentType);
+
+    const getMethodCodes = (paymentType?: ECTransactionPaymentType) =>
+      handlePaymentMethod('cart123', paymentType).then(
+        () => [],
+        (error: MultiErrorx) => error.errors.map(({ code }) => code),
+      );
+
+    beforeEach(() => {
+      jest
+        .mocked(getProductTypesByKeys)
+        .mockResolvedValue([{ id: 'pt-voucher', key: 'voucher' }] as Awaited<ReturnType<typeof getProductTypesByKeys>>);
+    });
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    it.each([
+      ['installment only', '1', '0', [], ['PaymentTypeNotAvailable']],
+      ['pay by invoice only', '0', '1', ['PaymentTypeNotAvailable'], []],
+      ['both', '1', '1', [], []],
+      ['none', '0', '0', ['PaymentTypeNotAvailable'], ['PaymentTypeNotAvailable']],
+    ])('should offer only the enabled types (%s)', async (_, installment, bill, installmentCodes, billCodes) => {
+      process.env.INSTALLMENT_PAYMENT_ENABLED = installment;
+      process.env.BILL_PAYMENT_ENABLED = bill;
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+
+      await expect(getMethodCodes(INSTALLMENT)).resolves.toEqual(installmentCodes);
+      await expect(getMethodCodes(BILL)).resolves.toEqual(billCodes);
+    });
+
+    it('should report installment as unavailable in the bill response if it is switched off', async () => {
+      process.env.INSTALLMENT_PAYMENT_ENABLED = '0';
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+
+      const result = await handlePaymentMethod('cart123', BILL);
+
+      expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(false);
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+    });
+
+    it('should not accept an installment payment server-side if it is switched off', async () => {
+      process.env.INSTALLMENT_PAYMENT_ENABLED = '0';
+      mockCreateFlow(mockCart(500));
+
+      await expect(getErrorCodes(createPaymentOf())).resolves.toEqual([
+        { code: 'PaymentTypeNotAvailable', httpErrorStatus: 400 },
+      ]);
+      expect(getCartById).not.toHaveBeenCalled();
+      expect(createECPaymentMock).not.toHaveBeenCalled();
+    });
+
+    describe('with an installment blacklist', () => {
+      beforeEach(() => {
+        process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher';
+        process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'gift-wrap';
+        delete process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES;
+        delete process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS;
+      });
+
+      it.each([
+        ['a blacklisted product type', { lineItems: [physicalItem, voucherItem] }],
+        ['a blacklisted custom line item', { lineItems: [physicalItem], customLineItems: [{ slug: 'gift-wrap' }] }],
+      ])('should exclude only installment for a cart with %s', async (_, items) => {
+        jest.mocked(getCartById).mockResolvedValue(mockCart(500, items));
+
+        const result = await handlePaymentMethod('cart123', BILL);
+
+        expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(false);
+        expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+        await expect(getErrorCodes(createPaymentOf(INSTALLMENT))).resolves.toEqual([
+          { code: 'InstallmentPaymentExcludedItems', httpErrorStatus: 400 },
+        ]);
+        expect(createECPaymentMock).not.toHaveBeenCalled();
+      });
+
+      it('should close only installment if its product types cannot be loaded', async () => {
+        jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+        jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+
+        const result = await handlePaymentMethod('cart123', BILL);
+
+        expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(false);
+        expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
+        await expect(getErrorCodes(createPaymentOf(INSTALLMENT))).resolves.toEqual([
+          { code: 'InstallmentPaymentCheckFailed', httpErrorStatus: 503 },
+        ]);
+      });
+    });
+
+    it('should exclude each type by its own list', async () => {
+      process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'gift-wrap';
+      process.env.BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS = 'voucher-item';
+      jest.mocked(getCartById).mockResolvedValue(mockCart(500, { customLineItems: [{ slug: 'voucher-item' }] }));
+
+      const result = await handlePaymentMethod('cart123');
+
+      expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
+      expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
     });
   });
 });

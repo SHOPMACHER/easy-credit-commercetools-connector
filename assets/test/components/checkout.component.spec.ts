@@ -129,7 +129,7 @@ describe('ECCheckoutComponent', () => {
     expect(mockWidget.innerHTML).toContain('easycredit-checkout'); // Check if the template is inserted
   });
 
-  it('should render the alert if easyCredit is unavailable', async () => {
+  it('should render nothing for installment if easyCredit is unavailable', async () => {
     const insertAdjacentHTML = jest.fn();
     (fetch as jest.Mock).mockImplementation(async () =>
       Promise.resolve({
@@ -152,11 +152,7 @@ describe('ECCheckoutComponent', () => {
 
     await component.mount('div');
 
-    const template = insertAdjacentHTML.mock.calls[0][1] as string;
-    expect(template).toContain('webshop-id="shop-id"');
-    expect(template).toContain(
-      'alert="easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut."',
-    );
+    expect(insertAdjacentHTML).not.toHaveBeenCalled();
   });
 
   it('should handle errors during payment method retrieval', async () => {
@@ -414,7 +410,7 @@ describe('ECCheckoutComponent', () => {
     });
   });
 
-  it('should hide installment on PaymentTypeNotAvailable but still render its widget with the alert', async () => {
+  it('should render nothing for installment on PaymentTypeNotAvailable', async () => {
     const element = { insertAdjacentHTML: jest.fn(), querySelector: jest.fn().mockReturnValue(null) };
     (findElement as jest.Mock).mockReturnValue(element);
     jest.mocked(fetch).mockResolvedValue({
@@ -429,11 +425,26 @@ describe('ECCheckoutComponent', () => {
     await expect(component.isAvailable()).resolves.toBe(false);
     await component.mount('div');
 
-    expect(importEasyCreditScript).toHaveBeenCalled();
-    expect(element.insertAdjacentHTML).toHaveBeenCalledWith(
-      'beforeend',
-      expect.stringMatching(/payment-type="INSTALLMENT"[\s\S]*alert="Not available"/),
-    );
+    expect(importEasyCreditScript).not.toHaveBeenCalled();
+    expect(element.insertAdjacentHTML).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['PaymentTypeNotAvailable', 400, false],
+    ['EasyCreditUnavailable', 503, false],
+    ['InstallmentPaymentExcludedItems', 400, true],
+    ['InvalidAmount', 400, true],
+  ])('should report installment availability on %s', async (code, statusCode, expected) => {
+    jest.mocked(fetch).mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        statusCode,
+        message: 'error',
+        errors: [{ code, message: 'error', fields: { webShopId: 'shop-id' } }],
+      }),
+    } as Response);
+
+    await expect(component.isAvailable()).resolves.toBe(expected);
   });
 
   it('should encode the cart id in the payment method request', async () => {
