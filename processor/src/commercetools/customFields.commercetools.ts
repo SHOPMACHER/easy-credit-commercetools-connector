@@ -1,17 +1,45 @@
 import { createApiRoot } from '../client/create.client';
-import { EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD } from '../utils/constant.utils';
+import {
+  EASYCREDIT_INTEREST_FIELD,
+  EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
+} from '../utils/constant.utils';
 
-const FIELD_DEFINITION = {
-  name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
-  label: {
-    en: 'EasyCredit Technical Transaction ID',
-    de: 'EasyCredit Technical Transaction ID',
+const FIELD_DEFINITIONS = [
+  {
+    name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+    label: {
+      en: 'EasyCredit Technical Transaction ID',
+      de: 'EasyCredit Technical Transaction ID',
+    },
+    required: false,
+    type: {
+      name: 'String' as const,
+    },
   },
-  required: false,
-  type: {
-    name: 'String' as const,
+  {
+    name: EASYCREDIT_INTEREST_FIELD,
+    label: {
+      en: 'EasyCredit Interest',
+      de: 'EasyCredit Zinsen',
+    },
+    required: false,
+    type: {
+      name: 'Number' as const,
+    },
   },
-};
+  {
+    name: EASYCREDIT_TOTAL_VALUE_FIELD,
+    label: {
+      en: 'EasyCredit Total Value',
+      de: 'EasyCredit Gesamtsumme',
+    },
+    required: false,
+    type: {
+      name: 'Number' as const,
+    },
+  },
+];
 
 export async function createOrUpdateTransactionCustomType(typeKey: string): Promise<void> {
   const apiRoot = createApiRoot();
@@ -37,23 +65,21 @@ export async function createOrUpdateTransactionCustomType(typeKey: string): Prom
       );
     }
 
-    const hasField = existingType.fieldDefinitions.some(
-      (field) => field.name === EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
+    const missingDefinitions = FIELD_DEFINITIONS.filter(
+      ({ name }) => !existingType.fieldDefinitions.some((field) => field.name === name),
     );
 
-    if (!hasField) {
+    if (missingDefinitions.length > 0) {
       await apiRoot
         .types()
         .withKey({ key: typeKey })
         .post({
           body: {
             version: existingType.version,
-            actions: [
-              {
-                action: 'addFieldDefinition',
-                fieldDefinition: FIELD_DEFINITION,
-              },
-            ],
+            actions: missingDefinitions.map((fieldDefinition) => ({
+              action: 'addFieldDefinition' as const,
+              fieldDefinition,
+            })),
           },
         })
         .execute();
@@ -69,7 +95,7 @@ export async function createOrUpdateTransactionCustomType(typeKey: string): Prom
             de: 'Custom type for transaction resources',
           },
           resourceTypeIds: ['transaction'],
-          fieldDefinitions: [FIELD_DEFINITION],
+          fieldDefinitions: FIELD_DEFINITIONS,
         },
       })
       .execute();

@@ -1,14 +1,18 @@
 import {
+  EASYCREDIT_BOOKING_STATUS_DONE,
+  EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
+  EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
-  EASYCREDIT_REFUND_STATUS_DONE,
-  EASYCREDIT_REFUND_STATUS_FAILED,
+  EASYCREDIT_PAYMENT_TYPE_LABELS,
+  EASYCREDIT_TOTAL_VALUE_FIELD,
   LIBRARY_NAME,
   VERSION_STRING,
 } from './constant.utils';
 import {
   CTTransactionState,
+  CTTransactionType,
   ECBooking,
   ECCreatePaymentResponse,
   ECTransaction,
@@ -19,10 +23,17 @@ import {
   PaymentResponse,
 } from '../types/payment.types';
 import { Cart, LineItem, Payment, PaymentDraft, Transaction } from '@commercetools/connect-payments-sdk';
-import { convertCentsToEur } from './app.utils';
+import { convertCentsToEur, eurToCents } from './app.utils';
 import { Address, Money } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { getCustomObjectByKey } from '../commercetools/customObject.commercetools';
-import { PaymentUpdateAction } from '@commercetools/platform-sdk';
+import { PaymentUpdateAction, TransactionDraft } from '@commercetools/platform-sdk';
+import { readConfiguration } from './config.utils';
+import { toPaymentMethod } from './payment.utils';
+import { signRedirectUrl } from './redirect.utils';
+
+// successUrl lets the cancel route send the shopper to the success page when the payment turns out to be authorized.
+const buildCancelUrl = (connectorUrl: string, paymentId: string, redirectUrl: string, successUrl: string): string =>
+  `${connectorUrl}/webhook/${paymentId}/cancel?redirectUrl=${encodeURIComponent(redirectUrl)}&successUrl=${encodeURIComponent(successUrl)}&sig=${signRedirectUrl(paymentId, redirectUrl, successUrl)}`;
 
 export const mapAddress = (address: Address) => ({
   address: [address?.streetName?.trim(), address?.streetNumber?.trim()].filter(Boolean).join(' '),
@@ -51,6 +62,7 @@ export const mapCTCartToECPayment = async (
   payment: Payment,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
 ): Promise<ECTransaction> => {
   const connectorUrl = await getCustomObjectByKey(EASYCREDIT_CONNECTOR_KEY, EASYCREDIT_CONNECTOR_URL);
 
@@ -86,24 +98,39 @@ export const mapCTCartToECPayment = async (
     },
     customerRelationship,
     redirectLinks: {
-      urlDenial: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlDenial)}`,
-      urlCancellation: `${connectorUrlWithoutSplash}/webhook/${payment.id}/cancel?redirectUrl=${encodeURIComponent(redirectLinks.urlCancellation)}`,
+      urlDenial: buildCancelUrl(
+        connectorUrlWithoutSplash,
+        payment.id,
+        redirectLinks.urlDenial,
+        redirectLinks.urlSuccess,
+      ),
+      urlCancellation: buildCancelUrl(
+        connectorUrlWithoutSplash,
+        payment.id,
+        redirectLinks.urlCancellation,
+        redirectLinks.urlSuccess,
+      ),
       urlSuccess: redirectLinks.urlSuccess,
       urlAuthorizationCallback: `${connectorUrlWithoutSplash}/webhook/${payment.id}/authorize`,
     },
-    paymentType: ECTransactionPaymentType.ECTransactionInstallmentPayment,
-    paymentSwitchPossible: false,
+    paymentType,
+    // Offering the switch to bill payment on the easyCredit page needs bill payment to be enabled here.
+    paymentSwitchPossible: readConfiguration().easyCredit.billPaymentEnabled === '1',
   };
 };
 
-export const mapCTCartToCTPayment = (cart: Cart): PaymentDraft => ({
+export const mapCTCartToCTPayment = (
+  cart: Cart,
+  paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
+): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
     centAmount: cart.totalPrice.centAmount,
   },
   paymentMethodInfo: {
     paymentInterface: EASYCREDIT_PAYMENT_METHOD,
-    method: EASYCREDIT_PAYMENT_METHOD,
+    method: toPaymentMethod(paymentType),
+    name: { de: EASYCREDIT_PAYMENT_TYPE_LABELS[paymentType] },
   },
 });
 
@@ -121,8 +148,25 @@ export const mapCreatePaymentResponse = (ecPayment: ECCreatePaymentResponse, pay
 });
 
 export const mapAmountToCTTransactionAmount = (amount: number): Money => ({
-  centAmount: Math.floor(amount * 100),
+  centAmount: eurToCents(amount),
   currencyCode: 'EUR',
+});
+
+export const mapPendingChargeTransaction = (authorization: Transaction): TransactionDraft => ({
+  type: CTTransactionType.Charge,
+  state: CTTransactionState.Pending,
+  amount: authorization.amount,
+  interactionId: authorization.interactionId,
+  timestamp: new Date().toISOString(),
+  // The interest fields belong to the Authorization transaction only.
+  custom: authorization.custom && {
+    ...authorization.custom,
+    fields: Object.fromEntries(
+      Object.entries(authorization.custom.fields).filter(
+        ([name]) => name !== EASYCREDIT_INTEREST_FIELD && name !== EASYCREDIT_TOTAL_VALUE_FIELD,
+      ),
+    ),
+  },
 });
 
 export const mapUpdateActionForRefunds = (
@@ -138,13 +182,13 @@ export const mapUpdateActionForRefunds = (
 
     if (
       ecRefund &&
-      (ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE || ecRefund.status === EASYCREDIT_REFUND_STATUS_FAILED)
+      (ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE || ecRefund.status === EASYCREDIT_BOOKING_STATUS_FAILED)
     ) {
       updateActions.push({
         action: 'changeTransactionState',
         transactionId: ctRefundTransaction.id,
         state:
-          ecRefund.status === EASYCREDIT_REFUND_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
+          ecRefund.status === EASYCREDIT_BOOKING_STATUS_DONE ? CTTransactionState.Success : CTTransactionState.Failure,
       });
     }
   }
@@ -158,4 +202,20 @@ export const getShippingAddress = (cart: Cart): Address | undefined => {
     return cart.shipping?.[0]?.shippingAddress;
   }
   return cart.shippingAddress;
+};
+
+// Every address goods go to: all shipping addresses in Multiple mode, plus the item shipping addresses that items target.
+export const getShippingDestinations = (cart: Cart): Address[] => {
+  const shippingAddresses =
+    cart.shippingMode === 'Multiple'
+      ? cart.shipping.map(({ shippingAddress }) => shippingAddress)
+      : [cart.shippingAddress];
+  const targetedKeys = new Set(
+    [...cart.lineItems, ...cart.customLineItems].flatMap(
+      ({ shippingDetails }) => shippingDetails?.targets.map(({ addressKey }) => addressKey) ?? [],
+    ),
+  );
+  const itemShippingAddresses = cart.itemShippingAddresses.filter(({ key }) => key && targetedKeys.has(key));
+
+  return [...shippingAddresses, ...itemShippingAddresses].filter((address): address is Address => Boolean(address));
 };

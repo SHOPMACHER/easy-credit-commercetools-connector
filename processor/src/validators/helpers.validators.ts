@@ -25,6 +25,16 @@ export const standardNaturalNumber = (path, message) => [
   [[required((value) => validator.isNumeric(String(value), { no_symbols: true })), message]],
 ];
 
+export const standardInteger = (path, message, options) => [
+  path,
+  [[required((value) => validator.isInt(String(value), { allow_leading_zeroes: false, ...options })), message]],
+];
+
+export const standardOneOf = (path, message, values) => [
+  path,
+  [[required((value) => validator.isIn(String(value), values)), message]],
+];
+
 export const standardKey = (path, message) => [
   path,
   [[required((value) => validator.isLength(String(value), { min: 2 }) && /^[a-zA-Z0-9-_]+$/.test(value)), message]],

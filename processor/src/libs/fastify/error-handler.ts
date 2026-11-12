@@ -19,7 +19,7 @@ function isFastifyValidationError(error: Error): error is FastifyError {
 
 export const errorHandler = (error: Error, req: FastifyRequest, reply: FastifyReply) => {
   if (isFastifyValidationError(error) && error.validation) {
-    return handleErrors(transformValidationErrors(error.validation, req), reply);
+    return handleErrors(transformValidationErrors(error.validation, getValidatedInput(error, req)), reply);
   } else if (error instanceof ErrorAuthErrorResponse) {
     return handleAuthError(error, reply);
   } else if (error instanceof Errorx) {
@@ -56,6 +56,11 @@ const handleErrors = (errorxList: Errorx[], reply: FastifyReply) => {
     errors: transformedErrors,
   };
 
+  const { retryAfterSeconds } = (errorxList[0].privateFields ?? {}) as { retryAfterSeconds?: number };
+  if (retryAfterSeconds !== undefined) {
+    reply.header('Retry-After', String(retryAfterSeconds));
+  }
+
   return reply.code(errorxList[0].httpErrorStatus).send(response);
 };
 
@@ -81,7 +86,20 @@ const transformErrorxToHTTPModel = (errors: Errorx[]): TErrorObject[] => {
   return errorObjectList;
 };
 
-const transformValidationErrors = (errors: FastifySchemaValidationError[], req: FastifyRequest): Errorx[] => {
+const getValidatedInput = (error: FastifyError, req: FastifyRequest): unknown => {
+  switch (error.validationContext) {
+    case 'querystring':
+      return req.query;
+    case 'params':
+      return req.params;
+    case 'headers':
+      return req.headers;
+    default:
+      return req.body;
+  }
+};
+
+const transformValidationErrors = (errors: FastifySchemaValidationError[], input: unknown): Errorx[] => {
   const errorxList: Errorx[] = [];
 
   for (const err of errors) {
@@ -93,7 +111,7 @@ const transformValidationErrors = (errors: FastifySchemaValidationError[], req: 
         errorxList.push(
           new ErrorInvalidField(
             getKeys(err.instancePath).join('.'),
-            getPropertyFromPath(err.instancePath, req.body),
+            getPropertyFromPath(err.instancePath, input),
             err.params.allowedValues as string,
           ),
         );
@@ -115,7 +133,7 @@ const getPropertyFromPath = (path: string, obj: any): any => {
   const keys = getKeys(path);
   let value = obj;
   for (const key of keys) {
-    value = value[key];
+    value = value?.[key];
   }
   return value;
 };

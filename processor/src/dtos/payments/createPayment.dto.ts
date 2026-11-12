@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { ECTransactionPaymentType } from '../../types/payment.types';
 
 enum CustomerStatus {
   NEW_CUSTOMER = 'NEW_CUSTOMER',
@@ -15,6 +16,7 @@ enum NegativePaymentInformation {
 
 export const CreatePaymentBodySchema = Type.Object({
   cartId: Type.String(),
+  paymentType: Type.Optional(Type.Enum(ECTransactionPaymentType)),
   redirectLinks: Type.Object({
     urlSuccess: Type.String(),
     urlCancellation: Type.String(),
