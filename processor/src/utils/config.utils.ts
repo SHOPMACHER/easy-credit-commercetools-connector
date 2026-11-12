@@ -45,6 +45,8 @@ export const readConfiguration = () => {
       installmentPaymentEnabled: withDefault(process.env.INSTALLMENT_PAYMENT_ENABLED, '1'),
       installmentPaymentExcludedProductTypes: parseList(process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES),
       installmentPaymentExcludedCustomLineItems: parseList(process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS),
+      // Host names compare lowercase, as the URL parser lowercases them.
+      redirectAllowedHosts: parseList(process.env.REDIRECT_ALLOWED_HOSTS?.toLowerCase()),
     },
   };
 

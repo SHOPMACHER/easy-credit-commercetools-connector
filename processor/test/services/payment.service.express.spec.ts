@@ -338,6 +338,61 @@ describe('express payment creation', () => {
       );
     });
 
+    it('should sign and send the links in the form that was checked', async () => {
+      mockCreateFlow(expressCart(500));
+      const links = { ...redirectLinks, urlCancellation: 'https://SHOP.example.com' };
+
+      await handleCreateExpressPayment('session-cart', links, INSTALLMENT);
+
+      const [transaction] = createECPaymentMock.mock.calls[0] as [{ redirectLinks: Record<string, string> }];
+      expect(transaction.redirectLinks.urlCancellation).toContain(
+        `redirectUrl=${encodeURIComponent('https://shop.example.com/')}`,
+      );
+      expect(transaction.redirectLinks.urlCancellation).toContain(
+        `sig=${signRedirectUrl('payment123', 'https://shop.example.com/', redirectLinks.urlSuccess)}`,
+      );
+    });
+
+    describe('with REDIRECT_ALLOWED_HOSTS', () => {
+      const foreignLinks = { ...redirectLinks, urlCancellation: 'https://evil.example.com/cart' };
+
+      beforeEach(() => {
+        process.env.REDIRECT_ALLOWED_HOSTS = 'Shop.example.com, www.shop.example.com';
+      });
+
+      afterEach(() => {
+        delete process.env.REDIRECT_ALLOWED_HOSTS;
+      });
+
+      it('should accept links on an allowed host', async () => {
+        mockCreateFlow(expressCart(500));
+
+        await expect(handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT)).resolves.toBeDefined();
+      });
+
+      it.each([
+        ['express', () => handleCreateExpressPayment('session-cart', foreignLinks, INSTALLMENT)],
+        ['regular', () => handleCreatePayment('session-cart', foreignLinks, shopRelationship)],
+        [
+          'regular with a relative link',
+          () => handleCreatePayment('session-cart', { ...redirectLinks, urlDenial: '/cart' }, shopRelationship),
+        ],
+      ])('should reject a %s link on another host before the cart is read', async (_, create) => {
+        await expect(create()).rejects.toEqual(expect.objectContaining({ code: 'InvalidField' }));
+        expect(getCartById).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should leave regular links unchecked without REDIRECT_ALLOWED_HOSTS', async () => {
+      mockCreateFlow(expressCart(500));
+
+      await handleCreatePayment('session-cart', { ...redirectLinks, urlDenial: '/cart' }, shopRelationship).catch(
+        () => undefined,
+      );
+
+      expect(getCartById).toHaveBeenCalledWith('session-cart');
+    });
+
     it('should flag the commercetools payment as express and record the placeholder', async () => {
       mockCreateFlow(expressCart(500));
 
@@ -829,6 +884,26 @@ describe('express payment creation', () => {
       [
         'a mailto urlSuccess',
         { redirectLinks: { ...redirectLinks, urlSuccess: 'mailto:shop@example.com' } },
+        'InvalidField',
+      ],
+      [
+        'a urlCancellation with a leading space',
+        { redirectLinks: { ...redirectLinks, urlCancellation: ' https://shop.example.com/cart' } },
+        'InvalidField',
+      ],
+      [
+        'a urlCancellation with backslashes',
+        { redirectLinks: { ...redirectLinks, urlCancellation: 'https:\\\\evil.example.com' } },
+        'InvalidField',
+      ],
+      [
+        'a urlDenial with a tab in the host',
+        { redirectLinks: { ...redirectLinks, urlDenial: 'https://shop.example.com\t.evil.example.com/' } },
+        'InvalidField',
+      ],
+      [
+        'a urlDenial with a control character',
+        { redirectLinks: { ...redirectLinks, urlDenial: 'https://shop.example.com/cart\u0001' } },
         'InvalidField',
       ],
     ])('should answer 400 for %s before the cart is read', async (_, payload, code) => {

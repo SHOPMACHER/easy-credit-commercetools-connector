@@ -231,6 +231,25 @@ describe('express payment lifecycle', () => {
       expect(updateCart).not.toHaveBeenCalled();
     });
 
+    it('should keep the cart frozen for an authorized attempt on it', async () => {
+      const authorized = { ...buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Success'), id: 'payment-authorized' };
+      jest
+        .mocked(getPaymentById)
+        .mockImplementation(
+          async (id) =>
+            (id === authorized.id
+              ? authorized
+              : buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure')) as unknown as Awaited<
+              ReturnType<typeof getPaymentById>
+            >,
+        );
+      givenCart(buildCart({ paymentInfo: { payments: [{ id: PAYMENT_ID }, { id: authorized.id }] } }));
+
+      await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+      expect(updateCart).not.toHaveBeenCalled();
+    });
+
     it('should still answer when the release for an already failed attempt fails', async () => {
       givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
       givenCart(buildCart());
@@ -376,81 +395,145 @@ describe('express payment lifecycle', () => {
       jest.mocked(getCartById).mockResolvedValue(abandonedCart());
     });
 
-    it('should end the attempt and remove the placeholder before the payment method check', async () => {
-      givenPayment(buildPayment());
-      client.getPayment.mockResolvedValue({ status: 'OPEN' });
+    const SESSION = 'cart-1';
+    const goneError = new Errorx({ code: 'NotFound', message: 'gone', httpErrorStatus: 410 });
 
-      await handlePaymentMethod('cart-1').catch(() => undefined);
+    describe('payment method check', () => {
+      it.each([
+        ['DECLINED', () => client.getPayment.mockResolvedValue({ status: 'DECLINED' })],
+        ['EXPIRED', () => client.getPayment.mockResolvedValue({ status: 'EXPIRED' })],
+        ['gone at easyCredit', () => client.getPayment.mockRejectedValue(goneError)],
+      ])('should end an attempt that is %s and remove the placeholder', async (_, givenStatus) => {
+        givenPayment(buildPayment());
+        givenStatus();
 
-      expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
-      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+        expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
+        expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+      });
+
+      it.each(['OPEN', 'PREAUTHORIZED', 'AUTHORIZED'])(
+        'should keep an attempt that is %s at easyCredit, so the shopper can still finish it',
+        async (status) => {
+          givenPayment(buildPayment());
+          client.getPayment.mockResolvedValue({ status });
+
+          await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+          expect(updatePayment).not.toHaveBeenCalled();
+          expect(updateCart).not.toHaveBeenCalled();
+        },
+      );
+
+      it('should keep the attempt when easyCredit cannot be asked', async () => {
+        givenPayment(buildPayment());
+        client.getPayment.mockRejectedValue(new Errorx({ code: 'Unavailable', message: 'down', httpErrorStatus: 503 }));
+
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
+
+      it('should keep a Pending attempt', async () => {
+        givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending'));
+
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+        expect(client.getPayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
+
+      it('should only detach an attempt that has already failed', async () => {
+        givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+        expect(client.getPayment).not.toHaveBeenCalled();
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+      });
+
+      it('should leave a country-only address the shop set itself', async () => {
+        givenPayment(buildPayment({ easyCreditExpress: true, easyCreditExpressPlaceholderAddress: false }));
+
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId: SESSION }).catch(() => undefined);
+
+        expect(client.getPayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['another session', 'cart-other'],
+        ['no session cart', undefined],
+      ])('should not touch a cart of %s', async (_, sessionCartId) => {
+        givenPayment(buildPayment());
+        client.getPayment.mockResolvedValue({ status: 'DECLINED' });
+
+        await handlePaymentMethod('cart-1', undefined, { sessionCartId }).catch(() => undefined);
+
+        expect(getPaymentById).not.toHaveBeenCalled();
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
     });
 
-    it('should end the attempt before a regular create', async () => {
-      givenPayment(buildPayment());
-      client.getPayment.mockResolvedValue({ status: 'OPEN' });
+    describe('create', () => {
+      it.each(['OPEN', 'DECLINED'])('should end an attempt that is %s before a regular create', async (status) => {
+        givenPayment(buildPayment());
+        client.getPayment.mockResolvedValue({ status });
 
-      await handleCreatePayment('cart-1', regularLinks, shopRelationship).catch(() => undefined);
+        await handleCreatePayment('cart-1', regularLinks, shopRelationship, undefined, SESSION).catch(() => undefined);
 
-      expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
-      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
-    });
+        expect(updatePayment).toHaveBeenCalledWith(expect.anything(), failureWrite);
+        expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
+      });
 
-    it('should only detach an attempt that has already failed', async () => {
-      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Failure'));
+      it.each(['PREAUTHORIZED', 'AUTHORIZED'])(
+        'should refuse a regular create while the attempt is %s, without writes',
+        async (status) => {
+          givenPayment(buildPayment());
+          client.getPayment.mockResolvedValue({ status });
 
-      await handlePaymentMethod('cart-1').catch(() => undefined);
+          await expect(
+            getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship, undefined, SESSION)),
+          ).resolves.toEqual(['PaymentInProgress']);
 
-      expect(client.getPayment).not.toHaveBeenCalled();
-      expect(updatePayment).not.toHaveBeenCalled();
-      expect(updateCart).toHaveBeenCalledWith(abandonedCart(), removeAbandoned);
-    });
+          expect(updatePayment).not.toHaveBeenCalled();
+          expect(updateCart).not.toHaveBeenCalled();
+        },
+      );
 
-    it('should refuse a regular create while easyCredit may still authorize the attempt', async () => {
-      givenPayment(buildPayment());
-      client.getPayment.mockResolvedValue({ status: 'AUTHORIZED' });
+      it('should refuse a regular create when the attempt moved on before it could be ended', async () => {
+        jest
+          .mocked(getPaymentById)
+          .mockResolvedValueOnce(buildPayment() as unknown as Awaited<ReturnType<typeof getPaymentById>>)
+          .mockResolvedValue(
+            buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending') as unknown as Awaited<ReturnType<typeof getPaymentById>>,
+          );
+        client.getPayment.mockResolvedValue({ status: 'OPEN' });
 
-      await expect(getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship))).resolves.toEqual([
-        'PaymentInProgress',
-      ]);
+        await expect(
+          getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship, undefined, SESSION)),
+        ).resolves.toEqual(['PaymentInProgress']);
 
-      expect(updatePayment).not.toHaveBeenCalled();
-      expect(updateCart).not.toHaveBeenCalled();
-    });
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
 
-    it('should refuse a regular create when the attempt moved on before it could be ended', async () => {
-      jest
-        .mocked(getPaymentById)
-        .mockResolvedValueOnce(buildPayment() as unknown as Awaited<ReturnType<typeof getPaymentById>>)
-        .mockResolvedValue(
-          buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending') as unknown as Awaited<ReturnType<typeof getPaymentById>>,
+      it('should not end the attempt of a cart that is not the session cart', async () => {
+        givenPayment(buildPayment());
+        client.getPayment.mockResolvedValue({ status: 'OPEN' });
+
+        const codes = await getErrorCodes(
+          handleCreatePayment('cart-1', regularLinks, shopRelationship, undefined, 'cart-other'),
         );
-      client.getPayment.mockResolvedValue({ status: 'OPEN' });
 
-      await expect(getErrorCodes(handleCreatePayment('cart-1', regularLinks, shopRelationship))).resolves.toEqual([
-        'PaymentInProgress',
-      ]);
-
-      expect(updatePayment).not.toHaveBeenCalled();
-      expect(updateCart).not.toHaveBeenCalled();
-    });
-
-    it('should keep the attempt in the payment method check while easyCredit may still authorize it', async () => {
-      givenPayment(buildPayment(EXPRESS_WITH_PLACEHOLDER, 'Pending'));
-
-      await handlePaymentMethod('cart-1').catch(() => undefined);
-
-      expect(updatePayment).not.toHaveBeenCalled();
-      expect(updateCart).not.toHaveBeenCalled();
-    });
-
-    it('should leave a country-only address the shop set itself', async () => {
-      givenPayment(buildPayment({ easyCreditExpress: true, easyCreditExpressPlaceholderAddress: false }));
-
-      await handlePaymentMethod('cart-1').catch(() => undefined);
-
-      expect(client.getPayment).not.toHaveBeenCalled();
-      expect(updateCart).not.toHaveBeenCalled();
+        expect(codes).not.toContain('PaymentInProgress');
+        expect(updatePayment).not.toHaveBeenCalled();
+        expect(updateCart).not.toHaveBeenCalled();
+      });
     });
 
     it('should not touch the cart in the express payment method check', async () => {
