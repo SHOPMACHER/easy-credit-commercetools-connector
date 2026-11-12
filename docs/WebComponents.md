@@ -80,6 +80,7 @@ This guide provides instructions on how to integrate and display the connector's
   ```
 
 - By doing this, the component will make API calls to the connector to check whether the widget can be displayed or not, if it is able to be displayed, the result will be like the image below: ![EasyCredit Widget](./assets/easycredit-widget.png)
+- `GET /operations/widget-enabled` needs no checkout session, so the widget also works on product pages for shoppers without a cart.
 
 #### Pay by invoice in the widget
 
