@@ -1246,13 +1246,14 @@ const sendCapture = async (
   }
 };
 
-// easyCredit answers 409 to any capture after a failed one, so only the merchant portal can capture the payment.
+// Like easyCredit's Shopware plugin, no capture is sent after a failed one: its 409 cannot tell a refusal from a
+// duplicate. That 409 is verified only for an expired transaction.
 const captureBookingFailedError = (booking: ECBooking): Errorx =>
   new Errorx({
     code: 'CaptureBookingFailed',
     message:
-      'easyCredit failed the capture of this payment and accepts no further capture. ' +
-      'Report the capture in the easyCredit merchant portal.',
+      'easyCredit failed the capture of this payment, so no further capture is sent. ' +
+      'Check the transaction in the easyCredit merchant portal.',
     httpErrorStatus: 400,
     ...(booking.message?.messageEN && { fields: { reason: booking.message.messageEN } }),
   });

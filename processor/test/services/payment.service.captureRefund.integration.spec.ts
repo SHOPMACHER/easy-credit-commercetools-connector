@@ -347,6 +347,46 @@ describe('capture and refund against the commercetools and easyCredit APIs behin
       expect(charges().map(({ state }) => state)).toEqual(['Failure']);
       expect(requests('/capture')).toHaveLength(1);
     });
+
+    describe('after the Charge was set to Failure', () => {
+      beforeEach(() => {
+        seed({ id: 'charge-1', type: 'Charge', state: 'Failure', interactionId: EC_TX_ID, timestamp: minutesAgo(5) });
+        capturesTaken = 1;
+        ecStatus = 'REPORT_CAPTURE_FAILED';
+        bookings = [failed];
+      });
+
+      it('keeps it on a further FAILED notification and answers 400 to every later capture', async () => {
+        await handleEasyCreditNotification(EC_TX_ID);
+
+        await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'CaptureBookingFailed' });
+        await expect(handleCapturePayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'CaptureBookingFailed' });
+
+        expect(charges().map(({ state }) => state)).toEqual(['Failure']);
+        expect(requests('/capture')).toHaveLength(0);
+      });
+
+      it('answers 204 without calling easyCredit once a Success Charge was added by hand', async () => {
+        stored().transactions.push({ id: 'charge-manual', type: 'Charge', state: 'Success' });
+
+        await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+
+        expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Success']);
+        expect(fetchSpy.mock.calls.filter(([url]) => !String(url).includes('commercetools'))).toHaveLength(0);
+      });
+
+      // Unverified whether a capture made in the merchant portal creates such a booking.
+      it('adds a Success Charge when a notification brings a later DONE capture booking', async () => {
+        ecStatus = 'IN_BILLING';
+        bookings = [failed, captureBooking('DONE', new Date().toISOString(), 'capture-done')];
+
+        await handleEasyCreditNotification(EC_TX_ID);
+        await expect(handleCapturePayment(PAYMENT_ID)).resolves.toBeUndefined();
+
+        expect(charges().map(({ state }) => state)).toEqual(['Failure', 'Success']);
+        expect(requests('/capture')).toHaveLength(0);
+      });
+    });
   });
 
   describe('a capture request that times out after easyCredit took the capture', () => {
