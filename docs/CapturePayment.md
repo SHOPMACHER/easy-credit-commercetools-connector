@@ -192,6 +192,6 @@ After EC fails the capture booking of a payment, commercetools shows this:
 
 Check the transaction in the EC merchant portal. An expired transaction cannot be captured, through the API or in the portal.
 
-Do not capture the payment in the EC merchant portal. A portal capture is not supported, see [Overview](#overview). The connector reads only capture bookings with `bookingType` `ApiBooking` and `type` `CAPTURE`, so it possibly does not record a portal capture.
+A capture in the EC merchant portal is not supported, see [Overview](#overview).
 
 If a capture was made outside the connector, you must record it by hand. Add a `Charge` in state `Success` with the commercetools API (`addTransaction`). Capture requests then return `204` and do not call EC (condition 3). The `Failure` `Charge` stays as it is.

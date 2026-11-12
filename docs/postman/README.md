@@ -38,7 +38,7 @@ Fill in these variables in the environment before you start:
 | `client_id`, `client_secret` | The commercetools API client for the requests. |
 | `project-key` | The key of your commercetools project. Request 1.1 overwrites it with the project key from the scope of the token. |
 | `auth_url`, `session_url` | The commercetools Auth and Session API URLs. The defaults are for the region `europe-west1` (GCP). Change them if your project is in another region. |
-| `checkout_application_key` | Optional. The key of a Checkout application. The connector does not need commercetools Checkout. You can keep the placeholder value, see [Checkout application](../CommercetoolsFrontendIntegration.md#checkout-application). |
+| `checkout_application_key` | Optional. The key of a Checkout application. The connector does not need commercetools Checkout. You can keep the placeholder value. With commercetools Checkout enabled, set your real Checkout application key. See [Checkout application](../CommercetoolsFrontendIntegration.md#checkout-application). |
 | `cart_id` | The ID of a cart that you create yourself. See below. |
 
 The requests set these variables. Do not fill them in: `ctp_access_token`, `ctp_session_id` and `payment_id`.

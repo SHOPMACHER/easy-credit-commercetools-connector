@@ -191,9 +191,9 @@ The browser gets the two connector URLs through the action `project/getEasyCredi
 
 ### Checkout application
 
-The connector does not need commercetools Checkout. It does not need to be enabled in your project. The Session API body can contain the key of a Checkout application in `metadata.applicationKey`. This key is optional for this connector. Neither the Session API nor the processor checks it: in a project where commercetools Checkout is not enabled, the Session API created a session with an unknown key and a session with no key, and the processor accepted the two sessions. The processor does not read the session metadata. It checks only that the session is `ACTIVE` and has a cart.
+In a project where commercetools Checkout is not enabled, the connector does not need commercetools Checkout, and the key of a Checkout application (`metadata.applicationKey` in the Session API body) is optional. In such a project, the Session API created a session with an unknown key and a session with no key, and the processor accepted the two sessions. The processor does not read the session metadata. It checks only that the session is `ACTIVE` and has a cart.
 
-If your shop also uses commercetools Checkout, you can send the key of your Application. See [Connectors and Applications](https://docs.commercetools.com/checkout/connectors-and-applications#applications).
+If commercetools Checkout is enabled in your project, the Session API can check the key. This case is not tested. Your shop should then send the key of its real Checkout application. See [Connectors and Applications](https://docs.commercetools.com/checkout/connectors-and-applications#applications).
 
 ### BFF API client
 
@@ -225,7 +225,7 @@ export type EasyCreditBffConfig = {
   apiUrl: string; // for example https://api.<region>.commercetools.com
   sessionUrl: string; // for example https://session.<region>.commercetools.com
   projectKey: string;
-  checkoutApplicationKey: string;
+  checkoutApplicationKey?: string;
   clientId: string;
   clientSecret: string;
 };
@@ -407,7 +407,7 @@ async function createCheckoutSession(config: EasyCreditBffConfig, cartId: string
     headers: { Authorization: `Bearer ${await getBffToken(config)}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       cart: { cartRef: { id: cartId } },
-      metadata: { applicationKey: config.checkoutApplicationKey },
+      ...(config.checkoutApplicationKey && { metadata: { applicationKey: config.checkoutApplicationKey } }),
     }),
   });
 
@@ -914,7 +914,7 @@ In one `placeEasyCreditOrder` loop, the browser calls the BFF action again only 
 - The first processor call has not written `Pending` yet. The transaction is `Initial` until the authorization request of that call is complete.
 - The first call returned `502` or `504 AuthorizationFailed`. The transaction stays `Initial`.
 
-The [easyCredit API definition](https://ratenkauf.easycredit.de/api/payment/v3/openapi) lists the answers `202`, `400`, `401`, `403` and `409` for the authorization request. In the sandbox, easyCredit refused a second request for a transaction that it had already confirmed. The answer was `404` (`CONSTRAINT_VIOLATION`), and easyCredit authorized the transaction only once. The answer to a second request while easyCredit still processes the first request is not tested. If easyCredit answers with a `4xx`, the shopper sees an error. But the first request can still authorize the payment. Then the payment is authorized and no order exists. The order recovery job finds this payment and creates the order.
+The [easyCredit API definition](https://ratenkauf.easycredit.de/api/payment/v3/openapi) lists the answers `202`, `400`, `401`, `403` and `409` for the authorization request. In the sandbox, easyCredit answered `404` (`CONSTRAINT_VIOLATION`) to a second request about 1 s after the first request got `202`. easyCredit authorized the transaction once. The answer to a second request while easyCredit still processes the first request is not tested. If easyCredit answers with a `4xx`, the shopper sees an error. But the first request can still authorize the payment. Then the payment is authorized and no order exists. The order recovery job finds this payment and creates the order.
 
 <br />
 
