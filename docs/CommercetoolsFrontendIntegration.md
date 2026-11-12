@@ -131,7 +131,7 @@ The integration uses three commercetools API clients. Do not mix them up:
 
 Deploy the connector with commercetools Connect, see [Deploy and upgrade](../README.md#deploy-and-upgrade). You set the variables of the processor in the deployment. [connect.yaml](../connect.yaml) defines them. You must set at least `CTP_PROJECT_KEY`, `CTP_CLIENT_ID`, `CTP_CLIENT_SECRET`, `CTP_SCOPES`, `WEBSHOP_ID` and `API_PASSWORD`. `CTP_SESSION_URL` and `WIDGET_ENABLED` are also required, but they have defaults. Keep the defaults, unless your shop needs different values. For pay by invoice, also set `BILL_PAYMENT_ENABLED=1`. The [processor README](../processor/README.md#configure-processor-settings) lists all variables with example values, also the variables that control the payment methods. [Get Payment Method](./GetPaymentMethod.md#payment-type-availability) gives the full availability rules and limits.
 
-The deployment has two applications: `processor` (its URL is the processor URL) and `assets` (its URL is the asset URL). To find the application URLs, read the deployment with [Get Deployment](https://docs.commercetools.com/connect/deployments#get-deployment). For the `processor` application (a service application), read its URL from `applications[*].url`. The commercetools documentation describes `url` only for service applications. It does not describe the URL of an `assets` application. Look for it in the same response. If it is not there, open the Connect deployment in the Merchant Center or ask commercetools support. The post-deploy script also stores the processor URL in the custom object with the container `easycredit-connector` and the key `easycredit-connector-url`.
+The deployment has two applications: `processor` (its URL is the processor URL) and `assets` (its URL is the asset URL). To find the application URLs, read the deployment with [Get Deployment](https://docs.commercetools.com/connect/deployments#get-deployment). Read the two URLs from `applications[*].url` of the response. The response has a `url` for the `processor` application and for the `assets` application. The post-deploy script also stores the processor URL in the custom object with the container `easycredit-connector` and the key `easycredit-connector-url`.
 
 commercetools Connect serves the asset application. The connector does not set its HTTP headers, and the commercetools documentation does not describe its CORS headers. An `import()` from another origin needs CORS headers. A classic `<script>` element does not. Before you go live, do these checks on the domain of your storefront:
 
@@ -166,7 +166,7 @@ The shop needs the processor URL and the asset URL of the deployed connector. Th
 | `EASYCREDIT_BFF_CLIENT_ID`, `EASYCREDIT_BFF_CLIENT_SECRET` | BFF API client |
 | `EASYCREDIT_CT_AUTH_URL`, `EASYCREDIT_CT_API_URL`, `EASYCREDIT_CT_PROJECT_KEY` | commercetools auth URL, API URL and project key |
 | `EASYCREDIT_CT_SESSION_URL` | commercetools Session API URL |
-| `EASYCREDIT_CHECKOUT_APPLICATION_KEY` | key of the Checkout application |
+| `EASYCREDIT_CHECKOUT_APPLICATION_KEY` | key of a Checkout application (optional) |
 
 Add the keys to the project schema in the Studio, then enter the values for each Studio environment. See [Manage project configuration](https://docs.commercetools.com/frontend-development/api-hub-configuration). This example shows the two connector URLs and the client secret:
 
@@ -191,9 +191,9 @@ The browser gets the two connector URLs through the action `project/getEasyCredi
 
 ### Checkout application
 
-A checkout session needs the key of a Checkout application. An Application is a configuration of commercetools Checkout, for example for a country or a brand. Install the connector first, because the commercetools documentation says that you must install a connector before you create an Application. Then create the Application in the Merchant Center under **Checkout > Add application**, and set its key. See [Connectors and Applications](https://docs.commercetools.com/checkout/connectors-and-applications#applications).
+The connector does not need commercetools Checkout. It does not need to be enabled in your project. The Session API body can contain the key of a Checkout application in `metadata.applicationKey`. This key is optional for this connector. Neither the Session API nor the processor checks it: in a project where commercetools Checkout is not enabled, the Session API created a session with an unknown key and a session with no key, and the processor accepted the two sessions. The processor does not read the session metadata. It checks only that the session is `ACTIVE` and has a cart.
 
-The processor does not read the session metadata of the Application (payment methods, processor URL). It checks only that the session is `ACTIVE` and has a cart. Before you go live, create a session with your Application key and make sure that the processor accepts it. For example, run the requests 1.2 and 2.2 of the [API collection](./postman/README.md).
+If your shop also uses commercetools Checkout, you can send the key of your Application. See [Connectors and Applications](https://docs.commercetools.com/checkout/connectors-and-applications#applications).
 
 ### BFF API client
 
@@ -384,7 +384,7 @@ The checkout component and the summary component send the checkout session ID in
 
 `GET /operations/widget-enabled` needs no session. It returns only `isEnabled`, `webShopId` and `paymentTypes`. The widget and the label component use only this endpoint.
 
-The BFF creates the session with the commercetools Session API: `POST https://session.<region>.commercetools.com/<projectKey>/sessions`. The body contains the cart ID (`cart.cartRef.id`) and the key of the Checkout application (`metadata.applicationKey`). The token needs the scope `manage_sessions`. The response contains the session `id` and `expiryAt`. See [Create Checkout Sessions](https://docs.commercetools.com/checkout/installing-checkout#create-checkout-sessions).
+The BFF creates the session with the commercetools Session API: `POST https://session.<region>.commercetools.com/<projectKey>/sessions`. The body contains the cart ID (`cart.cartRef.id`). The key of a Checkout application (`metadata.applicationKey`) is optional, see [Checkout application](#checkout-application). The token needs the scope `manage_sessions`. The response contains the session `id` and `expiryAt`. See [Create Checkout Sessions](https://docs.commercetools.com/checkout/installing-checkout#create-checkout-sessions).
 
 A session belongs to one cart and has an expiry time (`expiryAt`). The action below keeps the session ID in the Frontend session data. It creates a new session if the cart ID changes or the session expires. The browser gets only the session ID.
 
@@ -914,7 +914,7 @@ In one `placeEasyCreditOrder` loop, the browser calls the BFF action again only 
 - The first processor call has not written `Pending` yet. The transaction is `Initial` until the authorization request of that call is complete.
 - The first call returned `502` or `504 AuthorizationFailed`. The transaction stays `Initial`.
 
-The [easyCredit API definition](https://ratenkauf.easycredit.de/api/payment/v3/openapi) lists the answers `202`, `400`, `401`, `403` and `409` for the authorization request. It does not tell which answer a second request gets. If easyCredit answers with a `4xx`, the shopper sees an error. But the first request can still authorize the payment. Then the payment is authorized and no order exists. The order recovery job finds this payment and creates the order.
+The [easyCredit API definition](https://ratenkauf.easycredit.de/api/payment/v3/openapi) lists the answers `202`, `400`, `401`, `403` and `409` for the authorization request. In the sandbox, easyCredit refused a second request for a transaction that it had already confirmed. The answer was `404` (`CONSTRAINT_VIOLATION`), and easyCredit authorized the transaction only once. The answer to a second request while easyCredit still processes the first request is not tested. If easyCredit answers with a `4xx`, the shopper sees an error. But the first request can still authorize the payment. Then the payment is authorized and no order exists. The order recovery job finds this payment and creates the order.
 
 <br />
 
@@ -934,7 +934,7 @@ paymentMethodInfo(paymentInterface="easycredit") and transactions(type="Authoriz
 paymentMethodInfo(paymentInterface="easycredit") and transactions(type="Authorization" and state="Initial") and lastModifiedAt < "<now minus 24 hours>" and createdAt > "<go-live time>"
 ```
 
-Test the query predicates against your project before you run the job.
+A check against a commercetools project gave these results. The `Success` and `Initial` predicates found the same payments as a full filter of all payments. The API accepted the `Pending` predicate, but the project had no `Pending` payment, so the check covered only its syntax. The cart predicate `paymentInfo(payments(id="<paymentId>"))` found the cart. You should also test the predicates against your project before you run the job.
 
 `lastModifiedAt` changes with each update of the payment. Thus the job does not take a payment that the checkout updated a short time ago. The lower limit of 24 hours keeps the `Success` query small. The connector writes `paymentInterface` `easycredit` in lowercase.
 
@@ -1073,6 +1073,8 @@ Capture the payment when the order ships. Call `POST /payments/:paymentId/captur
 
 Use the payment from [Find the used payment](#find-the-used-payment). See [Capture Payment](./CapturePayment.md).
 
+You must capture only through the connector. A capture in the easyCredit merchant portal is not supported, see [Capture Payment](./CapturePayment.md#overview).
+
 The connector captures a payment only once, see [Capture Payment](./CapturePayment.md#conditions), condition 3. The capture has no amount, see [Capture Payment](./CapturePayment.md#workflow), step 5. For a split shipment, decide when your shop reports the shipment, for example with the first or with the last parcel. If you do not ship a part of the order, refund that part.
 
 Take `trackingNumber` from the delivery data of your shop, for example the parcel tracking number from your carrier or fulfilment system. With a split shipment, send the tracking number of the parcel that you report.
@@ -1100,7 +1102,7 @@ The body is `{ "amount": number }` in EUR major units. After a timeout, do not s
 3. The notification URL of the live processor is registered for the live webshop ID, see [Notification URL](#notification-url).
 4. The Studio configuration of the live environment has the live processor URL and asset URL.
 5. The enabler loads on your live domain without CORS or CSP errors, see [Connector deployment](#connector-deployment).
-6. The processor accepts a session with your Checkout application key, see [Checkout application](#checkout-application).
+6. The processor accepts a session that your BFF creates, see [Checkout session](#checkout-session).
 7. The back-office API client has a scope for capture and refund, see [Back-office API client](#back-office-api-client).
 8. The order recovery job runs with its lower time limit, and its alerts reach your team.
 9. In the test deployment, one order for each payment type that you offer completed: authorize, capture and refund.

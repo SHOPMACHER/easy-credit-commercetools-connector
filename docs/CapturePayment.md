@@ -11,6 +11,8 @@ For the terms in this document (EC, CT, easyCredit status values, cart freeze), 
 This API captures an EC payment. It uses the CT `paymentId`. It works for `INSTALLMENT_PAYMENT` and `BILL_PAYMENT` payments.
 
 For pay by invoice (`BILL_PAYMENT`), the capture reports the shipment to EC. The customer pays at the earliest 30 days after delivery. Request the capture when the order is shipped. The flow, the EC bookings and the notification are the same as for installment.
+
+You must capture a payment only through the connector (`POST /payments/:paymentId/capture`). A capture in the EC merchant portal is not supported. The connector possibly does not record it. Then you must add the `Charge` in commercetools by hand, see [After a failed capture](#after-a-failed-capture).
 <br />
 
 Behavior changes for existing integrations, installment included, are in the [changelog](../CHANGELOG.md#upgrade-notes).
@@ -190,10 +192,6 @@ After EC fails the capture booking of a payment, commercetools shows this:
 
 Check the transaction in the EC merchant portal. An expired transaction cannot be captured, through the API or in the portal.
 
-The EC API definition does not tell which booking a capture in the portal creates. Thus a portal capture can reach commercetools or not. The connector reads only capture bookings with `bookingType` `ApiBooking` and `type` `CAPTURE`:
+Do not capture the payment in the EC merchant portal. A portal capture is not supported, see [Overview](#overview). The connector reads only capture bookings with `bookingType` `ApiBooking` and `type` `CAPTURE`, so it possibly does not record a portal capture.
 
-- If the portal capture creates such a booking in state `DONE` and EC sends a notification, the notification adds a `Charge` in state `Success`. Later capture requests return `204`.
-- If it creates such a booking but no notification arrives, the next capture request finds the `DONE` booking and reads the EC transaction (workflow step 3). It returns `400 TransactionIsNotAuthorized`, because the transaction is no longer `AUTHORIZED`.
-- If it creates no such booking, the `FAILED` booking still decides. Capture requests keep returning `400 CaptureBookingFailed`.
-
-To record a capture that you made outside the connector, add a `Charge` in state `Success` with the commercetools API (`addTransaction`). Capture requests then return `204` and do not call EC (condition 3). The `Failure` `Charge` stays as it is.
+If a capture was made outside the connector, you must record it by hand. Add a `Charge` in state `Success` with the commercetools API (`addTransaction`). Capture requests then return `204` and do not call EC (condition 3). The `Failure` `Charge` stays as it is.

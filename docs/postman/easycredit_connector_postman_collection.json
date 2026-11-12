@@ -123,7 +123,7 @@
 								"sessions"
 							]
 						},
-						"description": "Creates a commercetools checkout session for the cart in cart_id, and saves it as ctp_session_id. The body uses the key of your Checkout application from checkout_application_key. The token needs the scope manage_sessions. See docs/CommercetoolsFrontendIntegration.md#checkout-session."
+						"description": "Creates a commercetools checkout session for the cart in cart_id, and saves it as ctp_session_id. The body can contain the key of a Checkout application from checkout_application_key. The key is optional. The token needs the scope manage_sessions. See docs/CommercetoolsFrontendIntegration.md#checkout-session."
 					},
 					"response": []
 				}

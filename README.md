@@ -62,7 +62,7 @@ For more information, see the [web components integration guide](./docs/WebCompo
 ## Prerequisite
 
 1. A commercetools Composable Commerce project.
-2. commercetools Checkout with a Checkout application. The connector uses checkout sessions, and the Session API needs the key of a Checkout application. The connector does not read the payment settings of the Application. See [Checkout application](./docs/CommercetoolsFrontendIntegration.md#checkout-application).
+2. Access to the commercetools Session API. The connector uses checkout sessions. commercetools Checkout does not need to be enabled, and the key of a Checkout application is optional. See [Checkout application](./docs/CommercetoolsFrontendIntegration.md#checkout-application).
 3. An [easyCredit partner account](https://www.easycredit.de/) with a webshop ID and an API password. easyCredit must activate the payment methods that you offer.
 
 The [commercetools Frontend integration guide](./docs/CommercetoolsFrontendIntegration.md#configuration) gives the configuration steps for the connector and for your frontend.
@@ -82,7 +82,7 @@ You can install the connector in two ways:
 Then do these steps:
 
 1. During the installation, enter the configuration of the `processor` application. You must set `CTP_PROJECT_KEY`, `CTP_CLIENT_ID`, `CTP_CLIENT_SECRET`, `CTP_SCOPES`, `WEBSHOP_ID` and `API_PASSWORD`. The `CTP_*` URLs have defaults for the region `europe-west1.gcp`. `CTP_SESSION_URL` and `WIDGET_ENABLED` are also required, but they have defaults. Keep the defaults, unless your shop needs different values. For all variables and example values, see the [processor README](./processor/README.md#configure-processor-settings).
-2. Get the URLs of the two applications: `processor` (the processor URL) and `assets` (the asset URL). For how to find them, see [Connector deployment](./docs/CommercetoolsFrontendIntegration.md#connector-deployment).
+2. Get the URLs of the two applications: `processor` (the processor URL) and `assets` (the asset URL). Read them from `applications[*].url` of [Get Deployment](https://docs.commercetools.com/connect/deployments#get-deployment). See also [Connector deployment](./docs/CommercetoolsFrontendIntegration.md#connector-deployment).
 3. Register the notification URL in the easyCredit merchant portal, see [Notification URL](./docs/CommercetoolsFrontendIntegration.md#notification-url).
 4. Configure your shop, see the [commercetools Frontend integration guide](./docs/CommercetoolsFrontendIntegration.md).
 

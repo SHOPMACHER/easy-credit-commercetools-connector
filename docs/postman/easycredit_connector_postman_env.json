@@ -75,7 +75,7 @@
 			"value": "<CHECKOUT_APPLICATION_KEY>",
 			"type": "default",
 			"enabled": true,
-			"description": "Key of your commercetools Checkout application. Create it in the Merchant Center under Checkout > Add application."
+			"description": "Optional. Key of a commercetools Checkout application. The connector does not need commercetools Checkout. You can keep the placeholder value."
 		}
 	],
 	"_postman_variable_scope": "environment",
