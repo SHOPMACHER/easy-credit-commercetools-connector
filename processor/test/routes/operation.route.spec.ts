@@ -56,9 +56,11 @@ describe('test operationRoute', () => {
     });
   });
 
-  it('should call isWidgetEnabled handler', async () => {
+  it('should call isWidgetEnabled handler without a checkout session', async () => {
     (paymentSDK.sessionHeaderAuthHookFn.authenticate as unknown as jest.Mock).mockImplementation(() => {
-      return async () => {};
+      return async () => {
+        throw new Error('Session is not active');
+      };
     });
 
     const server = await setupFastify();
