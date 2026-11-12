@@ -33,7 +33,7 @@ Everything that is not listed below works as in [Create Payment](./CreatePayment
 | Private customer check (`BILL_PAYMENT`) | Business Unit and company in the addresses | Business Unit only |
 | easyCredit transaction | Sends `customer`, `invoiceAddress` and `shippingAddress` from the cart | Sends none of them |
 | `customerRelationship` | Required in the body and passed to easyCredit | Derived from commercetools, a value in the body is ignored, see [Customer relationship](#customer-relationship) |
-| Redirect links | Any string | Absolute `http` or `https` URLs without user name or password, otherwise `400 InvalidField` |
+| Redirect links | Any string, unless `REDIRECT_ALLOWED_HOSTS` is set, see [Redirect links](./CreatePayment.md#redirect-links) | Always checked, see [Redirect links](./CreatePayment.md#redirect-links) |
 | CT payment | No custom type | Payment custom type with `easyCreditExpress: true`, see [Stored express flag](#stored-express-flag) |
 | Cart freeze | See [Cart freeze](./CreatePayment.md#cart-freeze) | Same. A cart without shipping address first gets a placeholder, see [Placeholder address](#placeholder-address) |
 
@@ -41,7 +41,7 @@ The currency, the payment type availability, the limits and the [excluded cart i
 
 The amount check uses the cart total at the time of the request. Shipping costs are only known once easyCredit returns the address.
 
-`urlCancellation` and `urlDenial` are routed through the connector, which releases the cart before it redirects, see [Cancel Payment](./CancelPayment.md). The webhook link carries a signature of the target, so the connector redirects only to the link given here. `urlSuccess` is passed to easyCredit unchanged and should point to the express return page of the shop. The connector cannot check which page it is. A page that authorizes the payment without taking over the address from easyCredit gets `400 ExpressAddressMissing`, so the placeholder can never end up in an order.
+`urlCancellation` and `urlDenial` are routed through the connector, which releases the cart before it redirects, see [Cancel Payment](./CancelPayment.md). The webhook link carries a signature of the target, so the connector redirects only to the link given here. Which hosts these links may point to is only limited with `REDIRECT_ALLOWED_HOSTS`, see [Redirect links](./CreatePayment.md#redirect-links). `urlSuccess` is passed to easyCredit and should point to the express return page of the shop. The connector cannot check which page it is. A page that authorizes the payment without taking over the address from easyCredit gets `400 ExpressAddressMissing`, so the placeholder can never end up in an order.
 <br />
 
 ## Placeholder address
@@ -56,10 +56,27 @@ The cart keeps its shipping address if it no longer holds only the country (the 
 
 ### Abandoned attempt
 
-If the shopper leaves the easyCredit page without cancelling, no callback arrives and the cart stays frozen with the placeholder. The next request for the cart ends the attempt:
+If the shopper leaves the easyCredit page without cancelling, no callback arrives and the cart stays frozen with the placeholder. The next request for the cart ends the attempt once it is over:
 
 - A second express click discards it and the placeholder passes to the new attempt, see [Second express click](#second-express-click).
-- The regular [Get Payment Method](./GetPaymentMethod.md) and [Create Payment](./CreatePayment.md) end it before they check the cart: the transaction is set to `Failure`, and one cart update unfreezes the cart, removes the placeholder (and a shipping method set on it) and removes the payment from the cart. This needs an easyCredit status lookup, as for [stale attempts](./CreatePayment.md#switching-in-the-shop-checkout). If easyCredit may still authorize the attempt (`AUTHORIZED`, a `Pending` transaction, or a failed lookup), the attempt stays: Create Payment answers `400 PaymentInProgress`, Get Payment Method answers as for any cart with the placeholder.
+- The regular [Get Payment Method](./GetPaymentMethod.md) and [Create Payment](./CreatePayment.md) end it before they check the cart: the transaction is set to `Failure`, and one cart update unfreezes the cart, removes the placeholder (and a shipping method set on it) and removes the payment from the cart. They only do this for the cart of the session (`X-Session-Id`). For another `cartId` the cart is checked as it is.
+
+Whether the attempt is over depends on its state, read from easyCredit for an `Initial` transaction:
+
+| State | Get Payment Method | Create Payment |
+| --- | --- | --- |
+| `Failure` transaction, `DECLINED`, `EXPIRED`, or unknown to easyCredit (`404`, `410`) | Ends it | Ends it |
+| `OPEN`: the shopper may still be on the easyCredit page | Keeps it | Ends it, as a new checkout does for [stale attempts](./CreatePayment.md#switching-in-the-shop-checkout) |
+| `PREAUTHORIZED` (waits for the shop's authorize), `AUTHORIZED`, a `Pending` or `Success` transaction, or a failed lookup | Keeps it | `400 PaymentInProgress`, nothing is changed |
+
+A kept attempt leaves the cart as it is, so Get Payment Method reports the placeholder like any incomplete address. easyCredit expires an `OPEN` transaction about 30 minutes after the shopper's last action.
+
+easyCredit reports `PREAUTHORIZED` as soon as its decision page shows, before the shopper clicks on to the shop, so closing the tab there leaves a `PREAUTHORIZED` attempt. The shopper is not stuck with it:
+
+- Once the shop sets a real address on the cart, the placeholder is gone and Create Payment discards the attempt like any [stale attempt](./CreatePayment.md#switching-in-the-shop-checkout). The `PaymentInProgress` refusal above only applies while the placeholder is on the cart.
+- A second express click discards it too, see [Second express click](#second-express-click).
+
+Checked against the easyCredit sandbox on 2026-11-12.
 <br />
 
 ## Customer relationship
@@ -101,7 +118,7 @@ Payments created with [Create Payment](./CreatePayment.md) carry no custom type.
 
 A second express click for the same cart while the first easyCredit page is still open discards the first attempt, as described in [Switching in the shop checkout](./CreatePayment.md#switching-in-the-shop-checkout). The cart is frozen again in the same update, so a placeholder the first attempt added stays and passes to the new attempt, which removes it if it ends without an order.
 
-If the shopper then cancels in the tab of the first attempt, the cancel webhook finds a `Failure` transaction. It changes nothing and redirects to `urlCancellation`, see [Cancel Payment](./CancelPayment.md#already-failed-attempt).
+If the shopper then cancels in the tab of the first attempt, the cancel webhook finds a `Failure` transaction. It does not change the transaction and redirects to `urlCancellation`. The discarded payment is no longer on the cart, so the cart of the new attempt stays as it is, see [Cancel Payment](./CancelPayment.md#already-failed-attempt).
 <br />
 
 ## Check the payment types
@@ -155,7 +172,7 @@ Same as [Create Payment](./CreatePayment.md#success-response). The shop redirect
 | --- | --- | --- |
 | 400 | `InvalidSession` | The session has no cart. |
 | 400 | `RequiredField` | `redirectLinks` or one of its links is missing. |
-| 400 | `InvalidField` | A link is not an absolute `http` or `https` URL, or contains a user name or password. |
+| 400 | `InvalidField` | A link is not an absolute `http` or `https` URL, contains a user name or password, whitespace, a control character or a backslash, or points to a host that is not in `REDIRECT_ALLOWED_HOSTS`. |
 | 400 | `InvalidJsonInput` | The body does not match the schema in another way, for example an unknown `paymentType` or a link that is not a string. |
 | 400 | `ExpressShippingModeNotSupported` | The cart has shipping mode `Multiple`. |
 | 400 | `InvalidCurrency`, `CorporateCustomerNotAllowed`, `InvalidAmount`, `PaymentTypeNotAvailable`, `BillPaymentExcludedItems`, `TransactionNotSuccess`, `PaymentInProgress` | Same as [Create Payment](./CreatePayment.md#error-response-400). |

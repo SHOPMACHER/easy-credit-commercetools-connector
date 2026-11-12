@@ -32,7 +32,7 @@ If Easy Credit no longer finds the transaction because it expired (about 30 minu
 
 The call is idempotent: if the `Authorization` transaction is already `Failure` (for example the shopper hits the cancel link again through browser history), the connector does not change the payment and still responds with success or the redirect.
 
-After cancelling, the cart is unfrozen unless another Easy Credit payment on the same cart is still `Initial` or `Pending`. Starting a new checkout discards older `Initial` Easy Credit payments on the cart (see the create flow); it is refused while one is `Pending` or authorized at Easy Credit.
+After cancelling, the cart is unfrozen unless another Easy Credit payment on the same cart is still `Initial` or `Pending`, or is `Success` and waits for its order. Starting a new checkout discards older `Initial` Easy Credit payments on the cart (see the create flow); it is refused while one is `Pending` or authorized at Easy Credit.
 
 <br />
 
@@ -40,7 +40,7 @@ After cancelling, the cart is unfrozen unless another Easy Credit payment on the
 
 A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab), or because an earlier cancel set it but could not release the cart. The webhook does not change the transaction and answers like a successful cancel: `302` to a signed `redirectUrl`, or `200` without it.
 
-It releases the cart as in [Cart cleanup](#cart-cleanup), unless another easyCredit payment on the cart has an `Initial` or `Pending` transaction: that newer attempt holds the cart. A payment the newer attempt discarded is no longer on any cart, so nothing changes. A failing release is logged and the answer stays the same, so a retry of the cancel can release the cart.
+It releases the cart as in [Cart cleanup](#cart-cleanup), unless another easyCredit payment on the cart has an `Initial`, `Pending` or `Success` transaction: that attempt holds the cart, and an authorized one needs it frozen for its order. A payment the newer attempt discarded is no longer on any cart, so nothing changes. A failing release is logged and the answer stays the same, so a retry of the cancel can release the cart.
 
 ## Cart cleanup
 
@@ -97,7 +97,7 @@ To cancel a payment, you can make a call to the following URL.
 **HTTP Method:** `GET`  
 **URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&successUrl={{success_url}}&sig={{signature}}`  
 
-The connector builds this URL itself when it creates the payment and passes it to Easy Credit. `successUrl` is the shop's `urlSuccess`. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]` (plain, not URL-encoded URLs; `null` when there is no success URL) keyed with `API_PASSWORD`. A `redirectUrl` or `successUrl` without a valid `sig` is rejected with `400 InvalidRedirectUrl`, so the route can't be used as an open redirect.  
+The connector builds this URL itself when it creates the payment and passes it to Easy Credit. `successUrl` is the shop's `urlSuccess`. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]` (plain, not URL-encoded URLs; `null` when there is no success URL) keyed with `API_PASSWORD`. A `redirectUrl` or `successUrl` without a valid `sig` is rejected with `400 InvalidRedirectUrl`, so the route only redirects to the links of its own payment. The signature does not limit the host of these links: set `REDIRECT_ALLOWED_HOSTS`, see [Redirect links](./CreatePayment.md#redirect-links).  
 
 With a valid `redirectUrl` the shopper always lands back in the shop:
 

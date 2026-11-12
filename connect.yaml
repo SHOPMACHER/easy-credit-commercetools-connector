@@ -83,6 +83,9 @@ deployAs:
           description: Key of the custom type for payment resources, used to flag express payments. Use an existing key to share a custom type with other connectors. The post-deploy script creates the type or adds the field definitions easyCreditExpress and easyCreditExpressPlaceholderAddress if they are missing, so an existing deployment gets them by redeploying the connector. Until then the express endpoints answer 503 ExpressNotConfigured, and the regular checkout is not affected.
           required: false
           default: easy-credit-payment
+        - key: REDIRECT_ALLOWED_HOSTS
+          description: Optional comma-separated host names the shop's redirect links may point to, for example shop.example.com,www.shop.example.com. When set, Create Payment and Create Express Payment answer 400 InvalidField for links to other hosts, so the cancel webhook cannot send a shopper to another site. Recommended for production.
+          required: false
       securedConfiguration:
         - key: CTP_CLIENT_SECRET
           description: Commercetools Composable Commerce client secret
