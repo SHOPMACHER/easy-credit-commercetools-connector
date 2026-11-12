@@ -1,8 +1,12 @@
-# Triggering Refunding Easycredit Payment
+# Refund an easyCredit payment
 
-This guide provides instructions on how to trigger a Refund for an Easycredit payment from CommerceTools shop side. It works for `INSTALLMENT_PAYMENT` and `BILL_PAYMENT` payments alike, for full and partial refunds, for several refunds on the same payment and for refunds before the capture.
+For the terms in this document (EC, CT, easyCredit status values, cart freeze), see [Terms](./CommercetoolsFrontendIntegration.md#terms).
 
-Behavior changes for existing integrations, installment included, are listed in the [changelog](../CHANGELOG.md#upgrade-notes).
+This guide shows how to trigger a Refund for an easyCredit payment from the CommerceTools shop side. A refund is a back-office call. Send it from a Merchant Center custom application, your order management system or a server job. Do not send it from the storefront. It works for `INSTALLMENT_PAYMENT` and `BILL_PAYMENT` payments. It works for full and partial refunds, for several refunds on the same payment and for refunds before the capture.
+
+Behavior changes for existing integrations, installment included, are in the [changelog](../CHANGELOG.md#upgrade-notes).
+
+An order can have more than one easyCredit payment. Refund the payment with a `Success` `Authorization` transaction, see [Find the used payment](./CommercetoolsFrontendIntegration.md#find-the-used-payment).
 
 ## Table of Contents
 
@@ -13,13 +17,13 @@ Behavior changes for existing integrations, installment included, are listed in 
 
 ## API endpoint
 
-- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:
+- The endpoint `POST /payments/:paymentId/refund` triggers the Refund for an easyCredit payment. The endpoint needs:
   - Headers:
-    - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials. The token needs one of the scopes `manage_payments`, `manage_checkout_payment_intents` or `manage_project`
+    - `Authorization`: A CommerceTools access token. Get it from the CommerceTools auth endpoint with your CommerceTools credentials. The token needs one of the scopes `manage_payments`, `manage_checkout_payment_intents` or `manage_project`
   - Params:
     - `paymentId`: The CommerceTools Payment ID
   - Payload:
-    - `amount`: The amount that you want to refund
+    - `amount`: The amount to refund. It is a JSON number in EUR major units (for example `2.5` for 2 EUR 50 cent). It is not a string and not cents
 
 - Request example:
   ```
@@ -33,50 +37,52 @@ Behavior changes for existing integrations, installment included, are listed in 
 
 ## Process
 
-- When you call the endpoint, it will start to check the following conditions:
-  - The refunding amount must be greater than 0 and have at most two decimal places. This is checked first, before the payment or easyCredit is read
-  - The CommerceTools Payment must exist
-  - The CommerceTools Payment `paymentMethodInfo.paymentInterface` is `easycredit` (`400 InvalidPaymentMethod` otherwise)
-  - The CommerceTools Payment must have a transaction with type = `Authorization`, state = `Success` and a defined `interactionId`, which is the EasyCredit transaction ID (`400 InvalidPaymentTransaction` otherwise)
-  - Open refunds are settled from the easyCredit bookings, see below
-  - The refunding amount must be at most the CommerceTools Payment `amountPlanned` minus the amounts of its Refund transactions in state `Initial`, `Pending` or `Success`. A `Failure` refund does not count. Two parallel requests cannot both use the same remaining amount: the second one fails with `409` when it adds its Refund transaction
+- When you call the endpoint, it checks these conditions:
+  - The refund amount is greater than 0 and has at most two decimal places. The connector checks this first, before it reads the payment or easyCredit
+  - The CommerceTools Payment exists
+  - The CommerceTools Payment `paymentMethodInfo.paymentInterface` is `easycredit` (otherwise `400 InvalidPaymentMethod`)
+  - The CommerceTools Payment has a transaction with type = `Authorization`, state = `Success` and a defined `interactionId`. This is the easyCredit transaction ID (otherwise `400 InvalidPaymentTransaction`)
+  - The connector settles open refunds from the easyCredit bookings, see below
+  - The refund amount is at most the CommerceTools Payment `amountPlanned` minus the amounts of its Refund transactions in state `Initial`, `Pending` or `Success`. A `Failure` refund does not count. Two parallel requests cannot both use the same remaining amount: the second request fails with `409` when it adds its Refund transaction
 
-- After validating completely, the connector will first create a new transaction for the refund. The transaction will have type = `Refund`, state = `Initial` and the amount is the refunding amount
+- After all checks pass, the connector first creates a new transaction for the refund. The transaction has type = `Refund` and state = `Initial`. Its amount is the refund amount
 
-- Next, the connector will create a Refund request for this EasyCredit transaction, with the ID of the new Refund transaction as `bookingId`
+- Next, the connector creates a Refund request for this easyCredit transaction. It uses the ID of the new Refund transaction as `bookingId`
 
-- Following the [Easycredit docs](https://developer.easycredit-ratenkauf.de/documentation/dokumentation-transaction-api-v3/), a successful refund request will return 202 as status code.
-So if the connector received 202 as status code, it will update the above Initial Refund transaction, change its state to `Pending` and return `202` with the updated payment. If another request changed the payment at the same time, the state change is repeated on the latest version. If it still cannot be saved, the API returns `202` with the transaction in state `Initial`; the notification completes it as well.
+- The [easyCredit docs](https://developer.easycredit-ratenkauf.de/documentation/dokumentation-transaction-api-v3/) say that a successful refund request returns 202 as status code. If the connector receives 202, it changes the state of the `Initial` Refund transaction to `Pending`. It returns `202` with the updated payment. If another request changed the payment at the same time, the connector repeats the state change on the latest version. If the connector still cannot save it, the API returns `202` with the transaction in state `Initial`. The notification also completes it.
 
-- Once the refund transaction is added, the API always returns `202` with the payment. The state of the new Refund transaction carries the outcome of the easyCredit request, and the easyCredit error is logged:
+- After the connector adds the refund transaction, the API always returns `202` with the payment. The state of the new Refund transaction shows the result of the easyCredit request. The connector logs the easyCredit error:
 
   | easyCredit answer | Refund transaction |
   | --- | --- |
   | `202` | `Pending`, completed by the notification |
-  | `4xx`, `401` and `403` included | `Failure`. Nothing was booked, the refund can be sent again. |
-  | `5xx`, no answer within 10 seconds, not reachable, or a `2xx` other than `202` | `Pending`, because easyCredit may still book the refund. The notification completes it. |
+  | `4xx`, `401` and `403` included | `Failure`. Nothing was booked. You can send the refund again. |
+  | `5xx`, no answer within 10 seconds, not reachable, or a `2xx` other than `202` | `Pending`, because easyCredit can still book the refund. The notification completes it. |
 
-  **Do not send a `Pending` refund again**: a new request is a new refund with its own `bookingId`. Check the transaction state instead. If the `Failure` state cannot be saved, the API returns the commercetools error instead, and the refund can be sent again.
+  **Do not send a `Pending` refund again**, for example after a timeout of your request or of easyCredit. A new request is a new refund with its own `bookingId`. Read the `Refund` transactions of the payment instead. Send again only if the earlier one is `Failure`. If the connector cannot save the `Failure` state, the API returns the commercetools error instead. You can then send the refund again.
 
-- easyCredit accepts a refund of a payment that is not captured yet.
+- You can refund a payment before it is captured. easyCredit accepts the refund of a payment that is not captured yet.
 
-- If the payment has `Initial` or `Pending` refunds, each refund request first reads the easyCredit bookings, in case a notification never arrived. A refund with a `DONE` or `FAILED` booking gets `Success` or `Failure`. The remaining amount is checked after this step. If easyCredit cannot be read or sends no `bookings`, the request goes on and the refunds stay open. A capture request settles them the same way, except for a payment already captured (`Charge` in state `Success`), which returns `204` before reading, and for a payment with another `Charge`, where a failed read fails the capture, see [Capture Payment](./CapturePayment.md#workflow).
+- If the payment has `Initial` or `Pending` refunds, each refund request first reads the easyCredit bookings, in case a notification did not arrive. A refund with a `DONE` or `FAILED` booking gets `Success` or `Failure`. The connector checks the remaining amount after this step. If easyCredit cannot be read or sends no `bookings`, the request continues and the refunds stay open. A capture request settles them the same way. There are two exceptions. A payment that is already captured (`Charge` in state `Success`) returns `204` before the read. For a payment with another `Charge`, a failed read fails the capture. See [Capture Payment](./CapturePayment.md#workflow).
 
-- Only a booking completes a refund. A refund that easyCredit has no booking for stays `Initial` or `Pending`, however old it is, and its amount stays reserved: only easyCredit knows whether it booked the refund, and a booking can still turn up later. Each time a refund or capture request reads the bookings, or a notification brings a completed refund booking, such refunds are logged as a warning (`Refunds without an easyCredit booking stay open and keep their amount`, with their IDs, states and amounts). If such a refund stays open, check the transaction in the easyCredit merchant portal. If easyCredit never booked it, set the Refund transaction to `Failure` with the commercetools API (`changeTransactionState`) to free its amount. If easyCredit booked it under another `bookingId`, which earlier versions did while an older refund was still `Initial`, set it to the state of that booking.
+- Only a booking completes a refund. A refund without an easyCredit booking stays `Initial` or `Pending`, however old it is, and its amount stays reserved. Only easyCredit knows if it booked the refund, and a booking can still appear later. A refund or capture request that reads the bookings logs such refunds as a warning. A notification with a completed refund booking does the same. The log text is `Refunds without an easyCredit booking stay open and keep their amount`, with their IDs, states and amounts. If such a refund stays open, do these steps:
+  - Check the transaction in the easyCredit merchant portal.
+  - If easyCredit never booked it, set the Refund transaction to `Failure` with the commercetools API (`changeTransactionState`). This frees its amount.
+  - If easyCredit booked it under another `bookingId`, set it to the state of that booking. Earlier versions booked a refund under another `bookingId` while an older refund was still `Initial`.
 
-- Each request uses its own Refund transaction ID as easyCredit `bookingId`, also when another refund of the same payment is still `Initial` or `Pending`.
+- Each request uses its own Refund transaction ID as easyCredit `bookingId`. This is true also when another refund of the same payment is still `Initial` or `Pending`.
 
-- Then, the process of triggering the refund is done. easyCredit processes the refund asynchronously, so the connector does not wait for it. Instead, EasyCredit provides a feature to receive new notifications about the resource called [Benachrichtigungs-URL](https://developer.easycredit-ratenkauf.de/documentation/anleitung-einbindung-transaction-api-v3/#2003044967732465). Our connector also supports this feature, all you need to do is open your EasyCredit portal account, and register our endpoint: `GET /easycredit-notification`
+- The refund trigger is then complete. easyCredit processes the refund asynchronously, so the connector does not wait for it. easyCredit has a feature to send notifications about the resource: the [Benachrichtigungs-URL](https://developer.easycredit-ratenkauf.de/documentation/anleitung-einbindung-transaction-api-v3/#2003044967732465) (notification URL). The connector supports this feature. To register the URL, see [Notification URL](./CommercetoolsFrontendIntegration.md#notification-url). See also [Handling notification](#handling-notification).
 
 ## Error responses
 
 | Status | `code` | When | Refund transaction |
 | --- | --- | --- | --- |
-| `400` | `InvalidRefundAmount` | The amount is not greater than 0, has more than two decimal places, or is above the payment `amountPlanned` minus the refunds that did not fail. If the amount would fit without the open refunds, `fields.openRefunds` lists them, see [Process](#process). | none added |
-| `401` | `invalid_token` | The access token is missing or invalid, or has none of the scopes `manage_payments`, `manage_checkout_payment_intents` and `manage_project` (then `fields.validAuthorities` lists them). | none added |
+| `400` | `InvalidRefundAmount` | The amount is not greater than 0, has more than two decimal places, or is more than the payment `amountPlanned` minus the refunds that did not fail. If the amount fits without the open refunds, `fields.openRefunds` lists them, see [Process](#process). | none added |
+| `401` | `invalid_token` | The access token is missing or not valid, or has none of the scopes `manage_payments`, `manage_checkout_payment_intents` and `manage_project` (`fields.validAuthorities` then lists them). | none added |
 | `404` | `404`, with `ResourceNotFound` in `fields` | No payment exists for `paymentId`. | none added |
-| `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the refund transaction was added. Nothing was sent to easyCredit, so the refund can be sent again. | none added |
-| commercetools status | commercetools error | Saving the `Failure` state of a refund that easyCredit rejected failed. Nothing was booked, so the refund can be sent again. | `Initial` |
+| `409` | `409`, with `ConcurrentModification` in `fields` | Another request changed the payment while the connector added the refund transaction. The connector sent nothing to easyCredit, so you can send the refund again. | none added |
+| commercetools status | commercetools error | The connector could not save the `Failure` state of a refund that easyCredit rejected. Nothing was booked, so you can send the refund again. | `Initial` |
 
 ```json
 {
@@ -91,7 +97,7 @@ So if the connector received 202 as status code, it will update the above Initia
 }
 ```
 
-When the amount would fit without the open refunds:
+If the amount fits without the open refunds:
 
 ```json
 {
@@ -111,18 +117,19 @@ When the amount would fit without the open refunds:
 }
 ```
 
-easyCredit errors of the refund request are not returned as error responses, see [Process](#process).
+The API does not return easyCredit errors of the refund request as error responses. See [Process](#process).
 
 ## Handling notification
 
-- Like what we just explained above, we provide an endpoint for EasyCredit to notify us whenever a refund has been processed completely. It is `GET /easycredit-notification`
+- As explained above, the connector has an endpoint for easyCredit. easyCredit notifies the connector when it completes a refund. The endpoint is `GET /easycredit-notification`
 
-- For example, a refund just happened successfully in an EasyCredit's transaction, if you registered the above endpoint to your EasyCredit portal already, EasyCredit will notify you via that endpoint with a param in the URL, for example: `/easycredit-notification?vorgangskennung=V8RW8H`. The `V8RW8H` is EasyCredit's transaction ID. The connector reads this EasyCredit transaction and finds the CommerceTools Payment by the `bookingId` of its first completed refund booking, which is the ID of a CommerceTools Refund transaction. It then sets each `Initial` or `Pending` refund whose ID matches a completed booking to `Success` (booking `DONE`) or `Failure` (booking `FAILED`). Without a completed refund booking it looks up no payment for the refunds and changes none. If easyCredit sends the transaction without `bookings`, the notification changes nothing and answers `204`.
+- Example: a refund succeeds in an easyCredit transaction, and you registered the endpoint in your easyCredit portal. easyCredit then notifies you through that endpoint with a URL param, for example `/easycredit-notification?vorgangskennung=V8RW8H`. `V8RW8H` is the easyCredit `transactionId`, see [Terms](./CommercetoolsFrontendIntegration.md#terms). The connector does these steps:
+  - It reads this easyCredit transaction.
+  - It finds the CommerceTools Payment by the `bookingId` of the first completed refund booking. This is the ID of a CommerceTools Refund transaction.
+  - It sets each `Initial` or `Pending` refund whose ID matches a completed booking to `Success` (booking `DONE`) or `Failure` (booking `FAILED`).
+  - If there is no completed refund booking, it looks up no payment for the refunds and changes none.
+  - If easyCredit sends the transaction without `bookings`, the notification changes nothing and answers `204`.
 
-- The endpoint can also be called by hand, for example if a refund stays `Pending` because a notification did not arrive.
+- You can also call the endpoint by hand, for example if a refund stays `Pending` because a notification did not arrive.
 
-- Steps to register Notification URL:
-  - Access the [portal site](https://partner.easycredit-ratenkauf.de/portal/shopverwaltung)
-  - Go to Administration -> Shopverwaltung
-  - Click on the specific Web Shop ID, you will see the place to fill in the value for Benachrichtigungs-URL
-  - ![register notification url](./assets/notification-url.png)
+- To register the notification URL, see [Notification URL](./CommercetoolsFrontendIntegration.md#notification-url).

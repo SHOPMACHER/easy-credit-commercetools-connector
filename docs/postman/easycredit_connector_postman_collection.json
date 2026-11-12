@@ -2,89 +2,160 @@
 	"info": {
 		"_postman_id": "4735a962-821c-42f2-8484-dfaaaa6270c3",
 		"name": "Easy connector API document",
-		"description": "# 📄 Get started here\n\nThis template contains a boilerplate for documentation that you can quickly customize and reuse.\n\n## 🔖 How to use this template\n\n- Replace the content given brackets (()) with your API's details.\n- Tips are formatted in `codespan` - feel free to read and remove them.\n    \n\n---\n\n`Start with a brief overview of what your API offers.`\n\nThe ((product name)) provides many API products, tools, and resources that enable you to ((add product value here)).\n\n`You can also list the APIs you offer, link to the relevant pages, or do both in this section.`\n\n## **Getting started guide**\n\n`List the steps or points required to start using your APIs. Make sure to cover everything required to reach success with your API as quickly as possible.`\n\nTo start using the ((add APIs here)), you need to -\n\n`The points given below are from The Postman API's documentation. You can reference it to write your own getting started guide.`\n\n- You must use a valid API Key to send requests to the API endpoints. You can get your API key from Postman's [integrations dashboard](https://go.postman.co/settings/me/api-keys).\n- The API has [rate and usage limits](https://learning.postman.com/docs/developer/postman-api/postman-api-rate-limits/).\n- The API only responds to HTTPS-secured communications. Any requests sent via HTTP return an HTTP 301 redirect to the corresponding HTTPS resources.\n- The API returns request responses in JSON format. When an API request returns an error, it is sent in the JSON response as an error key.\n    \n\n## Authentication\n\n`Add details on the authorization keys/tokens required, steps that cover how to get them, and the relevant error codes.`\n\nThe ((product name)) API uses ((add your API's authorization type)) for authentication.\n\n`The details given below are from the Postman API's documentation. You can reference it to write your own authentication section.`\n\nPostman uses API keys for authentication. You can generate a Postman API key in the [API keys](https://postman.postman.co/settings/me/api-keys) section of your Postman account settings.\n\nYou must include an API key in each request to the Postman API with the X-Api-Key request header.\n\n### Authentication error response\n\nIf an API key is missing, malformed, or invalid, you will receive an HTTP 401 Unauthorized response code.\n\n## Rate and usage limits\n\n`Use this section to cover your APIs' terms of use. Include API limits, constraints, and relevant error codes, so consumers understand the permitted API usage and practices.`\n\n`The example given below is from The Postman API's documentation. Use it as a reference to write your APIs' terms of use.`\n\nAPI access rate limits apply at a per-API key basis in unit time. The limit is 300 requests per minute. Also, depending on your plan, you may have usage limits. If you exceed either limit, your request will return an HTTP 429 Too Many Requests status code.\n\nEach API response returns the following set of headers to help you identify your use status:\n\n| Header | Description |\n| --- | --- |\n| `X-RateLimit-Limit` | The maximum number of requests that the consumer is permitted to make per minute. |\n| `X-RateLimit-Remaining` | The number of requests remaining in the current rate limit window. |\n| `X-RateLimit-Reset` | The time at which the current rate limit window resets in UTC epoch seconds. |\n\n### 503 response\n\nAn HTTP `503` response from our servers indicates there is an unexpected spike in API access traffic. The server is usually operational within the next five minutes. If the outage persists or you receive any other form of an HTTP `5XX` error, [contact support](https://support.postman.com/hc/en-us/requests/new/).\n\n### **Need some help?**\n\n`Add links that customers can refer to whenever they need help.`\n\nIn case you have questions, go through our tutorials ((link to your video or help documentation here)). Or visit our FAQ page ((link to the relevant page)).\n\nOr you can check out our community forum, there’s a good chance our community has an answer for you. Visit our developer forum ((link to developer forum)) to review topics, ask questions, and learn from others.\n\n`You can also document or add links to libraries, code examples, and other resources needed to make a request.`",
+		"description": "Requests for the easyCredit connector API, version 1.1.0, with pay by invoice (BILL_PAYMENT) and pay by installments (INSTALLMENT_PAYMENT). Run the folders in this order: 1 CommerceTools, 2 Payment, 3 Webhook. For create and authorize, run one of the two variants. A run stops after the create request, because the manual step on the easyCredit page follows. Then continue with 2.6. In the Collection Runner, deselect the other variant, and deselect 3.1 when you run 2.7 to 2.10. Before you start, set the environment variables. Set connector_url to the processor URL. After the deployment, the Connect deployment shows the URL of each application, and the processor URL is the URL of the application \"processor\". The processor also stores its own URL in the custom object with the container \"easycredit-connector\" and the key \"easycredit-connector-url\". Create a cart with a line item, a German billing address, a German shipping address and an amount inside the limits of the payment type. Use your usual commercetools tooling for this. Then put the cart ID in cart_id. See docs/ in the repository for each endpoint.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "39108604",
-		"_collection_link": "https://teba-237545.postman.co/workspace/TEBA~a9284113-2099-4ce6-8b46-51603b42eafa/collection/39108604-4735a962-821c-42f2-8484-dfaaaa6270c3?action=share&source=collection_link&creator=39108604"
+		"_exporter_id": "39108604"
 	},
 	"item": [
 		{
-			"name": "Webhook",
+			"name": "1. CommerceTools",
 			"item": [
 				{
-					"name": "Cancel Payment",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel?redirectUrl=string&successUrl=string&sig=string",
-							"host": [
-								"{{connector_url}}"
-							],
-							"path": [
-								"webhook",
-								"{{payment_id}}",
-								"cancel"
-							],
-							"query": [
-								{
-									"key": "redirectUrl",
-									"value": "string",
-									"description": "The URL where the customer is redirected after successfully completing the payment cancellation."
-								},
-								{
-									"key": "successUrl",
-									"value": "string",
-									"description": "Shop success URL. The shopper is sent here when the payment is already authorized. Covered by sig."
-								},
-								{
-									"key": "sig",
-									"value": "string",
-									"description": "HMAC-SHA256 of the JSON array [paymentId, redirectUrl, successUrl] keyed with API_PASSWORD. Required when redirectUrl is set. The connector adds it to the URLs it sends to easyCredit."
-								}
-							]
+					"name": "1.1 Obtain access token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"tests[\"Status code is 200\"] = responseCode.code === 200;",
+									"var data = JSON.parse(responseBody);",
+									"if(data.access_token){",
+									"    pm.environment.set(\"ctp_access_token\", data.access_token);",
+									"}",
+									"if (data.scope) {",
+									"    parts = data.scope.split(\" \");",
+									"    parts = parts.filter(scope => scope.includes(\":\")).map(scope => scope.split(\":\"))",
+									"    if (parts.length > 0) {",
+									"        scopeParts = parts[0];",
+									"        pm.environment.set(\"project-key\", scopeParts[1]);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
 						}
-					},
-					"response": []
-				}
-			],
-			"description": "The `/collections` endpoints let you manage your [collections](https://learning.postman.com/docs/sending-requests/intro-to-collections/)."
-		},
-		{
-			"name": "Payment",
-			"item": [
-				{
-					"name": "Get EasyCredit Transaction (Payment)",
+					],
 					"request": {
 						"auth": {
-							"type": "bearer",
-							"bearer": [
+							"type": "basic",
+							"basic": [
 								{
-									"key": "token",
-									"value": "{{token}}",
+									"key": "password",
+									"value": "{{client_secret}}",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "{{client_id}}",
 									"type": "string"
 								}
 							]
 						},
-						"method": "GET",
+						"method": "POST",
 						"header": [],
 						"url": {
-							"raw": "{{connector_url}}/payments/{{payment_id}}",
+							"raw": "{{auth_url}}/oauth/token?grant_type=client_credentials",
 							"host": [
-								"{{connector_url}}"
+								"{{auth_url}}"
 							],
 							"path": [
-								"payments",
-								"{{payment_id}}"
+								"oauth",
+								"token"
+							],
+							"query": [
+								{
+									"key": "grant_type",
+									"value": "client_credentials"
+								}
 							]
-						}
+						},
+						"description": "Gets a commercetools access token with the client credentials from the environment. The API client needs the scope manage_sessions for request 1.2. It needs one of the scopes manage_payments, manage_checkout_payment_intents or manage_project for Capture Payment and Refund Payment. Authorize needs only an active token. See docs/CommercetoolsFrontendIntegration.md#bff-api-client. The test script sets project-key from the scope of the token. It overwrites the value in the environment."
 					},
 					"response": []
 				},
 				{
-					"name": "Validate CommerceTools Cart",
+					"name": "1.2 Obtain Session ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var data = JSON.parse(responseBody);",
+									"if(data.id){",
+									"    pm.environment.set(\"ctp_session_id\", data.id);",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {}
+							}
+						}
+					],
 					"request": {
-						"description": "Validates the cart for the payment type in the optional paymentType query parameter (INSTALLMENT_PAYMENT by default, or BILL_PAYMENT). The response reports the availability of both payment types, and POST /payments runs the same check for its paymentType. BILL_PAYMENT.available=true requires BILL_PAYMENT_ENABLED=1 and a fresh, valid, active bill configuration from easyCredit; bill payment is unavailable with stale or default data and only offered to private persons. It is also unavailable if the cart contains a line item of a product type in BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES or a custom line item in BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS (for example vouchers), or if the product types cannot be loaded. See docs/GetPaymentMethod.md.",
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cart\": {\n        \"cartRef\": {\n          \"id\": \"{{cart_id}}\"\n        }\n    },\n    \"metadata\": {\n        \"applicationKey\": \"{{checkout_application_key}}\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{session_url}}/{{project-key}}/sessions",
+							"host": [
+								"{{session_url}}"
+							],
+							"path": [
+								"{{project-key}}",
+								"sessions"
+							]
+						},
+						"description": "Creates a commercetools checkout session for the cart in cart_id, and saves it as ctp_session_id. The body uses the key of your Checkout application from checkout_application_key. The token needs the scope manage_sessions. See docs/CommercetoolsFrontendIntegration.md#checkout-session."
+					},
+					"response": []
+				}
+			],
+			"description": "Run first. Run request 1.1 and then request 1.2. Request 1.1 saves the access token. Request 1.2 saves the session ID."
+		},
+		{
+			"name": "2. Payment",
+			"item": [
+				{
+					"name": "2.1 Get Config",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{connector_url}}/operations/widget-enabled",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"operations",
+								"widget-enabled"
+							]
+						},
+						"description": "Returns whether the easyCredit widget is enabled, and needs no authentication. See docs/CommercetoolsFrontendIntegration.md."
+					},
+					"response": []
+				},
+				{
+					"name": "2.2 Validate Cart (installments)",
+					"request": {
+						"description": "Checks the cart for one payment type and returns the availability of both types. See docs/GetPaymentMethod.md.",
 						"method": "GET",
 						"header": [
 							{
@@ -146,7 +217,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+							"body": "{\n    \"webShopId\": \"<WEBSHOP_ID>\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
 						},
 						{
 							"name": "easyCredit unavailable",
@@ -185,7 +256,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+							"body": "{\n    \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n    \"statusCode\": 503,\n    \"errors\": [\n        {\n            \"code\": \"EasyCreditUnavailable\",\n            \"message\": \"easyCredit ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.\",\n            \"fields\": {\n                \"webShopId\": \"<WEBSHOP_ID>\"\n            }\n        }\n    ]\n}"
 						},
 						{
 							"name": "Bill payment available",
@@ -226,7 +297,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"webShopId\": \"2.de.7607.2\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
+							"body": "{\n    \"webShopId\": \"<WEBSHOP_ID>\",\n    \"amount\": 500,\n    \"paymentTypes\": {\n        \"INSTALLMENT_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 200,\n            \"maxAmount\": 10000\n        },\n        \"BILL_PAYMENT\": {\n            \"available\": true,\n            \"minAmount\": 50,\n            \"maxAmount\": 5000\n        }\n    }\n}"
 						},
 						{
 							"name": "Bill payment outside the limits",
@@ -267,7 +338,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidAmount\",\n            \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+							"body": "{\n    \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidAmount\",\n            \"message\": \"Die Summe des Warenkorbs muss zwischen 50€ und 5.000€ liegen.\",\n            \"fields\": {\n                \"webShopId\": \"<WEBSHOP_ID>\"\n            }\n        }\n    ]\n}"
 						},
 						{
 							"name": "Bill payment for a corporate customer",
@@ -308,7 +379,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"CorporateCustomerNotAllowed\",\n            \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+							"body": "{\n    \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"CorporateCustomerNotAllowed\",\n            \"message\": \"Die Zahlung per easyCredit-Rechnung ist nur für Privatpersonen möglich.\",\n            \"fields\": {\n                \"webShopId\": \"<WEBSHOP_ID>\"\n            }\n        }\n    ]\n}"
 						},
 						{
 							"name": "Invalid payment type",
@@ -354,8 +425,9 @@
 					]
 				},
 				{
-					"name": "Get Config",
+					"name": "2.3 Validate Cart (pay by invoice)",
 					"request": {
+						"description": "Checks the cart for pay by invoice with paymentType=BILL_PAYMENT. See docs/GetPaymentMethod.md.",
 						"method": "GET",
 						"header": [
 							{
@@ -365,135 +437,30 @@
 							}
 						],
 						"url": {
-							"raw": "{{connector_url}}/operations/widget-enabled",
+							"raw": "{{connector_url}}/payments/payment-method/{{cart_id}}?paymentType=BILL_PAYMENT",
 							"host": [
 								"{{connector_url}}"
 							],
 							"path": [
-								"operations",
-								"widget-enabled"
+								"payments",
+								"payment-method",
+								"{{cart_id}}"
+							],
+							"query": [
+								{
+									"key": "paymentType",
+									"value": "BILL_PAYMENT",
+									"description": "Optional. INSTALLMENT_PAYMENT (default) or BILL_PAYMENT"
+								}
 							]
 						}
 					},
 					"response": []
 				},
 				{
-					"name": "Get EasyCredit Transaction",
+					"name": "2.4 Create transaction (installments)",
 					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-Session-Id",
-								"value": "{{ctp_session_id}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{connector_url}}/payments/{{payment_id}}",
-							"host": [
-								"{{connector_url}}"
-							],
-							"path": [
-								"payments",
-								"{{payment_id}}"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Refund Payment",
-					"request": {
-						"auth": {
-							"type": "oauth2",
-							"oauth2": [
-								{
-									"key": "addTokenTo",
-									"value": "header",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"amount\": 5\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
-							"host": [
-								"{{connector_url}}"
-							],
-							"path": [
-								"payments",
-								"{{payment_id}}",
-								"refund"
-							]
-						},
-						"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
-					},
-					"response": [
-						{
-							"name": "Invalid refund amount",
-							"originalRequest": {
-								"auth": {
-									"type": "oauth2",
-									"oauth2": [
-										{
-											"key": "addTokenTo",
-											"value": "header",
-											"type": "string"
-										}
-									]
-								},
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n    \"amount\": 5\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
-									"host": [
-										"{{connector_url}}"
-									],
-									"path": [
-										"payments",
-										"{{payment_id}}",
-										"refund"
-									]
-								},
-								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\"\n        }\n    ]\n}"
-						}
-					]
-				},
-				{
-					"name": "Create EasyCredit transaction (payment)",
-					"request": {
-						"description": "Creates a payment. Optional paymentType is INSTALLMENT_PAYMENT (default) or BILL_PAYMENT. BILL_PAYMENT requires BILL_PAYMENT_ENABLED=1 and activation for the webshop, and is only offered to private persons. The CT payment gets paymentMethodInfo.method easycredit for installment (as in earlier versions) or BILL_PAYMENT, with a German paymentMethodInfo.name. A cart that is not frozen yet is frozen with the default strategy (SoftFreeze); a cart that is already frozen keeps its strategy. Errors: InvalidAmount (limits of an enabled type), PaymentTypeNotAvailable (disabled or not activated), BillPaymentExcludedItems (BILL_PAYMENT with a voucher or another excluded cart item), BillPaymentCheckFailed (503, BILL_PAYMENT while the excluded product types cannot be loaded), InvalidAddress (incomplete billing address), CorporateCustomerNotAllowed (BILL_PAYMENT only), plus the address and currency codes. See docs/CreatePayment.md.",
+						"description": "Creates the payment and returns the redirect URL for the shopper, and needs the X-Session-Id header. See docs/CreatePayment.md. Next, open the redirectUrl from the response in a browser, and complete the easyCredit sandbox checkout.",
 						"method": "POST",
 						"header": [
 							{
@@ -572,7 +539,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"technicalTransactionId\": \"c2b818bb.1120065723LwY1rRZcggpX9az7qUgAvdEh\",\n    \"paymentId\": \"25559370-d4a0-4291-b84e-b0f7e46d6972\",\n    \"redirectUrl\": \"https://ratenkauf.easycredit.de/app/payment/c2b818bb.1120065723LwY1rRZcggpX9az7qUgAvdEh/finanzierungsvorgaben\",\n    \"transactionInformation\": {\n        \"status\": \"OPEN\",\n        \"decision\": {\n            \"decisionOutcome\": \"\",\n            \"decisionOutcomeText\": null\n        }\n    }\n}"
+							"body": "{\n    \"technicalTransactionId\": \"<technicalTransactionId>\",\n    \"paymentId\": \"<paymentId>\",\n    \"redirectUrl\": \"https://ratenkauf.easycredit.de/app/payment/<technicalTransactionId>/finanzierungsvorgaben\",\n    \"transactionInformation\": {\n        \"status\": \"OPEN\",\n        \"decision\": {\n            \"decisionOutcome\": \"\",\n            \"decisionOutcomeText\": null\n        }\n    }\n}"
 						},
 						{
 							"name": "BILL_PAYMENT not available",
@@ -619,12 +586,99 @@
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"PaymentTypeNotAvailable\",\n            \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n            \"fields\": {\n                \"webShopId\": \"2.de.7607.2\"\n            }\n        }\n    ]\n}"
+							"body": "{\n    \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"PaymentTypeNotAvailable\",\n            \"message\": \"Die gewählte easyCredit-Zahlungsart ist für diesen Shop nicht verfügbar.\",\n            \"fields\": {\n                \"webShopId\": \"<WEBSHOP_ID>\"\n            }\n        }\n    ]\n}"
+						}
+					],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.environment.set(\"payment_id\", pm.response.json().paymentId);"
+								],
+								"packages": {}
+							}
 						}
 					]
 				},
 				{
-					"name": "Authorize EasyCredit Transaction",
+					"name": "2.5 Create transaction (pay by invoice)",
+					"request": {
+						"description": "Creates the payment for pay by invoice with \"paymentType\": \"BILL_PAYMENT\". See docs/CreatePayment.md. Next, open the redirectUrl from the response in a browser, and complete the easyCredit sandbox checkout.",
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cartId\": \"{{cart_id}}\",\n    \"paymentType\": \"BILL_PAYMENT\",\n    \"redirectLinks\": {\n        \"urlSuccess\": \"https://example.com/success\",\n        \"urlCancellation\": \"https://example.com/cancellation\",\n        \"urlDenial\": \"https://example.com/denial\"\n    },\n    \"customerRelationship\": {\n        \"customerStatus\": \"NEW_CUSTOMER\",\n        \"customerSince\": \"2024-01-01\",\n        \"numberOfOrders\": 0\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{connector_url}}/payments",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments"
+							]
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.environment.set(\"payment_id\", pm.response.json().paymentId);"
+								],
+								"packages": {}
+							}
+						}
+					]
+				},
+				{
+					"name": "2.6 Get EasyCredit Transaction",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Session-Id",
+								"value": "{{ctp_session_id}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}"
+							]
+						},
+						"description": "Returns the easyCredit transaction of the payment, and needs the X-Session-Id header. See docs/GetPayment.md. Run it after you complete the easyCredit sandbox checkout in the browser."
+					},
+					"response": []
+				},
+				{
+					"name": "2.7 Authorize EasyCredit Transaction",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -659,7 +713,7 @@
 								}
 							}
 						},
-						"description": "Authorizes the easyCredit transaction of the payment. Requires a commercetools access token (Authorization: Bearer), not X-Session-Id. Idempotent: an already authorized payment returns 204. By default the call returns 204 once the authorization request is sent: the CT transaction is then Pending and the easyCredit callback sets it to Success, as in earlier versions. The body is required: send at least {}; a missing or empty body returns an error. With the body {\"waitForAuthorization\": true} the call waits up to 30 seconds (polling every 2 seconds) until easyCredit reports it as AUTHORIZED; 204 then means the CT transaction is Success and is the signal to create the order. Errors: TransactionNotPreauthorized (400, also for DECLINED or EXPIRED, then the transaction is Failure and the cart unfrozen), TransactionNotAuthorized (400, the attempt was failed concurrently after the request was sent), AmountMismatch (400, cart changed, cart unfrozen), AuthorizationFailed or the easyCredit error title (easyCredit rejected or could not receive the authorization request; 502 AuthorizationFailed for a 2xx other than 202) and AuthorizationTimeout (504). With waitForAuthorization, a permanent 4xx from easyCredit while polling (for example 401, 403, 404) is returned immediately and the transaction stays Pending. On 504 the transaction is normally Pending, but stays Initial if the 30 second budget was used up before the authorization request was sent. Do not create the order. Retry this call (from Pending no new authorization request is sent, from Initial the first request is sent) or wait for the callback. See docs/AuthorizePayment.md."
+						"description": "Authorizes the easyCredit transaction, and needs a Bearer token. See docs/AuthorizePayment.md. Run it after you complete the easyCredit sandbox checkout. The easyCredit transaction must be PREAUTHORIZED. The transaction can stay Pending until the authorize callback of easyCredit. For capture and refund, use 2.8, or wait for the callback."
 					},
 					"response": [
 						{
@@ -794,7 +848,97 @@
 					]
 				},
 				{
-					"name": "Capture Payment",
+					"name": "2.8 Authorize and wait",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"payments",
+								"{{payment_id}}",
+								"authorize"
+							]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"waitForAuthorization\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"description": "Authorizes the transaction and waits up to 30 seconds for easyCredit to confirm it. See docs/AuthorizePayment.md. Run it after you complete the easyCredit sandbox checkout. The easyCredit transaction must be PREAUTHORIZED."
+					},
+					"response": [
+						{
+							"name": "Authorization timeout (waitForAuthorization: true)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json",
+										"type": "text"
+									},
+									{
+										"key": "Authorization",
+										"value": "Bearer {{ctp_access_token}}",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/authorize",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"authorize"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"waitForAuthorization\": true\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								}
+							},
+							"status": "Gateway Timeout",
+							"code": 504,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Die Autorisierung bei easyCredit ist noch nicht abgeschlossen. Bitte spaeter erneut versuchen.\",\n    \"statusCode\": 504,\n    \"errors\": [\n        {\n            \"code\": \"AuthorizationTimeout\",\n            \"message\": \"Die Autorisierung bei easyCredit ist noch nicht abgeschlossen. Bitte spaeter erneut versuchen.\"\n        }\n    ]\n}"
+						}
+					]
+				},
+				{
+					"name": "2.9 Capture Payment",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -828,7 +972,8 @@
 									"language": "json"
 								}
 							}
-						}
+						},
+						"description": "Captures the authorized payment, and needs a Bearer token with a payment management scope. See docs/CapturePayment.md. It needs an authorized payment: run 2.8 Authorize and wait, or after 2.7 wait until the authorize callback sets the Authorization transaction to Success."
 					},
 					"response": [
 						{
@@ -974,119 +1119,26 @@
 							"body": "{\n    \"message\": \"Capture failed\",\n    \"statusCode\": 502,\n    \"errors\": [\n        {\n            \"code\": \"CaptureFailed\",\n            \"message\": \"Capture failed\"\n        }\n    ]\n}"
 						}
 					]
-				}
-			]
-		},
-		{
-			"name": "CommerceTools",
-			"item": [
-				{
-					"name": "Obtain access token",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"tests[\"Status code is 200\"] = responseCode.code === 200;",
-									"var data = JSON.parse(responseBody);",
-									"if(data.access_token){",
-									"    pm.environment.set(\"ctp_access_token\", data.access_token);",
-									"}",
-									"if (data.scope) {",
-									"    parts = data.scope.split(\" \");",
-									"    parts = parts.filter(scope => scope.includes(\":\")).map(scope => scope.split(\":\"))",
-									"    if (parts.length > 0) {",
-									"        scopeParts = parts[0];",
-									"        pm.environment.set(\"project-key\", scopeParts[1]);",
-									"        parts = parts.filter(scope => scope.length >= 3)",
-									"        if (parts.length > 0) {",
-									"            scopeParts = parts[0];",
-									"            pm.environment.set(\"store-key\", scopeParts[2]);",
-									"        }",
-									"    }",
-									"}"
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						}
-					],
-					"request": {
-						"auth": {
-							"type": "basic",
-							"basic": [
-								{
-									"key": "password",
-									"value": "{{client_secret}}",
-									"type": "string"
-								},
-								{
-									"key": "username",
-									"value": "{{client_id}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "••••••"
-							}
-						],
-						"url": {
-							"raw": "{{auth_url}}/oauth/token?grant_type=client_credentials",
-							"host": [
-								"{{auth_url}}"
-							],
-							"path": [
-								"oauth",
-								"token"
-							],
-							"query": [
-								{
-									"key": "grant_type",
-									"value": "client_credentials"
-								}
-							]
-						},
-						"description": "Generated from cURL: curl --location --globoff --request POST '{{auth_url}}/oauth/token?grant_type=client_credentials' \\\n--header 'Authorization: ••••••' \\\n--data ''"
-					},
-					"response": []
 				},
 				{
-					"name": "Obtain Session ID",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var data = JSON.parse(responseBody);",
-									"if(data.id){",
-									"    pm.environment.set(\"ctp_session_id\", data.id);",
-									"}"
-								],
-								"type": "text/javascript",
-								"packages": {}
-							}
-						}
-					],
+					"name": "2.10 Refund Payment",
 					"request": {
 						"method": "POST",
 						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{ctp_access_token}}"
-							},
 							{
 								"key": "Content-Type",
 								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{ctp_access_token}}",
 								"type": "text"
 							}
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"cart\": {\n        \"cartRef\": {\n          \"id\": \"bdc983db-ee19-4815-b576-a9ade27140de\"\n        }\n    },\n    \"metadata\": {}\n}",
+							"raw": "{\n    \"amount\": 2.5\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1094,36 +1146,122 @@
 							}
 						},
 						"url": {
-							"raw": "{{session_url}}/{{project-key}}/sessions",
+							"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
 							"host": [
-								"{{session_url}}"
+								"{{connector_url}}"
 							],
 							"path": [
-								"{{project-key}}",
-								"sessions"
+								"payments",
+								"{{payment_id}}",
+								"refund"
 							]
 						},
-						"description": "Generated from cURL: curl --location --globoff --request POST '{{auth_url}}/oauth/token?grant_type=client_credentials' \\\n--header 'Authorization: ••••••' \\\n--data ''"
+						"description": "Refunds the given amount of the payment, and needs a Bearer token with a payment management scope. You can refund before or after the capture. See docs/RefundPayment.md. It needs an authorized payment: run 2.8 Authorize and wait, or after 2.7 wait until the authorize callback sets the Authorization transaction to Success."
+					},
+					"response": [
+						{
+							"name": "Invalid refund amount",
+							"originalRequest": {
+								"auth": {
+									"type": "oauth2",
+									"oauth2": [
+										{
+											"key": "addTokenTo",
+											"value": "header",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 5\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{connector_url}}/payments/{{payment_id}}/refund",
+									"host": [
+										"{{connector_url}}"
+									],
+									"path": [
+										"payments",
+										"{{payment_id}}",
+										"refund"
+									]
+								},
+								"description": "- We provide an endpoint `POST /payments/:paymentId/refund` to trigger the Refund for an Easycredit payment. The endpoint requires:\n    \n    - Headers:\n        \n        - `Authorization`: Require CommerceTools access token which can be obtained from their auth endpoint and with your CommerceTools credentials\n            \n    - Params:\n        \n        - `paymentId`: The CommerceTools Payment ID\n            \n    - Payload:\n        \n        - `amount`: The amount that you want to refund\n            \n- curl --location '{{connectorProcessorUrl}}/payments/{{paymentId}}/refund' \\\\ --header 'Authorization: Bearer {{accessToken}}' \\\\ --header 'Content-Type: application/json' \\\\ --data '{ \"amount\": 2.5 }'"
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json; charset=utf-8"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\",\n    \"statusCode\": 400,\n    \"errors\": [\n        {\n            \"code\": \"InvalidRefundAmount\",\n            \"message\": \"The refund amount cannot be greater than the payment amount minus the refunds that did not fail\"\n        }\n    ]\n}"
+						}
+					]
+				}
+			],
+			"description": "Run second. Run the requests in this order: 2.1 to 2.5. Then do the manual step on the easyCredit page. Then run 2.6 to 2.10. Manual step: open the redirectUrl from the create response in a browser. Complete the easyCredit sandbox checkout. Then continue with 2.6. Authorize needs the easyCredit transaction in the state PREAUTHORIZED. See docs/AuthorizePayment.md. For create (2.4, 2.5) and authorize (2.7, 2.8), run one of the two variants. Each create request overwrites payment_id. Capture and refund need an authorized payment: run 2.8, or after 2.7 wait until the authorize callback sets the Authorization transaction to Success."
+		},
+		{
+			"name": "3. Webhook",
+			"item": [
+				{
+					"name": "3.1 Cancel Payment",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{connector_url}}/webhook/{{payment_id}}/cancel",
+							"host": [
+								"{{connector_url}}"
+							],
+							"path": [
+								"webhook",
+								"{{payment_id}}",
+								"cancel"
+							],
+							"query": [
+								{
+									"key": "redirectUrl",
+									"value": "string",
+									"description": "Optional. Browser redirect target. The connector only follows a URL that it signed itself.",
+									"disabled": true
+								},
+								{
+									"key": "successUrl",
+									"value": "string",
+									"description": "Optional. Shop success URL for a payment that is already authorized. The sig parameter covers it.",
+									"disabled": true
+								},
+								{
+									"key": "sig",
+									"value": "string",
+									"description": "Optional. Signature of the redirect link. Required when redirectUrl is set. The connector adds it to the links it creates.",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Cancels the payment, and returns 200 with the paymentId when redirectUrl is not set. See docs/CancelPayment.md."
 					},
 					"response": []
 				}
-			]
+			],
+			"description": "Run last, or instead of 2.7 to 2.10. The cancel webhook cancels a payment that is not authorized. It needs no authentication."
 		}
 	],
 	"auth": {
-		"type": "apikey",
-		"apikey": [
-			{
-				"key": "key",
-				"value": "X-API-Key",
-				"type": "string"
-			},
-			{
-				"key": "value",
-				"value": "{{token}}",
-				"type": "string"
-			}
-		]
+		"type": "noauth"
 	},
 	"event": [
 		{
@@ -1143,12 +1281,6 @@
 					""
 				]
 			}
-		}
-	],
-	"variable": [
-		{
-			"key": "baseUrl",
-			"value": "https://farming-simulator.pstmn.io"
 		}
 	]
 }
