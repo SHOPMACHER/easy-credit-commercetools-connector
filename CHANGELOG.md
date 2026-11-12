@@ -42,7 +42,7 @@ Existing installment request fields are retained, but some responses and transac
 **Capture**
 
 - Rejected or unanswered captures now return an error instead of a misleading `204`. If easyCredit may still have booked the capture, the charge stays `Pending` and can be retried. A duplicate capture response from easyCredit (`409`) still returns `204` while awaiting the booking result.
-- The charge is recorded before calling easyCredit, so early notifications can find it. Failed bookings now set a pending charge to `Failure`. A known failed booking returns `400 CaptureBookingFailed` and requires follow-up in the merchant portal.
+- The charge is recorded before calling easyCredit, so early notifications can find it. Failed bookings now set a pending charge to `Failure`. After a failed booking the connector sends no further capture, and every later capture request returns `400 CaptureBookingFailed`. The charge stays `Failure`; see [after a failed capture](docs/CapturePayment.md#after-a-failed-capture) for follow-up.
 - `trackingNumber` is limited to 50 characters. See [Capture Payment](docs/CapturePayment.md) for errors and retry behavior.
 
 **Refund**
