@@ -1,11 +1,14 @@
+import { FieldDefinition, ResourceTypeId } from '@commercetools/platform-sdk';
 import { createApiRoot } from '../client/create.client';
 import {
+  EASYCREDIT_EXPRESS_FIELD,
+  EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
 } from '../utils/constant.utils';
 
-const FIELD_DEFINITIONS = [
+const TRANSACTION_FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     name: EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
     label: {
@@ -14,7 +17,7 @@ const FIELD_DEFINITIONS = [
     },
     required: false,
     type: {
-      name: 'String' as const,
+      name: 'String',
     },
   },
   {
@@ -25,7 +28,7 @@ const FIELD_DEFINITIONS = [
     },
     required: false,
     type: {
-      name: 'Number' as const,
+      name: 'Number',
     },
   },
   {
@@ -36,12 +39,51 @@ const FIELD_DEFINITIONS = [
     },
     required: false,
     type: {
-      name: 'Number' as const,
+      name: 'Number',
     },
   },
 ];
 
-export async function createOrUpdateTransactionCustomType(typeKey: string): Promise<void> {
+const PAYMENT_FIELD_DEFINITIONS: FieldDefinition[] = [
+  {
+    name: EASYCREDIT_EXPRESS_FIELD,
+    label: {
+      en: 'EasyCredit Express Checkout',
+      de: 'EasyCredit Express Checkout',
+    },
+    required: false,
+    type: {
+      name: 'Boolean',
+    },
+  },
+  {
+    name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+    label: {
+      en: 'EasyCredit Express Placeholder Address',
+      de: 'EasyCredit Express Placeholder Address',
+    },
+    required: false,
+    type: {
+      name: 'Boolean',
+    },
+  },
+];
+
+type CustomTypeSpec = {
+  typeKey: string;
+  resourceTypeId: ResourceTypeId;
+  // Config key named in the error, so the merchant knows which setting to change
+  configKey: string;
+  fieldDefinitions: FieldDefinition[];
+};
+
+// Adds only the missing fields, so a type shared with other connectors keeps theirs.
+async function createOrUpdateCustomType({
+  typeKey,
+  resourceTypeId,
+  configKey,
+  fieldDefinitions,
+}: CustomTypeSpec): Promise<void> {
   const apiRoot = createApiRoot();
 
   const {
@@ -58,25 +100,25 @@ export async function createOrUpdateTransactionCustomType(typeKey: string): Prom
   if (types.length > 0) {
     const existingType = types[0];
 
-    if (!existingType.resourceTypeIds.includes('transaction')) {
+    if (!existingType.resourceTypeIds.includes(resourceTypeId)) {
       throw new Error(
-        `Custom type "${typeKey}" exists but does not include "transaction" in its resourceTypeIds. ` +
-          `Please use a different TRANSACTION_CUSTOM_TYPE_KEY or add "transaction" to the existing type.`,
+        `Custom type "${typeKey}" exists but does not include "${resourceTypeId}" in its resourceTypeIds. ` +
+          `Please use a different ${configKey} or add "${resourceTypeId}" to the existing type.`,
       );
     }
 
-    const missingDefinitions = FIELD_DEFINITIONS.filter(
+    const missingFields = fieldDefinitions.filter(
       ({ name }) => !existingType.fieldDefinitions.some((field) => field.name === name),
     );
 
-    if (missingDefinitions.length > 0) {
+    if (missingFields.length > 0) {
       await apiRoot
         .types()
         .withKey({ key: typeKey })
         .post({
           body: {
             version: existingType.version,
-            actions: missingDefinitions.map((fieldDefinition) => ({
+            actions: missingFields.map((fieldDefinition) => ({
               action: 'addFieldDefinition' as const,
               fieldDefinition,
             })),
@@ -91,13 +133,59 @@ export async function createOrUpdateTransactionCustomType(typeKey: string): Prom
         body: {
           key: typeKey,
           name: {
-            en: 'Custom type for transaction resources',
-            de: 'Custom type for transaction resources',
+            en: `Custom type for ${resourceTypeId} resources`,
+            de: `Custom type for ${resourceTypeId} resources`,
           },
-          resourceTypeIds: ['transaction'],
-          fieldDefinitions: FIELD_DEFINITIONS,
+          resourceTypeIds: [resourceTypeId],
+          fieldDefinitions,
         },
       })
       .execute();
   }
+}
+
+export async function createOrUpdateTransactionCustomType(typeKey: string): Promise<void> {
+  await createOrUpdateCustomType({
+    typeKey,
+    resourceTypeId: 'transaction',
+    configKey: 'TRANSACTION_CUSTOM_TYPE_KEY',
+    fieldDefinitions: TRANSACTION_FIELD_DEFINITIONS,
+  });
+}
+
+export async function createOrUpdatePaymentCustomType(typeKey: string): Promise<void> {
+  await createOrUpdateCustomType({
+    typeKey,
+    resourceTypeId: 'payment',
+    configKey: 'PAYMENT_CUSTOM_TYPE_KEY',
+    fieldDefinitions: PAYMENT_FIELD_DEFINITIONS,
+  });
+}
+
+// Only a positive answer is cached: a type created by a later post-deploy is picked up without a restart.
+const readyPaymentCustomTypeKeys = new Set<string>();
+
+export async function isPaymentCustomTypeReady(typeKey: string): Promise<boolean> {
+  if (readyPaymentCustomTypeKeys.has(typeKey)) {
+    return true;
+  }
+
+  const {
+    body: { results: types },
+  } = await createApiRoot()
+    .types()
+    .get({ queryArgs: { where: `key = "${typeKey}"` } })
+    .execute();
+
+  const type = types[0];
+  const ready =
+    !!type &&
+    type.resourceTypeIds.includes('payment') &&
+    PAYMENT_FIELD_DEFINITIONS.every(({ name }) => type.fieldDefinitions.some((field) => field.name === name));
+
+  if (ready) {
+    readyPaymentCustomTypeKeys.add(typeKey);
+  }
+
+  return ready;
 }

@@ -30,7 +30,6 @@ import {
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Address } from '@commercetools/platform-sdk/dist/declarations/src/generated/models/common';
 import { LineItem } from '@commercetools/connect-payments-sdk';
-
 import { signRedirectUrl } from '../../src/utils/redirect.utils';
 jest.mock('../../src/commercetools/customObject.commercetools', () => ({
   getCustomObjectByKey: jest.fn(),
@@ -243,6 +242,43 @@ describe('Payment Mapping', () => {
         }
       },
     );
+
+    it('should leave customer and addresses out for express and keep the order details', async () => {
+      const mockCart = {
+        totalPrice: { centAmount: 10000, fractionDigits: 2, currencyCode: 'EUR' },
+        lineItems: [],
+        customerEmail: 'john@doe.com',
+        billingAddress: { firstName: 'John', country: 'DE' },
+        shippingAddress: { firstName: 'John', country: 'DE' },
+      } as unknown as Cart;
+
+      // @ts-expect-error mocked
+      (getCustomObjectByKey as jest.Mock).mockResolvedValue({ value: 'https://example.com' });
+
+      const result = await mapCTCartToECPayment(
+        mockCart,
+        { id: 'payment123' } as Payment,
+        { urlSuccess: 'https://example.com/success', urlCancellation: '', urlDenial: '' },
+        { customerStatus: 'NEW_CUSTOMER', numberOfOrders: 0, orderDoneWithLogin: false },
+        ECTransactionPaymentType.ECTransactionBillPayment,
+        { express: true },
+      );
+
+      expect(result).not.toHaveProperty('customer');
+      expect(result.customerRelationship).toEqual({
+        customerStatus: 'NEW_CUSTOMER',
+        numberOfOrders: 0,
+        orderDoneWithLogin: false,
+      });
+      expect(result.orderDetails).toEqual({
+        orderValue: 100,
+        orderId: 'payment123',
+        numberOfProductsInShoppingCart: 0,
+        withoutFlexprice: false,
+        shoppingCartInformation: [],
+      });
+      expect(result.redirectLinks.urlAuthorizationCallback).toBe('https://example.com/webhook/payment123/authorize');
+    });
   });
 
   describe('mapCTCartToCTPayment', () => {
@@ -300,6 +336,30 @@ describe('Payment Mapping', () => {
           name: { de: 'easyCredit Rechnung' },
         },
       });
+    });
+
+    it('should flag an express payment with the payment custom type', () => {
+      const result = mapCTCartToCTPayment(mockCartForPayment, ECTransactionPaymentType.ECTransactionBillPayment, {
+        express: true,
+      });
+
+      expect(result.custom).toEqual({
+        type: { typeId: 'type', key: 'easy-credit-payment' },
+        fields: { easyCreditExpress: true, easyCreditExpressPlaceholderAddress: false },
+      });
+    });
+
+    it('should record that the connector added the placeholder address', () => {
+      const result = mapCTCartToCTPayment(
+        mockCartForPayment,
+        ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        {
+          express: true,
+          placeholderAddress: true,
+        },
+      );
+
+      expect(result.custom?.fields).toEqual({ easyCreditExpress: true, easyCreditExpressPlaceholderAddress: true });
     });
   });
 

@@ -6,7 +6,12 @@ import {
   handlePaymentMethod,
   handleRefundPayment,
 } from '../../src/services/payment.service';
-import { getCartById, getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
+import {
+  findCartByPaymentId,
+  getCartById,
+  getCartByPaymentId,
+  updateCart,
+} from '../../src/commercetools/cart.commercetools';
 import { createPayment, getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
@@ -54,7 +59,15 @@ import { getPaymentTypesAvailability } from '../../src/services/webshop.service'
 import { getPaymentTypeExclusion } from '../../src/services/paymentTypeRestriction.service';
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
+// What a shop sends in the regular create body; the connector passes it on unchanged.
+const shopRelationship = { customerStatus: 'NEW_CUSTOMER' as const, customerSince: '2024-01-01', numberOfOrders: 0 };
+
 jest.mock('../../src/commercetools/cart.commercetools');
+
+// The cart release looks the cart up without throwing; the tests set the cart through getCartByPaymentId.
+beforeEach(() => {
+  jest.mocked(findCartByPaymentId).mockImplementation((paymentId) => jest.mocked(getCartByPaymentId)(paymentId));
+});
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');
@@ -470,11 +483,7 @@ describe('Payment handlers', () => {
           urlCancellation: 'https://example.com/cancel',
           urlDenial: 'https://example.com/cancel',
         },
-        {
-          customerStatus: 'NEW_CUSTOMER',
-          customerSince: '2024-01-01',
-          numberOfOrders: 0,
-        },
+        shopRelationship,
       );
 
       expect(result).toEqual(mockECPayment);
@@ -514,11 +523,7 @@ describe('Payment handlers', () => {
             urlCancellation: 'https://example.com/cancel',
             urlDenial: 'https://example.com/cancel',
           },
-          {
-            customerStatus: 'NEW_CUSTOMER',
-            customerSince: '2024-01-01',
-            numberOfOrders: 0,
-          },
+          shopRelationship,
         ),
       ).rejects.toThrow(
         new MultiErrorx([
@@ -555,11 +560,7 @@ describe('Payment handlers', () => {
             urlCancellation: 'https://example.com/cancel',
             urlDenial: 'https://example.com/cancel',
           },
-          {
-            customerStatus: 'NEW_CUSTOMER',
-            customerSince: '2024-01-01',
-            numberOfOrders: 0,
-          },
+          shopRelationship,
         ),
       ).rejects.toThrow('Payment creation failed');
       expect(updateCart).toHaveBeenCalledWith(frozenCart, [{ action: 'unfreezeCart' }]);
@@ -590,7 +591,7 @@ describe('Payment handlers', () => {
             urlCancellation: 'https://example.com/cancel',
             urlDenial: 'https://example.com/cancel',
           },
-          { customerStatus: 'NEW_CUSTOMER', customerSince: '2024-01-01', numberOfOrders: 0 },
+          shopRelationship,
         ),
       ).rejects.toThrow('Payment creation failed');
       expect(updateCart).toHaveBeenLastCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
@@ -610,11 +611,6 @@ describe('Payment handlers', () => {
         urlCancellation: 'https://example.com/cancel',
         urlDenial: 'https://example.com/cancel',
       };
-      const customerRelationship: ECTransactionCustomerRelationship = {
-        customerStatus: 'NEW_CUSTOMER',
-        customerSince: '2024-01-01',
-        numberOfOrders: 0,
-      };
       // @ts-expect-error mocked
       (getCartById as jest.Mock).mockResolvedValue(mockCart);
       // @ts-expect-error mocked
@@ -629,7 +625,7 @@ describe('Payment handlers', () => {
         easyCredit: { webShopId: 'webShopId123', billPaymentEnabled: '1' },
       });
 
-      await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
       expect(validatePaymentTypeAvailability).toHaveBeenCalledWith(
         500,
@@ -642,8 +638,10 @@ describe('Payment handlers', () => {
         mockCart,
         mockPayment,
         redirectLinks,
-        customerRelationship,
+        // The regular flow passes on what the shop sent.
+        shopRelationship,
         ECTransactionPaymentType.ECTransactionInstallmentPayment,
+        { express: false },
       );
     });
 
@@ -673,11 +671,7 @@ describe('Payment handlers', () => {
             urlCancellation: 'https://example.com/cancel',
             urlDenial: 'https://example.com/cancel',
           },
-          {
-            customerStatus: 'NEW_CUSTOMER',
-            customerSince: '2024-01-01',
-            numberOfOrders: 0,
-          },
+          shopRelationship,
         ),
       ).rejects.toThrow(MultiErrorx);
       expect(createPayment).not.toHaveBeenCalled();
@@ -690,11 +684,7 @@ describe('Payment handlers', () => {
         urlCancellation: 'https://example.com/cancel',
         urlDenial: 'https://example.com/cancel',
       };
-      const customerRelationship: ECTransactionCustomerRelationship = {
-        customerStatus: 'NEW_CUSTOMER',
-        customerSince: '2024-01-01',
-        numberOfOrders: 0,
-      };
+      const customerRelationship: ECTransactionCustomerRelationship = shopRelationship;
       const totalPrice = { currencyCode: 'EUR', centAmount: 50000, fractionDigits: 2 };
       const activeCart = { id: 'cart123', cartState: 'Active', lineItems: [], customLineItems: [], totalPrice };
       const frozenCart = { ...activeCart, cartState: 'Frozen', freezeStrategy: 'HardFreeze' };
@@ -735,17 +725,18 @@ describe('Payment handlers', () => {
       });
 
       it('should default to the installment payment type', async () => {
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
         expect(mapCTCartToCTPayment).toHaveBeenCalledWith(
           frozenCart,
           ECTransactionPaymentType.ECTransactionInstallmentPayment,
+          { express: false, placeholderAddress: false },
         );
         expect(createPayment).toHaveBeenCalledWith({ draft: true });
       });
 
       it('should validate and map a BILL_PAYMENT with the bill availability', async () => {
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship, bill);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship, bill);
 
         expect(validatePaymentTypeAvailability).toHaveBeenCalledWith(
           500,
@@ -754,19 +745,23 @@ describe('Payment handlers', () => {
           expect.any(Array),
           'BILL_PAYMENT',
         );
-        expect(mapCTCartToCTPayment).toHaveBeenCalledWith(frozenCart, bill);
+        expect(mapCTCartToCTPayment).toHaveBeenCalledWith(frozenCart, bill, {
+          express: false,
+          placeholderAddress: false,
+        });
         expect(mapCTCartToECPayment).toHaveBeenCalledWith(
           expect.anything(),
           ctPayment,
           redirectLinks,
           customerRelationship,
           bill,
+          { express: false },
         );
         expect(createECPayment).toHaveBeenCalledWith({ ec: true });
       });
 
       it('should not use the bill availability for the default type', async () => {
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
         expect(validatePaymentTypeAvailability).not.toHaveBeenCalledWith(
           expect.anything(),
@@ -778,7 +773,7 @@ describe('Payment handlers', () => {
       });
 
       it('should freeze an active cart with the default strategy', async () => {
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
         expect(updateCart).toHaveBeenNthCalledWith(1, activeCart, freezeActions);
       });
@@ -790,7 +785,7 @@ describe('Payment handlers', () => {
       ])('should not freeze again a cart frozen with %s', async (_, cart) => {
         (getCartById as jest.Mock).mockResolvedValue(cart as never);
 
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
         expect(updateCart).toHaveBeenCalledTimes(1);
         expect(updateCart).toHaveBeenCalledWith(cart, [
@@ -805,7 +800,7 @@ describe('Payment handlers', () => {
           errors.push(new Errorx({ httpErrorStatus: 400, code: 'PaymentTypeNotAvailable', message: 'Not available' }));
         });
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship, bill)).rejects.toThrow(
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship, bill)).rejects.toThrow(
           MultiErrorx,
         );
 
@@ -817,7 +812,7 @@ describe('Payment handlers', () => {
         const error = new Error('easyCredit down');
         createECPayment.mockRejectedValue(error as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow(error);
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow(error);
 
         expect(updateCart).toHaveBeenCalledTimes(3);
         expect(updateCart).toHaveBeenLastCalledWith(frozenCart, cleanupActions);
@@ -828,7 +823,7 @@ describe('Payment handlers', () => {
         const error = new Error('mapping failed');
         (mapCTCartToECPayment as jest.Mock).mockRejectedValue(error as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow(error);
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow(error);
 
         expect(createECPayment).not.toHaveBeenCalled();
         expect(updateCart).toHaveBeenLastCalledWith(frozenCart, cleanupActions);
@@ -842,7 +837,7 @@ describe('Payment handlers', () => {
           .mockResolvedValueOnce(frozenCart as never)
           .mockRejectedValueOnce(new Error('cleanup failed') as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow(error);
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow(error);
 
         expect(log.error).toHaveBeenCalledWith(
           expect.any(String),
@@ -856,7 +851,7 @@ describe('Payment handlers', () => {
           transactionId: 'tx123',
         } as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship, bill)).rejects.toThrow(
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship, bill)).rejects.toThrow(
           MultiErrorx,
         );
 
@@ -867,7 +862,7 @@ describe('Payment handlers', () => {
       it('should unfreeze and remove the payment when the transaction update fails after the easyCredit call', async () => {
         (updatePayment as jest.Mock).mockRejectedValue(new Error('CT down') as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow('CT down');
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow('CT down');
 
         expect(updateCart).toHaveBeenLastCalledWith(frozenCart, cleanupActions);
       });
@@ -879,11 +874,11 @@ describe('Payment handlers', () => {
           .mockResolvedValueOnce(frozenCart as never)
           .mockRejectedValueOnce(new Error('cleanup failed') as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow('CT down');
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow('CT down');
       });
 
       it('should not clean up when the transaction update succeeds', async () => {
-        await handleCreatePayment('cart123', redirectLinks, customerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
         expect(updateCart).toHaveBeenCalledTimes(2);
         expect(updateCart).not.toHaveBeenCalledWith(expect.anything(), cleanupActions);
@@ -895,7 +890,7 @@ describe('Payment handlers', () => {
           transactionId: 'tx123',
         } as never);
 
-        await expect(handleCreatePayment('cart123', redirectLinks, customerRelationship)).rejects.toThrow(MultiErrorx);
+        await expect(handleCreatePayment('cart123', redirectLinks, shopRelationship)).rejects.toThrow(MultiErrorx);
 
         expect(updatePayment).toHaveBeenCalledWith(
           ctPayment,
@@ -923,11 +918,7 @@ describe('Payment handlers', () => {
             urlCancellation: 'https://example.com/cancel',
             urlDenial: 'https://example.com/cancel',
           },
-          {
-            customerStatus: 'NEW_CUSTOMER',
-            customerSince: '2024-01-01',
-            numberOfOrders: 0,
-          },
+          shopRelationship,
         ),
       ).rejects.toThrow(error);
       expect(log.error).toHaveBeenCalledWith('Error in handleCreatePayment', error);

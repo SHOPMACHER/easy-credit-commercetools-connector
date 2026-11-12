@@ -57,6 +57,12 @@ The checkout offers pay by invoice as a separate payment method with its own lab
 
 See the [web components integration guide](./docs/WebComponents.md#pay-by-invoice-as-a-separate-payment-method) and [Create payments](/docs/CreatePayment.md).
 
+### Express checkout
+
+The shopper starts easyCredit from the product page or the cart and enters customer data and address on the easyCredit payment page. The backend creates the transaction for the cart of the session without customer and addresses, for both payment methods. Existing deployments need a redeploy so the post-deploy script creates the payment custom type.
+
+- [Create express payments](/docs/CreateExpressPayment.md)
+
 ## Prerequisite
 
 1. Commercetools composable commerce account

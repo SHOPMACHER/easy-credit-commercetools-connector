@@ -40,6 +40,7 @@ Complete integration requires running/intergrating both of the modules. Please f
 | BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES | Optional comma-separated product type keys, for example vouchers. Pay by invoice is not offered if any line item of the cart has one of these product types. Each key has at least 2 characters out of `A-Z`, `a-z`, `0-9`, `_` and `-`; an invalid entry stops the connector at startup. The keys are resolved to ids in one query with the cache duration of `WEBSHOP_CACHE_TTL`, which needs the `view_product_types` scope in `CTP_SCOPES`. If the lookup fails, for example with more than 500 keys, pay by invoice is not offered. See [Excluded cart items](../docs/GetPaymentMethod.md#excluded-cart-items). |
 | BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS | Optional comma-separated custom line item slugs or keys, same format as above. Pay by invoice is not offered if the cart contains a custom line item whose `slug` or `key` is listed. |
 | WEBSHOP_CACHE_TTL | Seconds (0 to 3600, default 300) to cache the easyCredit webshop configuration: activation status and order value limits per payment type. |
+| REDIRECT_ALLOWED_HOSTS | Optional comma-separated host names the shop's redirect links may point to, for example `shop.example.com,www.shop.example.com`. When set, Create Payment and Create Express Payment return `400 InvalidField` for any other link. Without it, any link is accepted for the regular checkout. Recommended for production. See [Redirect links](../docs/CreatePayment.md#redirect-links). |
 
 ## Features
 Follow the link for further information of each feature.
@@ -48,6 +49,7 @@ Follow the link for further information of each feature.
 | Get payment method | [LINK](/docs/GetPaymentMethod.md) |
 | Get payment | [LINK](/docs/GetPayment.md) |
 | Create payment (installment and pay by invoice) | [LINK](/docs/CreatePayment.md) |
+| Create express payment (without customer and address) | [LINK](/docs/CreateExpressPayment.md) |
 | Authorize payment (waits up to 30 s for the authorization) | [LINK](/docs/AuthorizePayment.md) |
 | Cancel payment | [LINK](/docs/CancelPayment.md) |
 | Capture payment | [LINK](/docs/CapturePayment.md) |
