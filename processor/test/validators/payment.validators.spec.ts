@@ -5,16 +5,16 @@ import {
   validateECTransactionId,
   validateInitialOrPendingTransaction,
   validatePayment,
-  validatePaymentAmount,
   validatePaymentTypeAvailability,
   validatePendingTransaction,
   validatePrivateCustomer,
+  validateRefundAmountFormat,
+  validateRefundAmountLeft,
   validateShippingDestinations,
   validateSuccessTransaction,
   validateTransaction,
 } from '../../src/validators/payment.validators';
 import { compareAddress } from '../../src/utils/commerceTools.utils';
-import { convertCentsToEur } from '../../src/utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { getPendingTransaction, getSuccessTransaction, getTransaction } from '../../src/utils/payment.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -29,11 +29,8 @@ jest.mock('../../src/utils/commerceTools.utils', () => ({
   compareAddress: jest.fn(),
 }));
 
-jest.mock('../../src/utils/app.utils', () => ({
-  convertCentsToEur: jest.fn(),
-}));
-
 jest.mock('../../src/utils/payment.utils', () => ({
+  ...(jest.requireActual('../../src/utils/payment.utils') as object),
   getPendingTransaction: jest.fn(),
   getSuccessTransaction: jest.fn(),
   getTransaction: jest.fn(),
@@ -534,32 +531,92 @@ describe('Validation Functions', () => {
     });
   });
 
-  describe('validatePaymentAmount', () => {
-    it('should throw error if payment amount is smaller than the refund one', () => {
-      (getTransaction as jest.Mock).mockReturnValue({});
-      (convertCentsToEur as jest.Mock).mockReturnValue(10);
-      const payment: Payment = {
-        amountPlanned: {
-          centAmount: 1000,
-          fractionDigits: 2,
-        },
-      } as unknown as Payment;
+  describe('validateRefundAmountFormat', () => {
+    it.each([
+      [19.99, 1999],
+      [0.07, 7],
+      [100, 10000],
+    ])('should return %s as %s cents', (amount, cents) => {
+      expect(validateRefundAmountFormat(amount)).toBe(cents);
+    });
 
-      expect(() => validatePaymentAmount(payment, 300)).toThrow(
-        'The refund amount cannot be greater than the payment amount and must be greater than 0',
+    it.each([10.005, 0.001, 19.999])('should reject %s, which has more than two decimal places', (amount) => {
+      expect(() => validateRefundAmountFormat(amount)).toThrow(
+        'The refund amount must not have more than two decimal places',
       );
     });
 
-    it('should not throw error if payment amount is greater than or equal the refund one', () => {
-      (getTransaction as jest.Mock).mockReturnValue({ interactionId: 'transaction123' });
-      const payment: Payment = {
-        amountPlanned: {
-          centAmount: 1000,
-          fractionDigits: 2,
-        },
-      } as unknown as Payment;
+    it.each([0, -1])('should reject %s', (amount) => {
+      expect(() => validateRefundAmountFormat(amount)).toThrow('The refund amount must be greater than 0');
+    });
+  });
 
-      expect(() => validatePaymentAmount(payment, 10)).not.toThrow();
+  describe('validateRefundAmountLeft', () => {
+    const refund = (state: CTTransactionState, centAmount: number) => ({
+      type: CTTransactionType.Refund,
+      state,
+      amount: { centAmount, currencyCode: 'EUR', fractionDigits: 2 },
+    });
+    const paymentWith = (...transactions: object[]) =>
+      ({
+        amountPlanned: { centAmount: 10000, currencyCode: 'EUR', fractionDigits: 2 },
+        transactions: [{ type: CTTransactionType.Authorization, state: CTTransactionState.Success }, ...transactions],
+      }) as unknown as Payment;
+
+    it('should accept the full payment amount', () => {
+      expect(() => validateRefundAmountLeft(paymentWith(), 10000)).not.toThrow();
+    });
+
+    it('should reject an amount above the payment amount', () => {
+      expect(() => validateRefundAmountLeft(paymentWith(), 10001)).toThrow(
+        'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
+      );
+    });
+
+    it('should name the open refunds that keep their amount', () => {
+      const payment = paymentWith(
+        { ...refund(CTTransactionState.Initial, 6000), id: 'refund-open' },
+        { ...refund(CTTransactionState.Success, 3000), id: 'refund-done' },
+      );
+
+      expect(() => validateRefundAmountLeft(payment, 1001)).toThrow(
+        expect.objectContaining({
+          code: 'InvalidRefundAmount',
+          httpErrorStatus: 400,
+          message: expect.stringContaining('docs/RefundPayment.md#process'),
+          fields: { openRefunds: [{ transactionId: 'refund-open', state: 'Initial', centAmount: 6000 }] },
+        }),
+      );
+    });
+
+    it('should not name open refunds when the amount exceeds what is left even without them', () => {
+      const payment = paymentWith(
+        { ...refund(CTTransactionState.Success, 9000), id: 'refund-done' },
+        { ...refund(CTTransactionState.Pending, 500), id: 'refund-open' },
+      );
+
+      expect(() => validateRefundAmountLeft(payment, 2000)).toThrow(
+        expect.objectContaining({ code: 'InvalidRefundAmount', fields: undefined }),
+      );
+      expect(() => validateRefundAmountLeft(payment, 1000)).toThrow(
+        expect.objectContaining({
+          fields: { openRefunds: [{ transactionId: 'refund-open', state: 'Pending', centAmount: 500 }] },
+        }),
+      );
+    });
+
+    it('should count Initial, Pending and Success refunds but not failed ones', () => {
+      const payment = paymentWith(
+        refund(CTTransactionState.Initial, 1000),
+        refund(CTTransactionState.Pending, 2000),
+        refund(CTTransactionState.Success, 3000),
+        refund(CTTransactionState.Failure, 4000),
+      );
+
+      expect(() => validateRefundAmountLeft(payment, 4000)).not.toThrow();
+      expect(() => validateRefundAmountLeft(payment, 4001)).toThrow(
+        expect.objectContaining({ code: 'InvalidRefundAmount', httpErrorStatus: 400 }),
+      );
     });
   });
 

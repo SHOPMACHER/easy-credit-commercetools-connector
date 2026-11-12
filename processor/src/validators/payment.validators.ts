@@ -1,9 +1,9 @@
 import { Address, Cart, Errorx, Payment, Transaction } from '@commercetools/connect-payments-sdk';
 import { compareAddress } from '../utils/commerceTools.utils';
-import { convertCentsToEur } from '../utils/app.utils';
+import { eurToCents } from '../utils/app.utils';
 import { EASYCREDIT_PAYMENT_METHOD } from '../utils/constant.utils';
 import {
-  getInitialRefundTransaction,
+  getAddedTransaction,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
@@ -290,8 +290,8 @@ export const validateTransaction = (payment: Payment) => {
   }
 };
 
-export const validateInitialRefundTransaction = (payment: Payment): Transaction => {
-  const transaction = getInitialRefundTransaction(payment);
+export const validateInitialRefundTransaction = (before: Payment, after: Payment): Transaction => {
+  const transaction = getAddedTransaction(before, after, CTTransactionType.Refund, CTTransactionState.Initial);
 
   if (!transaction) {
     throw new Errorx({
@@ -304,18 +304,54 @@ export const validateInitialRefundTransaction = (payment: Payment): Transaction 
   return transaction;
 };
 
-export const validatePaymentAmount = (payment: Payment, refundAmount: number): void => {
-  const { centAmount, fractionDigits } = payment.amountPlanned;
+const invalidRefundAmountError = (message: string) =>
+  new Errorx({ code: 'InvalidRefundAmount', httpErrorStatus: 400, message });
 
-  const amountInEur = convertCentsToEur(centAmount, fractionDigits);
+// Checked before anything is read or written, so a malformed amount costs no easyCredit call. Returns the amount in cents.
+export const validateRefundAmountFormat = (refundAmount: number): number => {
+  const refundCents = eurToCents(refundAmount);
 
-  if (refundAmount > amountInEur || refundAmount <= 0) {
-    throw new Errorx({
-      code: 'InvalidRefundAmount',
-      httpErrorStatus: 400,
-      message: 'The refund amount cannot be greater than the payment amount and must be greater than 0',
-    });
+  // Float tolerance only: 19.99 * 100 is 1998.9999..., while 10.005 * 100 is 1000.4999...
+  if (Math.abs(refundAmount * 100 - refundCents) > 1e-6) {
+    throw invalidRefundAmountError('The refund amount must not have more than two decimal places');
   }
+
+  if (refundCents <= 0) {
+    throw invalidRefundAmountError('The refund amount must be greater than 0');
+  }
+
+  return refundCents;
+};
+
+// The Refund is added on the payment version read here, so a parallel refund cannot use the same remaining amount.
+export const validateRefundAmountLeft = (payment: Payment, refundCents: number): void => {
+  const refunds = payment.transactions.filter(
+    ({ type, state }) => type === CTTransactionType.Refund && state !== CTTransactionState.Failure,
+  );
+  const refundedCents = refunds.reduce((sum, { amount }) => sum + amount.centAmount, 0);
+
+  if (refundCents <= payment.amountPlanned.centAmount - refundedCents) {
+    return;
+  }
+  // Open refunds reserve their amount until easyCredit completes their booking, so the caller needs to see them
+  // when the refund would fit without them.
+  const open = refunds.filter(({ state }) => state !== CTTransactionState.Success);
+  const openCents = open.reduce((sum, { amount }) => sum + amount.centAmount, 0);
+  if (open.length === 0 || refundCents > payment.amountPlanned.centAmount - refundedCents + openCents) {
+    throw invalidRefundAmountError(
+      'The refund amount cannot be greater than the payment amount minus the refunds that did not fail',
+    );
+  }
+  throw new Errorx({
+    code: 'InvalidRefundAmount',
+    httpErrorStatus: 400,
+    message:
+      'The refund amount cannot be greater than the payment amount minus the refunds that did not fail. ' +
+      'Open refunds keep their amount until easyCredit completes their booking, see docs/RefundPayment.md#process',
+    fields: {
+      openRefunds: open.map(({ id, state, amount }) => ({ transactionId: id, state, centAmount: amount.centAmount })),
+    },
+  });
 };
 
 export const validateECTransactionId = (transactionId: string) => {

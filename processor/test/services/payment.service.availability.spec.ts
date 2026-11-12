@@ -102,6 +102,7 @@ const buildApp = async () => {
     prefix: '/payments',
     sessionHeaderAuthHook: authHook,
     oauth2AuthHook: authHook,
+    authorizationHook: { authorize: () => async () => {} },
   } as unknown as Parameters<typeof paymentsRoute>[1]);
 
   return app;
@@ -498,7 +499,7 @@ describe('payment type availability', () => {
       expect(createPayment).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentMethodInfo: expect.objectContaining({
-            method: 'INSTALLMENT_PAYMENT',
+            method: 'easycredit',
             name: { de: 'easyCredit Ratenkauf' },
           }),
         }),
@@ -511,9 +512,7 @@ describe('payment type availability', () => {
       await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
-      expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [
-        { action: 'freezeCart', strategy: 'HardFreeze' },
-      ]);
+      expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [{ action: 'freezeCart' }]);
     });
 
     describe.each([
@@ -599,7 +598,10 @@ describe('payment type availability', () => {
         process.env.BILL_PAYMENT_ENABLED = original;
       }
 
-      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
+      // The easyCredit page must not offer a switch to a disabled bill payment.
+      expect(createECPaymentMock).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: false }),
+      );
     });
 
     it('should not create an easyCredit transaction for a cart that only bill payment could pay', async () => {
@@ -731,7 +733,7 @@ describe('payment type availability', () => {
       ]);
       // The freeze failed, so the cart is still active and must not be unfrozen.
       expect(updateCart).toHaveBeenCalledTimes(1);
-      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart', strategy: 'HardFreeze' }]);
+      expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'freezeCart' }]);
       expect(createPayment).not.toHaveBeenCalled();
       expect(createECPaymentMock).not.toHaveBeenCalled();
     });
@@ -754,6 +756,18 @@ describe('payment type availability', () => {
 
       await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
         { code: 'BillPaymentExcludedItems', httpErrorStatus: 400 },
+      ]);
+    });
+
+    it('should report only a failed lookup, without the cart errors', async () => {
+      jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
+      jest.mocked(getCartById).mockResolvedValue({
+        ...mockCart(500),
+        billingAddress: { ...address, company: 'ACME GmbH' },
+      } as unknown as Cart);
+
+      await expect(getErrorCodes(createBillPayment())).resolves.toEqual([
+        { code: 'BillPaymentCheckFailed', httpErrorStatus: 503 },
       ]);
     });
 

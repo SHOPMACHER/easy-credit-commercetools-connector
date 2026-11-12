@@ -1,4 +1,4 @@
-import { handleEasyCreditNotification } from '../../src/services/easycreditNotification.service';
+import { handleEasyCreditNotification, settleOpenRefunds } from '../../src/services/easycreditNotification.service';
 import { ECGetMerchantTransactionResponse } from '../../src/types/payment.types';
 import {
   getPaymentByEasyCreditRefundBookingId,
@@ -10,12 +10,15 @@ import { log } from '../../src/libs/logger';
 import {
   getCaptureBooking,
   getCompletedRefunds,
+  getOpenRefundTransactions,
   getPendingCaptureTransactions,
-  getPendingRefundTransactions,
+  getSuccessCaptureTransactions,
+  getSuccessTransaction,
 } from '../../src/utils/payment.utils';
 import { CTTransactionState, CTTransactionType } from '../../src/types/payment.types';
-import { mapUpdateActionForRefunds } from '../../src/utils/map.utils';
+import { mapPendingChargeTransaction, mapUpdateActionForRefunds } from '../../src/utils/map.utils';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Errorx } from '@commercetools/connect-payments-sdk';
 
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
@@ -30,7 +33,6 @@ jest.mock('../../src/validators/payment.validators', () => ({
   validateSuccessTransaction: jest.fn(),
   validateTransaction: jest.fn(),
   validateInitialOrPendingTransaction: jest.fn(),
-  validatePaymentAmount: jest.fn(),
   validateInitialRefundTransaction: jest.fn(),
   validateECTransactionId: jest.fn(),
 }));
@@ -49,7 +51,13 @@ jest.mock('../../src/utils/config.utils', () => ({
     },
   }),
 }));
-jest.mock('../../src/utils/payment.utils');
+// The booking result logic stays real; the other helpers are set per test.
+jest.mock('../../src/utils/payment.utils', () => ({
+  ...jest.createMockFromModule<typeof import('../../src/utils/payment.utils')>('../../src/utils/payment.utils'),
+  getCaptureResult: jest.requireActual<typeof import('../../src/utils/payment.utils')>('../../src/utils/payment.utils')
+    .getCaptureResult,
+  getOpenRefundTransactions: jest.fn(() => []),
+}));
 
 describe('Easycredit Notification handlers', () => {
   describe('handleEasyCreditNotification', () => {
@@ -65,16 +73,19 @@ describe('Easycredit Notification handlers', () => {
             id: 'transaction1',
             type: CTTransactionType.Refund,
             state: CTTransactionState.Pending,
+            amount: { centAmount: 1200, currencyCode: 'EUR', fractionDigits: 2 },
           },
           {
             id: 'transaction2',
             type: CTTransactionType.Refund,
             state: CTTransactionState.Pending,
+            amount: { centAmount: 1200, currencyCode: 'EUR', fractionDigits: 2 },
           },
           {
             id: 'transaction3',
             type: CTTransactionType.Refund,
             state: CTTransactionState.Pending,
+            amount: { centAmount: 1200, currencyCode: 'EUR', fractionDigits: 2 },
           },
         ],
       };
@@ -128,14 +139,14 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([
-        mockECMerchantTransaction.bookings[0],
-        mockECMerchantTransaction.bookings[3],
+        mockECMerchantTransaction.bookings?.[0],
+        mockECMerchantTransaction.bookings?.[3],
       ]);
 
       // @ts-expect-error mocked
       (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockResolvedValue(mockPayment);
 
-      (getPendingRefundTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
+      (getOpenRefundTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
 
       const updateActions = [
         {
@@ -161,7 +172,7 @@ describe('Easycredit Notification handlers', () => {
       expect(updatePayment).toHaveBeenCalledWith(mockPayment, updateActions);
     });
 
-    it('should log error when completed refunds have no booking ID', async () => {
+    it('should not look up a payment for refunds when no completed refund has a booking ID', async () => {
       const mockECMerchantTransaction = {
         bookings: [
           {
@@ -172,9 +183,9 @@ describe('Easycredit Notification handlers', () => {
             status: 'DONE',
             message: null,
             amount: 12.0,
-            // bookingId is missing - this should trigger the error
           },
         ],
+        orderDetails: { orderId: 'payment123' },
       } as unknown as ECGetMerchantTransactionResponse;
 
       (initEasyCreditClient as jest.Mock).mockReturnValue({
@@ -183,18 +194,34 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([
-        mockECMerchantTransaction.bookings[0], // This has no bookingId
+        mockECMerchantTransaction.bookings?.[0], // This has no bookingId
       ]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([]);
 
-      const resourceId = 'payment123';
+      await handleEasyCreditNotification('payment123');
 
-      await handleEasyCreditNotification(resourceId);
-
-      expect(log.error).toHaveBeenCalledWith('No booking ID found for completed refund');
       expect(getPaymentByEasyCreditRefundBookingId).not.toHaveBeenCalled();
+      expect(getPaymentById).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
     });
 
-    it('should log error when no pending refund transactions exist', async () => {
+    it('should ignore a transaction that easyCredit sends without bookings', async () => {
+      (initEasyCreditClient as jest.Mock).mockReturnValue({
+        // @ts-expect-error mocked
+        getMerchantTransaction: jest.fn().mockResolvedValue({ orderDetails: { orderId: 'payment123' } }),
+      });
+
+      await expect(handleEasyCreditNotification('ABC123')).resolves.toBeUndefined();
+
+      expect(getPaymentByEasyCreditRefundBookingId).not.toHaveBeenCalled();
+      expect(getPaymentById).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
+      expect(log.warn).toHaveBeenCalledWith('EasyCredit sent the transaction without bookings, notification ignored', {
+        resourceId: 'ABC123',
+      });
+    });
+
+    it('should not update the payment when no refund transaction is open', async () => {
       const mockPayment = {
         id: 'payment123',
         transactions: [], // No transactions
@@ -220,18 +247,17 @@ describe('Easycredit Notification handlers', () => {
         getMerchantTransaction: jest.fn().mockResolvedValue(mockECMerchantTransaction),
       });
 
-      (getCompletedRefunds as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      (getCompletedRefunds as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings?.[0]]);
 
       // @ts-expect-error mocked
       (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockResolvedValue(mockPayment);
 
-      (getPendingRefundTransactions as jest.Mock).mockReturnValue([]); // Empty array - no pending transactions
+      (getOpenRefundTransactions as jest.Mock).mockReturnValue([]); // Empty array - no pending transactions
 
       const resourceId = 'payment123';
 
       await handleEasyCreditNotification(resourceId);
 
-      expect(log.info).toHaveBeenCalledWith('No pending refund transactions to update', { paymentId: mockPayment.id });
       expect(mapUpdateActionForRefunds).not.toHaveBeenCalled();
       expect(updatePayment).not.toHaveBeenCalled();
     });
@@ -303,7 +329,7 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([]); // No refunds to process
-      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings?.[0]]);
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (getPendingCaptureTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
@@ -348,7 +374,7 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([]);
-      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings?.[0]]);
 
       const resourceId = 'test-resource-id';
 
@@ -378,7 +404,9 @@ describe('Easycredit Notification handlers', () => {
 
       await handleEasyCreditNotification(resourceId);
 
+      // Without completed refund or capture bookings there is nothing to look up, also for an unknown order ID.
       expect(getPaymentById).not.toHaveBeenCalled();
+      expect(updatePayment).not.toHaveBeenCalled();
       expect(log.warn).not.toHaveBeenCalled();
     });
 
@@ -408,7 +436,7 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([]);
-      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings?.[0]]);
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (getPendingCaptureTransactions as jest.Mock).mockReturnValue([]); // No pending captures
@@ -453,7 +481,7 @@ describe('Easycredit Notification handlers', () => {
       });
 
       (getCompletedRefunds as jest.Mock).mockReturnValue([]);
-      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings[0]]);
+      (getCaptureBooking as jest.Mock).mockReturnValue([mockECMerchantTransaction.bookings?.[0]]);
       // @ts-expect-error mocked
       (getPaymentById as jest.Mock).mockResolvedValue(mockPayment);
       (getPendingCaptureTransactions as jest.Mock).mockReturnValue(mockPayment.transactions);
@@ -467,6 +495,245 @@ describe('Easycredit Notification handlers', () => {
         actual: 'different-resource-id',
       });
       expect(updatePayment).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('capture notification result (%s)', (method) => {
+  const pendingCapture = {
+    id: 'capture-transaction1',
+    type: CTTransactionType.Charge,
+    state: CTTransactionState.Pending,
+    interactionId: 'ABC123',
+  };
+  const payment = {
+    id: 'payment123',
+    paymentMethodInfo: { paymentInterface: 'easycredit', method },
+    transactions: [pendingCapture],
+  };
+  const booking = (status: string) => ({ bookingType: 'ApiBooking', type: 'CAPTURE', status });
+
+  const notify = async (bookings: object[], pending: object[]) => {
+    (initEasyCreditClient as jest.Mock).mockReturnValue({
+      // @ts-expect-error mocked
+      getMerchantTransaction: jest.fn().mockResolvedValue({ orderDetails: { orderId: 'payment123' }, bookings }),
+    });
+    (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+    (getCaptureBooking as jest.Mock).mockReturnValue(bookings);
+    // @ts-expect-error mocked
+    (getPaymentById as jest.Mock).mockResolvedValue(payment);
+    (getPendingCaptureTransactions as jest.Mock).mockReturnValue(pending);
+
+    await handleEasyCreditNotification('ABC123');
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('sets the pending Charge to Failure for a FAILED capture booking and logs the reason', async () => {
+    await notify(
+      [{ ...booking('FAILED'), message: { messageDE: 'Fehler', messageEN: 'Capture not possible' } }],
+      [pendingCapture],
+    );
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Failure },
+    ]);
+    expect(log.error).toHaveBeenCalledWith(
+      'EasyCredit capture failed, CommerceTools transaction state updated to Failure.',
+      { transactionId: 'capture-transaction1', paymentId: 'payment123', reason: 'Capture not possible' },
+    );
+  });
+
+  it('sets the pending Charge to Success for a DONE booking next to a FAILED one', async () => {
+    await notify([booking('FAILED'), booking('DONE')], [pendingCapture]);
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Success },
+    ]);
+  });
+
+  it('adds the Charge from the Authorization for a DONE booking without pending Charge', async () => {
+    const authorization = { id: 'auth-1', type: CTTransactionType.Authorization, state: CTTransactionState.Success };
+    const draft = { type: CTTransactionType.Charge, state: CTTransactionState.Pending };
+    (getSuccessTransaction as jest.Mock).mockReturnValue(authorization);
+    (mapPendingChargeTransaction as jest.Mock).mockReturnValue(draft);
+    // @ts-expect-error mocked
+    (updatePayment as jest.Mock).mockResolvedValue(payment);
+    (getPendingCaptureTransactions as jest.Mock).mockReturnValueOnce([]).mockReturnValueOnce([pendingCapture]);
+
+    await notify([booking('DONE')], []);
+
+    expect(mapPendingChargeTransaction).toHaveBeenCalledWith(authorization);
+    expect(updatePayment).toHaveBeenNthCalledWith(1, payment, [{ action: 'addTransaction', transaction: draft }]);
+    expect(updatePayment).toHaveBeenNthCalledWith(2, payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Success },
+    ]);
+  });
+
+  it('keeps the pending Charge Pending while a booking is still open next to a FAILED one', async () => {
+    await notify(
+      [
+        { ...booking('FAILED'), created: '2026-10-28T04:00:00+01:00' },
+        { ...booking('PENDING'), created: '2026-10-28T05:00:00+01:00' },
+      ],
+      [pendingCapture],
+    );
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('EasyCredit capture is still being processed', { paymentId: 'payment123' });
+  });
+
+  it('changes nothing when a Charge is already Success', async () => {
+    (getSuccessCaptureTransactions as jest.Mock).mockReturnValue([{ id: 'charge-done' }]);
+
+    await notify([booking('DONE')], []);
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith('Capture transaction already marked as Success, no further action needed.', {
+      paymentId: 'payment123',
+      transactionId: 'charge-done',
+    });
+    (getSuccessCaptureTransactions as jest.Mock).mockReset();
+  });
+
+  it('adds no Charge for a FAILED capture booking without pending Charge', async () => {
+    await notify([booking('FAILED')], []);
+
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(
+      'Failed EasyCredit capture without pending capture transaction, nothing to update.',
+      { paymentId: 'payment123' },
+    );
+  });
+});
+
+describe('refund notification result', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('logs the easyCredit reason of a FAILED refund booking', async () => {
+    const failed = {
+      bookingType: 'RefundBooking',
+      type: 'REFUND',
+      status: 'FAILED',
+      bookingId: 'refund-1',
+      message: {
+        messageDE: 'Der Rückabwicklungsbetrag ist für diese Transaktion zu hoch.',
+        messageEN: 'The Refund amount is too high for this transaction.',
+      },
+    };
+    const payment = { id: 'payment123', transactions: [{ id: 'refund-1', type: 'Refund', state: 'Pending' }] };
+    (initEasyCreditClient as jest.Mock).mockReturnValue({
+      // @ts-expect-error mocked
+      getMerchantTransaction: jest.fn().mockResolvedValue({ bookings: [failed] }),
+    });
+    (getCompletedRefunds as jest.Mock).mockReturnValue([failed]);
+    // @ts-expect-error mocked
+    (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockResolvedValue(payment);
+    (getOpenRefundTransactions as jest.Mock).mockReturnValue(payment.transactions);
+    (mapUpdateActionForRefunds as jest.Mock).mockReturnValue([
+      { action: 'changeTransactionState', transactionId: 'refund-1', state: CTTransactionState.Failure },
+    ]);
+
+    await handleEasyCreditNotification('ABC123');
+
+    expect(log.warn).toHaveBeenCalledWith(
+      'EasyCredit refund failed, CommerceTools transaction state updated to Failure.',
+      {
+        paymentId: 'payment123',
+        transactionId: 'refund-1',
+        reason: 'The Refund amount is too high for this transaction.',
+      },
+    );
+  });
+
+  it('still completes the capture and passes the error on when the refund lookup fails', async () => {
+    const refund = { bookingType: 'RefundBooking', type: 'REFUND', status: 'DONE', bookingId: 'refund-1' };
+    const capture = { bookingType: 'ApiBooking', type: 'CAPTURE', status: 'DONE' };
+    const pendingCapture = {
+      id: 'capture-transaction1',
+      type: CTTransactionType.Charge,
+      state: CTTransactionState.Pending,
+      interactionId: 'ABC123',
+    };
+    const payment = { id: 'payment123', transactions: [pendingCapture] };
+    const notFound = new Errorx({ code: 'ResourceNotFound', message: 'Payment not found', httpErrorStatus: 404 });
+    (initEasyCreditClient as jest.Mock).mockReturnValue({
+      getMerchantTransaction: jest
+        .fn()
+        // @ts-expect-error mocked
+        .mockResolvedValue({ orderDetails: { orderId: 'payment123' }, bookings: [refund, capture] }),
+    });
+    (getCompletedRefunds as jest.Mock).mockReturnValue([refund]);
+    // @ts-expect-error mocked
+    (getPaymentByEasyCreditRefundBookingId as jest.Mock).mockRejectedValue(notFound);
+    (getCaptureBooking as jest.Mock).mockReturnValue([capture]);
+    // @ts-expect-error mocked
+    (getPaymentById as jest.Mock).mockResolvedValue(payment);
+    (getPendingCaptureTransactions as jest.Mock).mockReturnValue([pendingCapture]);
+
+    await expect(handleEasyCreditNotification('ABC123')).rejects.toBe(notFound);
+
+    expect(updatePayment).toHaveBeenCalledWith(payment, [
+      { action: 'changeTransactionState', transactionId: 'capture-transaction1', state: CTTransactionState.Success },
+    ]);
+  });
+});
+
+describe('settleOpenRefunds', () => {
+  const refund = (id: string, state: CTTransactionState) => ({
+    id,
+    type: CTTransactionType.Refund,
+    state,
+    amount: { centAmount: 1000, currencyCode: 'EUR', fractionDigits: 2 },
+  });
+  const refundBooking = (bookingId: string, status: string) => ({
+    bookingType: 'RefundBooking',
+    type: 'REFUND',
+    status,
+    bookingId,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (getCompletedRefunds as jest.Mock).mockReturnValue([]);
+    (mapUpdateActionForRefunds as jest.Mock).mockReturnValue([]);
+  });
+
+  it('warns about open refunds that easyCredit has no booking for', async () => {
+    const open = [refund('refund-lost', CTTransactionState.Initial), refund('refund-sent', CTTransactionState.Pending)];
+    const payment = { id: 'payment123', transactions: open };
+    (getOpenRefundTransactions as jest.Mock).mockReturnValue(open);
+
+    // @ts-expect-error partial payment
+    await settleOpenRefunds(payment, [refundBooking('refund-sent', 'PENDING')]);
+
+    expect(log.warn).toHaveBeenCalledWith('Refunds without an easyCredit booking stay open and keep their amount', {
+      paymentId: 'payment123',
+      refunds: [
+        { transactionId: 'refund-lost', state: 'Initial', centAmount: 1000, ecBookingStatus: 'none' },
+        { transactionId: 'refund-sent', state: 'Pending', centAmount: 1000, ecBookingStatus: 'PENDING' },
+      ],
+    });
+  });
+
+  it('logs open refunds with a booking in progress as info only', async () => {
+    const open = [refund('refund-sent', CTTransactionState.Pending), refund('refund-done', CTTransactionState.Pending)];
+    (getOpenRefundTransactions as jest.Mock).mockReturnValue(open);
+
+    // @ts-expect-error partial payment
+    await settleOpenRefunds({ id: 'payment123', transactions: open }, [
+      refundBooking('refund-sent', 'PENDING'),
+      refundBooking('refund-done', 'DONE'),
+    ]);
+
+    expect(log.warn).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('Refunds stay open while their easyCredit booking is processed', {
+      paymentId: 'payment123',
+      refunds: [{ transactionId: 'refund-sent', state: 'Pending', centAmount: 1000, ecBookingStatus: 'PENDING' }],
     });
   });
 });

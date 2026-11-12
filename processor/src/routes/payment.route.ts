@@ -38,13 +38,19 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/createPayment.dto';
-import { CapturePaymentRequestSchemaDTO, CapturePaymentResponseSchemaDTO } from '../dtos/payments/capturePayment.dto';
+import {
+  CapturePaymentBodySchema,
+  CapturePaymentRequestSchemaDTO,
+  CapturePaymentResponseSchema,
+  CapturePaymentResponseSchemaDTO,
+} from '../dtos/payments/capturePayment.dto';
 import {
   RefundPaymentBodySchema,
   RefundPaymentRequestSchemaDTO,
   RefundPaymentResponseSchema,
   RefundPaymentResponseSchemaDTO,
 } from '../dtos/payments/refundPayment.dto';
+import { PAYMENT_MODIFICATION_SCOPES } from '../utils/constant.utils';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -142,8 +148,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { paymentId } = request.params;
+      const { waitForAuthorization } = request.body ?? {};
 
-      await handleAuthorizeECPayment(paymentId);
+      await handleAuthorizeECPayment(paymentId, waitForAuthorization);
 
       reply.code(204).send();
     },
@@ -156,11 +163,14 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/capture',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
-        body: AuthorizePaymentBodySchema,
+        body: CapturePaymentBodySchema,
         response: {
-          204: AuthorizePaymentResponseSchema,
+          204: CapturePaymentResponseSchema,
           400: ErrorResponse,
         },
       },
@@ -182,7 +192,10 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/refund',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
         body: RefundPaymentBodySchema,
         response: {
