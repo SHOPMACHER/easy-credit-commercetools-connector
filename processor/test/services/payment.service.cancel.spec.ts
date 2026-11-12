@@ -61,7 +61,7 @@ const stateWrites = () =>
       .map((a) => a.state),
   );
 
-describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('handleCancelPayment divergence check (%s)', (method) => {
+describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('handleCancelPayment (%s)', (method) => {
   beforeEach(() => {
     jest.clearAllMocks();
     client.getPayment.mockReset();
@@ -83,51 +83,107 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('handleCancelPayment dive
     expect(divergenceLogs()).toHaveLength(0);
   });
 
-  it('cancels a Pending transaction and re-checks easyCredit after the Failure write with a bounded lookup', async () => {
+  const expectRefusedWithoutChanges = async () => {
+    await expect(handleCancelPayment(PAYMENT_ID)).rejects.toMatchObject({
+      code: 'PaymentInProgress',
+      httpErrorStatus: 400,
+    });
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(updateCart).not.toHaveBeenCalled();
+  };
+
+  // Pending: the authorization request is already at easyCredit, which can still authorize it.
+  it.each(['PREAUTHORIZED', 'OPEN'])(
+    'refuses to cancel a Pending transaction while easyCredit reports %s',
+    async (status) => {
+      mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
+      client.getPayment.mockResolvedValue({ status });
+
+      await expectRefusedWithoutChanges();
+    },
+  );
+
+  // DECLINED and EXPIRED are final: easyCredit can no longer authorize the payment.
+  it.each(['DECLINED', 'EXPIRED'])('cancels a Pending transaction that easyCredit reports as %s', async (status) => {
     mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
-    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
-    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    client.getPayment.mockResolvedValue({ status });
 
     await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
 
-    expect(client.getPayment).toHaveBeenCalledTimes(2);
-    expect(client.getPayment).toHaveBeenLastCalledWith(TECH_ID, expect.any(AbortSignal));
-    expect(timeoutSpy).toHaveBeenCalledWith(5000);
-    expect(mock(updatePayment).mock.invocationCallOrder[0]).toBeLessThan(client.getPayment.mock.invocationCallOrder[1]);
     expect(stateWrites()).toEqual(['Failure']);
-    expect(divergenceLogs()).toHaveLength(0);
-    timeoutSpy.mockRestore();
-  });
-
-  it('logs the divergence once when easyCredit turns AUTHORIZED during a cancel of a Pending transaction', async () => {
-    mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
-    client.getPayment
-      .mockResolvedValueOnce({ status: 'PREAUTHORIZED' })
-      .mockResolvedValueOnce({ status: 'AUTHORIZED' });
-
-    await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
-
-    expect(divergenceLogs()).toHaveLength(1);
-    expect(divergenceLogs()[0][1]).toEqual(
-      expect.objectContaining({
-        paymentId: PAYMENT_ID,
-        technicalTransactionId: TECH_ID,
-        reason: expect.stringContaining('cancel'),
-      }),
-    );
     expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
   });
 
-  it('still cancels and does not log a divergence when the re-check lookup fails', async () => {
-    mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
-    client.getPayment
-      .mockResolvedValueOnce({ status: 'PREAUTHORIZED' })
-      .mockRejectedValueOnce(new Error('easyCredit unavailable'));
+  it('refuses to cancel a declined Pending transaction that turns Success before the Failure write', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Pending', method))
+      .mockResolvedValue(buildPayment('Success', method));
+    client.getPayment.mockResolvedValue({ status: 'DECLINED' });
+
+    await expect(handleCancelPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionIsAuthorized' });
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(updateCart).not.toHaveBeenCalled();
+  });
+
+  it('unfreezes the cart when a decline callback writes Failure before the cancel re-reads', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValueOnce(buildPayment('Pending', method))
+      .mockResolvedValue(buildPayment('Failure', method));
+    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
 
     await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
 
-    expect(stateWrites()).toEqual(['Failure']);
-    expect(divergenceLogs()).toHaveLength(0);
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+  });
+
+  it('refuses to cancel an Initial transaction that turns Pending before the Failure write', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValue(buildPayment('Pending', method));
+    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
+
+    await expectRefusedWithoutChanges();
+  });
+
+  it('refuses to cancel when a parallel Pending write makes the Failure write conflict', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValue(buildPayment('Pending', method));
+    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
+    mock(updatePayment).mockRejectedValueOnce(
+      new Errorx({ code: 'ConcurrentModification', message: 'x', httpErrorStatus: 409 }),
+    );
+
+    await expect(handleCancelPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'PaymentInProgress' });
+
+    // Only the conflicting attempt: the retry reads Pending and does not write again.
+    expect(updatePayment).toHaveBeenCalledTimes(1);
+    expect(updateCart).not.toHaveBeenCalled();
+  });
+
+  it('answers TransactionIsAuthorized when the transaction turns Success before the Failure write', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValue(buildPayment('Success', method));
+    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
+
+    await expect(handleCancelPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionIsAuthorized' });
+    expect(updatePayment).not.toHaveBeenCalled();
+    expect(updateCart).not.toHaveBeenCalled();
+  });
+
+  it('unfreezes the cart when a parallel cancel already wrote Failure', async () => {
+    mock(getPaymentById)
+      .mockResolvedValueOnce(buildPayment('Initial', method))
+      .mockResolvedValue(buildPayment('Failure', method));
+    client.getPayment.mockResolvedValue({ status: 'PREAUTHORIZED' });
+
+    await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
+
+    expect(updatePayment).not.toHaveBeenCalled();
     expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
   });
 
@@ -147,15 +203,11 @@ describe.each(['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'])('handleCancelPayment dive
     },
   );
 
-  it('cancels a Pending transaction whose easyCredit transaction is gone', async () => {
+  it('refuses to cancel a Pending transaction whose easyCredit transaction is gone', async () => {
     mock(getPaymentById).mockResolvedValue(buildPayment('Pending', method));
     client.getPayment.mockRejectedValue(new Errorx({ code: 'Gone', message: 'gone', httpErrorStatus: 410 }));
 
-    await expect(handleCancelPayment(PAYMENT_ID)).resolves.toBe(PAYMENT_ID);
-
-    expect(stateWrites()).toEqual(['Failure']);
-    expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
-    expect(divergenceLogs()).toHaveLength(0);
+    await expectRefusedWithoutChanges();
   });
 
   it.each([
