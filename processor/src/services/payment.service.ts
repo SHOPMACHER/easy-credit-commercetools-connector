@@ -234,22 +234,57 @@ const validateCart = async (
 
 const REDIRECT_LINK_KEYS = ['urlSuccess', 'urlCancellation', 'urlDenial'] as const;
 
-// The shopper lands on these links, so only plain absolute web links: no other scheme and no credentials, which would
-// make https://shop.example.com@evil.example open evil.example.
-const assertRedirectLinks = (redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback): void => {
-  for (const key of REDIRECT_LINK_KEYS) {
-    const value = redirectLinks[key];
-    const url = URL.canParse(value) ? new URL(value) : undefined;
+// Whitespace, control characters and backslashes are dropped or rewritten by the URL parser, so the checked link could
+// differ from the one a browser follows.
+const hasUnsafeLinkCharacter = (value: string): boolean =>
+  [...value].some((char) => /[\s\\]/.test(char) || char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
 
-    if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+const getRedirectAllowedHosts = (): string[] => readConfiguration().easyCredit.redirectAllowedHosts ?? [];
+
+const parseRedirectLink = (value: string, allowedHosts: string[]): URL | undefined => {
+  const url = !hasUnsafeLinkCharacter(value) && URL.canParse(value) ? new URL(value) : undefined;
+
+  if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    return undefined;
+  }
+
+  return allowedHosts.length === 0 || allowedHosts.includes(url.hostname) ? url : undefined;
+};
+
+// The shopper lands on these links, so only plain absolute web links: no other scheme, no credentials (which would make
+// https://shop.example.com@evil.example open evil.example) and, if configured, only the shop's hosts.
+// Returns the parsed form, so the link that is stored and signed is the one that was checked.
+const assertRedirectLinks = (
+  redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
+): ECTransactionRedirectLinksWithoutAuthorizationCallback => {
+  const allowedHosts = getRedirectAllowedHosts();
+  const checked = { ...redirectLinks };
+
+  for (const key of REDIRECT_LINK_KEYS) {
+    const url = parseRedirectLink(redirectLinks[key], allowedHosts);
+
+    if (!url) {
       throw new ErrorInvalidField(
         `redirectLinks.${key}`,
-        value,
-        'absolute http or https URL without user name or password',
+        redirectLinks[key],
+        allowedHosts.length > 0
+          ? `absolute http or https URL without user name or password on one of the hosts ${allowedHosts.join(', ')}`
+          : 'absolute http or https URL without user name or password',
       );
     }
+
+    checked[key] = url.href;
   }
+
+  return checked;
 };
+
+// Regular links stay unchecked unless the merchant configured the allowed hosts, so existing integrations keep working.
+const checkRedirectLinks = (
+  redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
+  { express = false }: ExpressOptions,
+): ECTransactionRedirectLinksWithoutAuthorizationCallback =>
+  express || getRedirectAllowedHosts().length > 0 ? assertRedirectLinks(redirectLinks) : redirectLinks;
 
 const assertSessionCart = (cartId: string | undefined): string => {
   if (!cartId) {
@@ -308,12 +343,15 @@ const releaseCart = async (cart: Cart, ownsPlaceholder: boolean): Promise<void> 
   }
 };
 
-const isOpenAttempt = (payment: Payment): boolean => {
+// An open attempt owns the freeze, and an authorized one needs the frozen cart for its order.
+const holdsCart = (payment: Payment): boolean => {
   const state = getTransaction(payment)?.state;
-  return state === CTTransactionState.Initial || state === CTTransactionState.Pending;
+  return (
+    state === CTTransactionState.Initial || state === CTTransactionState.Pending || state === CTTransactionState.Success
+  );
 };
 
-// The attempt is over. Its cart stays frozen while another easyCredit attempt on it is open, as that one owns the freeze.
+// The attempt is over. Its cart stays frozen while another easyCredit attempt on it holds it.
 // Safe to repeat, so a retry after a failed release frees the cart. A discarded attempt is on no cart any more.
 const releaseCartOfEndedAttempt = async (payment: Payment): Promise<void> => {
   const cart = await findCartByPaymentId(payment.id);
@@ -326,7 +364,7 @@ const releaseCartOfEndedAttempt = async (payment: Payment): Promise<void> => {
     if (id !== payment.id) {
       const other = await getPaymentById(id);
 
-      if (isEasyCreditPayment(other) && isOpenAttempt(other)) {
+      if (isEasyCreditPayment(other) && holdsCart(other)) {
         return;
       }
     }
@@ -335,13 +373,43 @@ const releaseCartOfEndedAttempt = async (payment: Payment): Promise<void> => {
   await releaseCart(cart, ownsPlaceholderAddress(payment));
 };
 
-// An express attempt left without a callback keeps the cart frozen with the placeholder, which the regular address checks
-// reject. The regular flow ends it first. An attempt that easyCredit may still authorize throws PaymentInProgress.
-const releaseAbandonedExpressAttempts = async (cart: Cart): Promise<Cart> => {
-  if (!isPlaceholderAddress(cart.shippingAddress)) {
-    return cart;
+// ended: easyCredit can no longer authorize it. open: the shopper may still be on the easyCredit page.
+// live: easyCredit authorized or may authorize it (PREAUTHORIZED waits for the shop's authorize).
+type AbandonedAttemptState = 'ended' | 'open' | 'live';
+
+const getAbandonedAttemptState = async (payment: Payment): Promise<AbandonedAttemptState> => {
+  const transaction = getTransaction(payment);
+
+  if (!transaction || transaction.state === CTTransactionState.Failure) {
+    return 'ended';
+  }
+  if (transaction.state !== CTTransactionState.Initial) {
+    return 'live';
   }
 
+  try {
+    const { status } = await initEasyCreditClient().getPayment(
+      transaction.custom?.fields.easyCreditTechnicalTransactionId as string,
+      AbortSignal.timeout(EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS),
+    );
+
+    if (status === ECTransactionStatus.DECLINED || status === ECTransactionStatus.EXPIRED) {
+      return 'ended';
+    }
+    return status === ECTransactionStatus.OPEN ? 'open' : 'live';
+  } catch (error: unknown) {
+    if (isGoneAtEasyCredit(error)) {
+      return 'ended';
+    }
+    log.warn('Could not check the abandoned express attempt, keeping it', { paymentId: payment.id, error });
+    return 'live';
+  }
+};
+
+// An express attempt left without a callback keeps the cart frozen with the placeholder, which the regular address checks
+// reject. The payment type check only ends attempts that are over; a create also ends an open one, as a type switch does
+// (discardStaleAttempts), and throws PaymentInProgress for a live one.
+const getPlaceholderOwners = async (cart: Cart): Promise<Payment[]> => {
   const owners: Payment[] = [];
 
   for (const { id } of cart.paymentInfo?.payments ?? []) {
@@ -352,13 +420,39 @@ const releaseAbandonedExpressAttempts = async (cart: Cart): Promise<Cart> => {
     }
   }
 
-  if (owners.length === 0) {
+  return owners;
+};
+
+// Only reads, so a kept attempt leaves every payment and the cart untouched. A create throws instead of keeping one.
+const canEndAttempts = async (owners: Payment[], endOpen: boolean): Promise<boolean> => {
+  for (const owner of owners) {
+    const state = await getAbandonedAttemptState(owner);
+
+    if (state === 'live' && endOpen) {
+      throw paymentInProgressError();
+    }
+    if (state === 'live' || (state === 'open' && !endOpen)) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const releaseAbandonedExpressAttempts = async (cart: Cart, { endOpen }: { endOpen: boolean }): Promise<Cart> => {
+  if (!isPlaceholderAddress(cart.shippingAddress)) {
+    return cart;
+  }
+
+  const owners = await getPlaceholderOwners(cart);
+
+  if (owners.length === 0 || !(await canEndAttempts(owners, endOpen))) {
     return cart;
   }
 
   for (const owner of owners) {
     if (
-      (await isStaleAttempt(owner)) &&
+      getTransaction(owner)?.state === CTTransactionState.Initial &&
       !(await setTransactionState(owner.id, CTTransactionState.Failure, CTTransactionState.Initial))
     ) {
       throw paymentInProgressError();
@@ -379,7 +473,7 @@ const releaseAbandonedExpressAttempts = async (cart: Cart): Promise<Cart> => {
 // The availability check must not fail on a cleanup it could not do; the address check then reports the placeholder.
 const releaseAbandonedExpressAttemptsQuietly = async (cart: Cart): Promise<Cart> => {
   try {
-    return await releaseAbandonedExpressAttempts(cart);
+    return await releaseAbandonedExpressAttempts(cart, { endOpen: false });
   } catch (error: unknown) {
     log.warn('Could not end the abandoned express attempt of the cart', { cartId: cart.id, error });
     return cart;
@@ -393,15 +487,23 @@ const expressAddressMissingError = () =>
     httpErrorStatus: 400,
   });
 
+// sessionCartId: the regular routes take the cartId from the request, so only the session's own cart is cleaned up.
+type CheckoutOptions = ExpressOptions & { sessionCartId?: string };
+
+const cleansAbandonedAttempts = (cartId: string, { express = false, sessionCartId }: CheckoutOptions): boolean =>
+  !express && !!sessionCartId && sessionCartId === cartId;
+
 // Not logged here: the error handler already logs every error it answers with.
 export const handlePaymentMethod = async (
   cartId: string,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
-  options: ExpressOptions = {},
+  options: CheckoutOptions = {},
 ): Promise<GetPaymentMethodResponse> => {
   assertPaymentTypeEnabled(paymentType);
   const fetched = await getCartById(cartId);
-  const cart = options.express ? fetched : await releaseAbandonedExpressAttemptsQuietly(fetched);
+  const cart = cleansAbandonedAttempts(cartId, options)
+    ? await releaseAbandonedExpressAttemptsQuietly(fetched)
+    : fetched;
   let paymentTypes = await validateCart(cart, paymentType, options);
 
   for (const otherType of ALL_PAYMENT_TYPES.filter((type) => type !== paymentType)) {
@@ -460,7 +562,7 @@ const createPaymentForCart = async (
   cartId: string,
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   paymentType: ECTransactionPaymentType,
-  options: ExpressOptions,
+  options: CheckoutOptions,
   customerRelationship?: ECTransactionCustomerRelationship,
 ): Promise<PaymentResponse> => {
   let cart: Cart | null = null;
@@ -470,13 +572,13 @@ const createPaymentForCart = async (
   const orphan: { paymentId?: string } = {};
   try {
     assertPaymentTypeEnabled(paymentType);
+    const checkedLinks = checkRedirectLinks(redirectLinks, options);
     if (options.express) {
-      assertRedirectLinks(redirectLinks);
       await assertExpressConfigured();
     }
     cart = await getCartById(cartId);
-    if (!options.express) {
-      cart = await releaseAbandonedExpressAttempts(cart);
+    if (cleansAbandonedAttempts(cartId, options)) {
+      cart = await releaseAbandonedExpressAttempts(cart, { endOpen: true });
     }
     await validateCart(cart, paymentType, options);
     const { centAmount, currencyCode } = cart.totalPrice;
@@ -509,7 +611,7 @@ const createPaymentForCart = async (
       await mapCTCartToECPayment(
         cart,
         ctPayment,
-        redirectLinks,
+        checkedLinks,
         customerRelationship ?? (await getCustomerRelationship(cart)),
         paymentType,
         options,
@@ -779,8 +881,9 @@ export const handleCreatePayment = async (
   redirectLinks: ECTransactionRedirectLinksWithoutAuthorizationCallback,
   customerRelationship: ECTransactionCustomerRelationship,
   paymentType: ECTransactionPaymentType = DEFAULT_PAYMENT_TYPE,
+  sessionCartId?: string,
 ): Promise<PaymentResponse> =>
-  createPaymentForCart(cartId, redirectLinks, paymentType, { express: false }, customerRelationship);
+  createPaymentForCart(cartId, redirectLinks, paymentType, { express: false, sessionCartId }, customerRelationship);
 
 // Express handlers take the cartId from the session, never from the request.
 // Checked here too, so the shop hides the express buttons instead of failing on click.

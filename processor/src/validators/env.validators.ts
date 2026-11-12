@@ -2,6 +2,7 @@ import {
   array,
   optional,
   region,
+  standardHost,
   standardInteger,
   standardKey,
   standardOneOf,
@@ -167,6 +168,12 @@ const envValidators = [
     code: 'InvalidInstallmentPaymentExcludedCustomLineItems',
     message:
       'Installment payment excluded custom line items should be a comma-separated list of custom line item slugs or keys.',
+    referencedBy: 'environmentVariables',
+  }),
+
+  array(standardHost)(['easyCredit', 'redirectAllowedHosts'], {
+    code: 'InvalidRedirectAllowedHosts',
+    message: 'Redirect allowed hosts should be a comma-separated list of host names without scheme, port or path.',
     referencedBy: 'environmentVariables',
   }),
 ];
