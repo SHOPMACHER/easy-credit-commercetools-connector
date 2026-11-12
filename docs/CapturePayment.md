@@ -12,7 +12,7 @@ This API captures an EC payment. It uses the CT `paymentId`. It works for `INSTA
 
 For pay by invoice (`BILL_PAYMENT`), the capture reports the shipment to EC. The customer pays at the earliest 30 days after delivery. Request the capture when the order is shipped. The flow, the EC bookings and the notification are the same as for installment.
 
-You must capture a payment only through the connector (`POST /payments/:paymentId/capture`). A capture in the EC merchant portal is not supported. The connector possibly does not record it. Then you must add the `Charge` in commercetools by hand, see [After a failed capture](#after-a-failed-capture).
+You must capture a payment only through the connector (`POST /payments/:paymentId/capture`). A capture in the EC merchant portal is not supported. The connector reads only capture bookings with `bookingType` `ApiBooking` and `type` `CAPTURE`, so it possibly does not record a portal capture. Then you must add the `Charge` in commercetools by hand, see [After a failed capture](#after-a-failed-capture).
 <br />
 
 Behavior changes for existing integrations, installment included, are in the [changelog](../CHANGELOG.md#upgrade-notes).
