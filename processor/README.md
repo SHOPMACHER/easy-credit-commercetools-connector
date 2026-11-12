@@ -37,6 +37,7 @@ You set these values in commercetools Connect when you deploy the connector. To 
 | INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS, BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS | Optional comma-separated custom line item slugs or keys. If the cart has a custom line item whose `slug` or `key` is in the list, the connector does not offer the payment type. |
 | WEBSHOP_CACHE_TTL | Seconds (0 to 3600, default 300) to cache the easyCredit webshop configuration (activation status and order value limits per payment type) and the product type lookup of the `*_EXCLUDED_PRODUCT_TYPES` lists. |
 | TRANSACTION_CUSTOM_TYPE_KEY | Key of the custom type for transaction resources (default `easy-credit-technical-transaction-id`). To share a custom type with other connectors, use an existing key. The post-deploy script adds the missing fields. |
+| REDIRECT_ALLOWED_HOSTS | Optional comma-separated host names the shop's redirect links may point to, for example `shop.example.com,www.shop.example.com`. When set, Create Payment and Create Express Payment return `400 InvalidField` for any other link. Without it, any link is accepted for the regular checkout. Recommended for production. See [Redirect links](../docs/CreatePayment.md#redirect-links). |
 
 For the full rules on the payment types, the excluded items, the format of the lists and the cache, see [Get payment method](../docs/GetPaymentMethod.md#payment-type-availability).
 
@@ -48,6 +49,7 @@ For more information on each feature, use the link.
 | Get payment method | [LINK](/docs/GetPaymentMethod.md) |
 | Get payment | [LINK](/docs/GetPayment.md) |
 | Create payment (installment and pay by invoice) | [LINK](/docs/CreatePayment.md) |
+| Create express payment (without customer and address) | [LINK](/docs/CreateExpressPayment.md) |
 | Authorize payment (with `waitForAuthorization: true`, waits up to 30 s for the authorization) | [LINK](/docs/AuthorizePayment.md) |
 | Cancel payment | [LINK](/docs/CancelPayment.md) |
 | Capture payment | [LINK](/docs/CapturePayment.md) |
