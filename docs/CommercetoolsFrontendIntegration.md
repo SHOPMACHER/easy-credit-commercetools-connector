@@ -662,11 +662,11 @@ export function getCheckoutOptions(
 - **To the other easyCredit type:** call Create Payment again. Create Payment keeps, discards or refuses each earlier easyCredit attempt of the cart, see [Switching in the shop checkout](./CreatePayment.md#switching-in-the-shop-checkout).
 - **To a payment method that is not easyCredit:** first read the state of the `Authorization` transaction of each easyCredit payment of the cart. Only an `Initial` payment can be cancelled. Then call the cancel webhook for it. The cancel webhook sets the payment to `Failure` and unfreezes the cart. See [Cancel Payment](./CancelPayment.md#switching-to-another-payment-method).
 
-The shop must never cancel a `Pending` payment. `Pending` means that the connector already sent the authorization request to easyCredit. The connector accepts a cancel for `Pending`, but it does not void the authorization at easyCredit. easyCredit can then authorize the payment, and no order exists. The order recovery job does not find this payment, because it is `Failure` now.
+The shop must never cancel a `Pending` payment. `Pending` means that the connector already sent the authorization request to easyCredit. easyCredit can still authorize the payment. Thus the cancel webhook refuses a `Pending` payment with `400 PaymentInProgress` and changes nothing. The exception: easyCredit already reports `DECLINED` or `EXPIRED`. If the BFF reads `Initial` and a parallel authorization then sets `Pending`, the cancel webhook also returns `400 PaymentInProgress`.
 
 If a payment is `Pending` or `Success`, the payment is in review. Do not cancel it. Tell the shopper that easyCredit still checks the payment. The shopper must not select a different payment method for this cart. The [order recovery job](#order-recovery-job) completes the payment.
 
-Call the cancel webhook from the BFF, because the BFF can read the cart payments. The call needs no token and no signature. Without `redirectUrl`, the processor answers `200` with `{ "paymentId": "..." }`. A payment that is already `Failure` also gets `200`. If easyCredit already authorized the payment, the processor answers `400 TransactionIsAuthorized`. Then the payment is also in review.
+Call the cancel webhook from the BFF, because the BFF can read the cart payments. The call needs no token and no signature. Without `redirectUrl`, the processor answers `200` with `{ "paymentId": "..." }`. A payment that is already `Failure` also gets `200`. If easyCredit already authorized the payment, the processor answers `400 TransactionIsAuthorized`. If the payment is `Pending` now, the processor answers `400 PaymentInProgress`. In both cases, the payment is also in review.
 
 ```ts
 // BFF. File cancelEasyCreditPayment.ts. Action "cart/cancelEasyCreditPayment": call it before the shopper pays with a method that is not easyCredit.
@@ -727,7 +727,7 @@ export async function cancelEasyCreditPayment(request: Request, actionContext: A
   }
 
   const { errors } = (await response.json().catch(() => ({}))) as { errors?: { code?: string }[] };
-  if (errors?.some(({ code }) => code === 'TransactionIsAuthorized')) {
+  if (errors?.some(({ code }) => code === 'TransactionIsAuthorized' || code === 'PaymentInProgress')) {
     return respond({ status: 'inReview' });
   }
 
@@ -965,6 +965,7 @@ For each payment, read its cart with the predicate `paymentInfo(payments(id="<pa
 | Answer | Job action |
 | --- | --- |
 | `200` | The payment is `Failure` and the cart is unfrozen. Nothing more is necessary. |
+| `400 PaymentInProgress` | The payment is `Pending` now. A parallel authorization sent the request to easyCredit. Do nothing. The next runs handle it as `Pending`. |
 | `400 TransactionIsAuthorized` | easyCredit authorized the payment. Do not call authorize in the same run. The authorize callback normally sets the payment to `Success`, and the `Success` query then takes it. If the payment stays `Initial`, the next runs get this answer again: send an alert. |
 | Any other answer | Send an alert. |
 
