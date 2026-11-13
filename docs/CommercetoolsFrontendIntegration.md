@@ -598,19 +598,43 @@ The enabler options require a `sessionId` string. For a widget without a session
 // Browser. File easycredit-widget.ts: product page or cart page. The price is a commercetools Money value.
 import { createEnabler } from './easycredit-enabler';
 
-export async function mountWidget(price: { centAmount: number; fractionDigits: number }): Promise<void> {
+type EasyCreditWidgetElement = HTMLElement & { componentOnReady?: () => Promise<unknown> };
+
+// Resolves when the widget has rendered, or when no widget shows.
+// Abort the signal when the price changes or the page closes. Then a slow earlier call cannot mount an old amount.
+export async function mountWidget(
+  price: { centAmount: number; fractionDigits: number },
+  signal?: AbortSignal,
+): Promise<void> {
   // The widget needs no session. Use this enabler only for the widget.
   const enabler = await createEnabler('');
   const widgetBuilder = await enabler.createWidgetBuilder();
 
-  // easyCredit reads the amount only when the widget renders, so mount again after a price change.
-  document.getElementById('easycredit-widget')?.replaceChildren();
+  const container = document.getElementById('easycredit-widget');
+  if (signal?.aborted || !container) {
+    return;
+  }
 
-  widgetBuilder.build({ amount: price.centAmount / 10 ** price.fractionDigits }).mount('#easycredit-widget');
+  // easyCredit reads the amount only when the widget renders, so mount again after a price change.
+  container.replaceChildren();
+  await widgetBuilder.build({ amount: price.centAmount / 10 ** price.fractionDigits }).mount('#easycredit-widget');
+
+  // mount() resolves before the easyCredit component has rendered. It inserts nothing when the widget is off.
+  const widget = container.querySelector<EasyCreditWidgetElement>('easycredit-widget');
+  if (widget) {
+    await Promise.race([
+      customElements.whenDefined('easycredit-widget').then(() => widget.componentOnReady?.()),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+  }
 }
 ```
 
 `amount` is in EUR major units, for example `599.9`.
+
+**Placeholder.** The widget shows only after the enabler, the easyCredit web components and `GET /operations/widget-enabled` have loaded. On the first page view, this can take several seconds, and the place of the widget stays empty. Show a placeholder, for example a skeleton with the height of the widget, until `mountWidget` resolves. Then remove the placeholder. `mountWidget` also resolves when no widget shows, so the placeholder does not stay on the page.
+
+**Cart page.** Call `mountWidget` when the cart has loaded, and again when the cart total changes. Before each call, abort the signal of the previous call. Some shops report a total of 0 while the cart loads. Do not mount the widget for that value, and do not treat it as an empty cart.
 
 <br />
 
