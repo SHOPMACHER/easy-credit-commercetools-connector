@@ -80,6 +80,7 @@ This guide tells you how to add the web components of the connector to your shop
 
 - The component sends API calls to the connector to find out if the widget can be shown. If it can be shown, it looks like this image: ![easyCredit Widget](./assets/easycredit-widget.png)
 - `GET /operations/widget-enabled` needs no checkout session. The widget therefore also works on product pages for shoppers who have no cart.
+- On the cart page, the total changes. Clear the container and mount the widget again for each new total, and stop the earlier call so that it cannot mount an old amount. The widget can take several seconds to show, so show a placeholder until it has rendered. For an example, see [Widget on the product and cart page](./CommercetoolsFrontendIntegration.md#widget-on-the-product-and-cart-page).
 
 #### Pay by invoice in the widget
 
