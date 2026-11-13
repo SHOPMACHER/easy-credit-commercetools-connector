@@ -1,0 +1,84 @@
+{
+	"id": "23acb29a-d2aa-4e54-bd02-5ff5a044f142",
+	"name": "EasyCredit Dev env",
+	"values": [
+		{
+			"key": "auth_url",
+			"value": "https://auth.europe-west1.gcp.commercetools.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "client_id",
+			"value": "<CLIENT_ID>",
+			"type": "default",
+			"enabled": true,
+			"description": "Client ID of your commercetools API client. See request 1.1 for the scopes."
+		},
+		{
+			"key": "client_secret",
+			"value": "<CLIENT_SECRET>",
+			"type": "default",
+			"enabled": true,
+			"description": "Client secret of your commercetools API client."
+		},
+		{
+			"key": "ctp_access_token",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Set by request 1.1."
+		},
+		{
+			"key": "project-key",
+			"value": "<PROJECT_KEY>",
+			"type": "default",
+			"enabled": true,
+			"description": "Key of your commercetools project. Request 1.1 overwrites it with the project key from the scope of the token."
+		},
+		{
+			"key": "ctp_session_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Set by request 1.2."
+		},
+		{
+			"key": "session_url",
+			"value": "https://session.europe-west1.gcp.commercetools.com",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "cart_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "ID of a cart that you create before the run. The cart needs a line item, a German billing address, a German shipping address and an amount inside the limits. Use your usual commercetools tooling."
+		},
+		{
+			"key": "payment_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Set by request 2.4 or 2.5. If your tool does not run the test script, copy paymentId from the create response."
+		},
+		{
+			"key": "connector_url",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Processor URL of the deployed connector. After the deployment, the Connect deployment shows the URL of each application. Use the URL of the application \"processor\". The processor also stores it in the custom object with the container \"easycredit-connector\" and the key \"easycredit-connector-url\"."
+		},
+		{
+			"key": "checkout_application_key",
+			"value": "<CHECKOUT_APPLICATION_KEY>",
+			"type": "default",
+			"enabled": true,
+			"description": "Optional. Key of a commercetools Checkout application. The connector does not need commercetools Checkout. You can keep the placeholder value."
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2024-11-06T09:40:54.713Z",
+	"_postman_exported_using": "Postman/11.18.0-241015-0634"
+}

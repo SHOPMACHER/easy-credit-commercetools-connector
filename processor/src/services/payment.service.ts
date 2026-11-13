@@ -696,7 +696,6 @@ const isStaleAttempt = async (payment: Payment): Promise<boolean> => {
 
 // The shopper switched the payment type in the shop checkout while the cart still holds an earlier attempt.
 // Pass 1 only reads, so a refusal mutates nothing; pass 2 fails the stale transactions and replaces them in one cart update.
-// handleCancelPayment (cancel webhook) stays as is: it also cancels Pending, while create refuses Pending.
 const discardStaleAttempts = async (cart: Cart): Promise<Cart> => {
   const discarded: string[] = [];
 
@@ -741,20 +740,6 @@ const logDivergence = (paymentId: string, technicalTransactionId: string, reason
     technicalTransactionId,
     reason,
   });
-
-// Best effort: a failing lookup must not turn a completed cancel into an error.
-const logLateAuthorization = async (paymentId: string, technicalTransactionId: string): Promise<void> => {
-  const ecPayment = await initEasyCreditClient()
-    .getPayment(technicalTransactionId, AbortSignal.timeout(EASYCREDIT_CALLBACK_LOOKUP_TIMEOUT_MS))
-    .catch((error: unknown) => {
-      log.warn('Could not re-check the easyCredit status after cancelling a Pending transaction', error);
-      return undefined;
-    });
-
-  if (ecPayment?.status === ECTransactionStatus.AUTHORIZED) {
-    logDivergence(paymentId, technicalTransactionId, 'cancelled while the authorization was in flight');
-  }
-};
 
 const getEcCents = (ecPayment: ECGetPaymentResponse): number | undefined => {
   const ecValue = ecPayment.transaction?.orderDetails?.orderValue ?? ecPayment.decision?.orderValue;
@@ -1079,6 +1064,13 @@ const isExpiredECTransactionError = (error: unknown): boolean => {
 // The cancel route sends the shopper to the shop's success page on this code, so keep it stable.
 export const TRANSACTION_IS_AUTHORIZED = 'TransactionIsAuthorized';
 
+const cancelRefusedError = () =>
+  new Errorx({
+    code: 'PaymentInProgress',
+    message: 'The easyCredit authorization is in progress, so the payment can not be cancelled. Wait for the result.',
+    httpErrorStatus: 400,
+  });
+
 const transactionIsAuthorizedError = () =>
   new Errorx({
     code: TRANSACTION_IS_AUTHORIZED,
@@ -1120,7 +1112,7 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
         if (!isGoneAtEasyCredit(error) && !isExpired) {
           throw error;
         }
-        log.warn('The easyCredit transaction is gone, cancelling without the status check', { paymentId });
+        log.warn('The easyCredit transaction is gone, skipping the status check', { paymentId });
         return undefined;
       });
 
@@ -1128,14 +1120,32 @@ export const handleCancelPayment = async (paymentId: string): Promise<string> =>
       throw transactionIsAuthorizedError();
     }
 
-    await updatePayment(payment, [
-      { action: 'changeTransactionState', transactionId: transaction.id, state: CTTransactionState.Failure },
-    ]);
+    // Pending: the authorization request is already at easyCredit, which can still authorize it. easyCredit has no
+    // cancel for that (its cancellation endpoint is for Direct Sales shops only), so only a final easyCredit status
+    // (DECLINED, EXPIRED) allows the cancel. Otherwise the callback or authorize decides the result.
+    if (
+      transaction.state === CTTransactionState.Pending &&
+      !(easyCreditTransaction && AUTHORIZATION_DECLINED_STATUSES.includes(easyCreditTransaction.status))
+    ) {
+      throw cancelRefusedError();
+    }
 
-    // A Pending transaction means the authorization request was already sent, so easyCredit may have
-    // authorized it between the check above and the Failure write. The write cannot be made atomic: log it.
-    if (transaction.state === CTTransactionState.Pending) {
-      await logLateAuthorization(paymentId, ecTechnicalTransactionId);
+    // Conditional on the state read above: a parallel write (authorize sets Pending or Success) makes it refuse,
+    // or 409 and retry once.
+    const outcome = await transitionTransaction(
+      paymentId,
+      CTTransactionState.Failure,
+      transaction.state as CTTransactionState,
+    );
+    if (outcome === 'refused') {
+      const state = getTransaction(await getPaymentById(paymentId))?.state;
+      if (state === CTTransactionState.Success) {
+        throw transactionIsAuthorizedError();
+      }
+      // A decline callback can write Failure between the refusal and this read: then finish the cancel.
+      if (state !== CTTransactionState.Failure) {
+        throw cancelRefusedError();
+      }
     }
 
     await unfreezeCartIfNoActivePayment(await getCartByPaymentId(payment.id), payment.id);
