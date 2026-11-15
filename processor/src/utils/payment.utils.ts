@@ -4,6 +4,7 @@ import {
   EASYCREDIT_BOOKING_STATUS_DONE,
   EASYCREDIT_BOOKING_STATUS_FAILED,
   EASYCREDIT_CAPTURE_BOOKING_TYPE,
+  EASYCREDIT_EXPRESS_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_REFUND_BOOKING_TYPE,
 } from './constant.utils';
@@ -22,9 +23,18 @@ export const getSuccessTransaction = (payment: Payment): Transaction | undefined
   );
 };
 
+// An express amount change fails the Authorization transaction and adds a new one; commercetools does not specify the
+// array order, so a transaction that is not Failure wins.
 export const getTransaction = (payment: Payment): Transaction | undefined => {
-  return payment.transactions.find((transaction) => transaction.type === CTTransactionType.Authorization);
+  const authorizations = payment.transactions.filter(
+    (transaction) => transaction.type === CTTransactionType.Authorization,
+  );
+
+  return authorizations.find((transaction) => transaction.state !== CTTransactionState.Failure) ?? authorizations[0];
 };
+
+export const isExpressPayment = (payment: Payment): boolean =>
+  payment.custom?.fields?.[EASYCREDIT_EXPRESS_FIELD] === true;
 
 // The update is version-locked, so the one ID missing before it is the transaction this request added; CT does not specify the array order.
 export const getAddedTransaction = (

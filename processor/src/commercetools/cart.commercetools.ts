@@ -69,7 +69,13 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
     return cartObject;
   } catch (error: any) {
-    log.error('Error in updateCart', error);
+    // The raw SDK error carries the request body, which can hold the shopper's address and email.
+    log.error('Error in updateCart', {
+      cartId: cart.id,
+      code: error?.code,
+      statusCode: error?.statusCode,
+      message: error?.body?.message,
+    });
 
     throw new Errorx({
       code: error?.code as string,

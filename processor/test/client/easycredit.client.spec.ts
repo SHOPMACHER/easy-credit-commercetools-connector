@@ -297,6 +297,70 @@ describe('initEasyCreditClient', () => {
     });
   });
 
+  describe('updatePayment', () => {
+    const payload = {
+      orderValue: 504.95,
+      numberOfProductsInShoppingCart: 1,
+      shoppingCartInformation: [{ productName: 'Stuhl', quantity: 1, price: 500 }],
+    };
+
+    it('should PATCH the transaction and return the summary', async () => {
+      const summary = { orderValue: 504.95, interest: 13.1, decisionOutcome: 'POSITIVE' };
+      // @ts-expect-error mocked
+      jest.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => summary });
+      const signal = AbortSignal.timeout(1000);
+
+      const result = await easyCreditClient.updatePayment('tech123', payload, signal);
+
+      expect(fetch).toHaveBeenCalledWith(`${EASYCREDIT_BASE_API_URL}/payment/v3/transaction/tech123`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${btoa('mock-webshop-id:mock-api-password')}`,
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+      expect(result).toEqual(summary);
+    });
+
+    it('should send a default timeout signal', async () => {
+      // @ts-expect-error mocked
+      jest.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      await easyCreditClient.updatePayment('tech123', payload);
+
+      expect(jest.mocked(fetch).mock.calls[0][1]).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    });
+
+    it('should pass a rejection on with the easyCredit status', async () => {
+      jest.mocked(fetch).mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ title: 'Validation failed', violations: [{ field: 'orderValue', message: 'invalid' }] }),
+      } as unknown as Response);
+
+      const promise = easyCreditClient.updatePayment('tech123', payload);
+
+      await expect(promise).rejects.toMatchObject({ code: 'Validation failed', httpErrorStatus: 400 });
+      await expect(promise).rejects.not.toBeInstanceOf(ECOutcomeUnknownError);
+    });
+
+    it.each([
+      ['a timeout', new DOMException('timed out', 'TimeoutError'), 504],
+      ['a network error', new TypeError('fetch failed'), 502],
+    ])('should map %s to an unknown outcome', async (_case, error, status) => {
+      const logSpy = jest.spyOn(log, 'error').mockImplementation(() => log);
+      jest.mocked(fetch).mockRejectedValueOnce(error);
+
+      const promise = easyCreditClient.updatePayment('tech123', payload);
+
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code: 'TransactionUpdateFailed', httpErrorStatus: status });
+      logSpy.mockRestore();
+    });
+  });
+
   describe('getPayment', () => {
     it('should make a GET request and return the payment response', async () => {
       const mockResponse = { paymentStatus: 'SUCCESS' };

@@ -627,10 +627,7 @@ describe('handleGetPayment payment type sync', () => {
         errors: [expect.objectContaining({ code: 'AddressesUnmatched' })],
       });
 
-      expect(log.error).toHaveBeenCalledWith(
-        expect.stringContaining('after a failed payment type validation'),
-        expect.any(Error),
-      );
+      expect(log.error).toHaveBeenCalledWith(expect.stringContaining('after a failed validation'), expect.any(Error));
     });
 
     it('stale webshop data (PaymentTypeNotAvailable from validateCart): rethrown, transaction untouched', async () => {
@@ -1182,6 +1179,18 @@ describe('handleCreatePayment discarding stale attempts', () => {
   it.each([
     ['an HTTP 404', () => Promise.reject(new Errorx({ code: 'NotFound', message: 'x', httpErrorStatus: 404 }))],
     ['an HTTP 410', () => Promise.reject(new Errorx({ code: 'Gone', message: 'x', httpErrorStatus: 410 }))],
+    [
+      'the expiry error on the decision',
+      () =>
+        Promise.reject(
+          new Errorx({
+            code: 'CONSTRAINT_VIOLATION',
+            message: 'x',
+            httpErrorStatus: 400,
+            fields: [{ field: 'decision', message: 'invalid' }],
+          }),
+        ),
+    ],
     ['status EXPIRED', () => Promise.resolve(ecPayment('EXPIRED'))],
     ['status DECLINED', () => Promise.resolve(ecPayment('DECLINED'))],
     ['status OPEN', () => Promise.resolve(ecPayment('OPEN'))],
