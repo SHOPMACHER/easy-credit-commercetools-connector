@@ -122,6 +122,62 @@ describe('ECWidgetComponent', () => {
     },
   );
 
+  describe('merchant amount limits', () => {
+    const mountWith = async (amount: number, config: object) => {
+      component = new ECWidgetComponent({
+        processorUrl: mockWebComponentOptions.processorUrl,
+        sessionId: mockWebComponentOptions.sessionId,
+        widgetComponentOptions: { amount },
+      });
+      (findElement as jest.Mock).mockReturnValue({ insertAdjacentHTML: jest.fn() });
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error test
+          json: jest.fn().mockResolvedValueOnce({ ...mockWidgetConfigEnabled, ...config }),
+        }),
+      );
+
+      await component.mount('#widget-element');
+    };
+
+    it.each([
+      [99.99, ' payment-types="INSTALLMENT"'],
+      [100, ' payment-types="INSTALLMENT,BILL"'],
+      [1000, ' payment-types="INSTALLMENT,BILL"'],
+      [1000.01, ' payment-types="INSTALLMENT"'],
+    ])('should advertise bill payment at amount %s only within its limits', async (amount, attribute) => {
+      await mountWith(amount, {
+        paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+        amountLimits: { BILL_PAYMENT: { minAmount: 100, maxAmount: 1000 } },
+      });
+
+      expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(
+        'afterbegin',
+        `<easycredit-widget amount="${amount}" webshop-id="mock-webshop-id"${attribute} />`,
+      );
+    });
+
+    it('should not mount the widget if the amount is outside the limits of every payment type', async () => {
+      await mountWith(50, {
+        paymentTypes: ['INSTALLMENT_PAYMENT'],
+        amountLimits: { INSTALLMENT_PAYMENT: { minAmount: 500, maxAmount: 8000 } },
+      });
+
+      expect(importEasyCreditScript).not.toHaveBeenCalled();
+      expect(findElement).not.toHaveBeenCalled();
+    });
+
+    it('should leave the limits to the widget if the processor sends none', async () => {
+      await mountWith(10, { paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] });
+
+      expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(
+        'afterbegin',
+        '<easycredit-widget amount="10" webshop-id="mock-webshop-id" payment-types="INSTALLMENT,BILL" />',
+      );
+    });
+  });
+
   it('should not mount the widget if it is disabled', async () => {
     (fetch as jest.Mock).mockImplementation(async () =>
       Promise.resolve({

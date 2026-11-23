@@ -92,6 +92,29 @@ describe('Health Check and Widget Functions', () => {
       });
     });
 
+    it('should send only the merchant limited limits of the advertised payment types', async () => {
+      (getPaymentTypesAvailability as jest.Mock).mockResolvedValue({
+        INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: true, available: false, minAmount: 100, maxAmount: 1000, merchantLimited: true },
+      } as never);
+
+      expect(await isWidgetEnabled()).toEqual({
+        isEnabled: true,
+        webShopId: 'mock-webshop-id',
+        paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+        amountLimits: { BILL_PAYMENT: { minAmount: 100, maxAmount: 1000 } },
+      });
+    });
+
+    it('should not send the limits of a payment type that is not advertised', async () => {
+      (getPaymentTypesAvailability as jest.Mock).mockResolvedValue({
+        INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: false, available: false, minAmount: 100, maxAmount: 1000, merchantLimited: true },
+      } as never);
+
+      expect(await isWidgetEnabled()).not.toHaveProperty('amountLimits');
+    });
+
     it('should advertise bill payment when checkout offers it', async () => {
       (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(availability(true, true) as never);
 

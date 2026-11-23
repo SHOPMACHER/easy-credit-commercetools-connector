@@ -20,6 +20,10 @@ export type ConnectorEnvVars = {
     installmentPaymentExcludedProductTypes: string[];
     installmentPaymentExcludedCustomLineItems: string[];
     redirectAllowedHosts: string[];
+    installmentPaymentMinAmount?: string;
+    installmentPaymentMaxAmount?: string;
+    billPaymentMinAmount?: string;
+    billPaymentMaxAmount?: string;
   };
 };
 

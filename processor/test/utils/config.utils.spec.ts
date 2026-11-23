@@ -123,11 +123,81 @@ describe('readConfiguration', () => {
       enabled: false,
       excludedProductTypes: ['gift-card'],
       excludedCustomLineItems: ['gift-wrap'],
+      amountLimits: {},
+      invalidAmountLimits: false,
     });
     expect(getPaymentTypeConfig(easyCredit, ECTransactionPaymentType.ECTransactionBillPayment)).toEqual({
       enabled: true,
       excludedProductTypes: ['voucher'],
       excludedCustomLineItems: ['voucher-item'],
+      amountLimits: {},
+      invalidAmountLimits: false,
+    });
+  });
+
+  describe('merchant amount limits', () => {
+    const limitsOf = (paymentType: ECTransactionPaymentType) => {
+      const { amountLimits, invalidAmountLimits } = getPaymentTypeConfig(readConfiguration().easyCredit, paymentType);
+      return { amountLimits, invalidAmountLimits };
+    };
+
+    it('should read the limits of each payment type from its own variables', () => {
+      process.env.INSTALLMENT_PAYMENT_MIN_AMOUNT = '300';
+      process.env.INSTALLMENT_PAYMENT_MAX_AMOUNT = '8000';
+      process.env.BILL_PAYMENT_MIN_AMOUNT = ' 99.90 ';
+      process.env.BILL_PAYMENT_MAX_AMOUNT = '1000.5';
+
+      expect(limitsOf(ECTransactionPaymentType.ECTransactionInstallmentPayment)).toEqual({
+        amountLimits: { minAmount: 300, maxAmount: 8000 },
+        invalidAmountLimits: false,
+      });
+      expect(limitsOf(ECTransactionPaymentType.ECTransactionBillPayment)).toEqual({
+        amountLimits: { minAmount: 99.9, maxAmount: 1000.5 },
+        invalidAmountLimits: false,
+      });
+    });
+
+    it.each([
+      ['unset', undefined],
+      ['empty', ''],
+    ])('should set no limits if the variables are %s', (_, value) => {
+      delete process.env.BILL_PAYMENT_MIN_AMOUNT;
+      delete process.env.BILL_PAYMENT_MAX_AMOUNT;
+      if (value !== undefined) {
+        process.env.BILL_PAYMENT_MIN_AMOUNT = value;
+        process.env.BILL_PAYMENT_MAX_AMOUNT = value;
+      }
+
+      expect(limitsOf(ECTransactionPaymentType.ECTransactionBillPayment)).toEqual({
+        amountLimits: {},
+        invalidAmountLimits: false,
+      });
+    });
+
+    it('should accept only one of the limits', () => {
+      process.env.BILL_PAYMENT_MIN_AMOUNT = '100';
+      delete process.env.BILL_PAYMENT_MAX_AMOUNT;
+
+      expect(limitsOf(ECTransactionPaymentType.ECTransactionBillPayment)).toEqual({
+        amountLimits: { minAmount: 100 },
+        invalidAmountLimits: false,
+      });
+    });
+
+    it.each([
+      ['a negative minimum', '-1', '100'],
+      ['a non-numeric maximum', '100', 'abc'],
+      ['a comma decimal', '100,50', '200'],
+      ['more than 2 decimals', '100.123', '200'],
+      ['a minimum above the maximum', '500', '100'],
+    ])('should drop both limits for %s without failing', (_, min, max) => {
+      process.env.INSTALLMENT_PAYMENT_MIN_AMOUNT = min;
+      process.env.INSTALLMENT_PAYMENT_MAX_AMOUNT = max;
+
+      expect(limitsOf(ECTransactionPaymentType.ECTransactionInstallmentPayment)).toEqual({
+        amountLimits: {},
+        invalidAmountLimits: true,
+      });
     });
   });
 });
