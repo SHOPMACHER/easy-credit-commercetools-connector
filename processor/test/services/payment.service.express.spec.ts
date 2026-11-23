@@ -474,7 +474,9 @@ describe('express payment creation', () => {
         getECPaymentMock.mockImplementation(async () => ({ status: 'OPEN' }));
       });
 
-      it('should discard it and keep its placeholder for the new attempt', async () => {
+      // PREAUTHORIZED: the shopper closed the tab on the easyCredit decision page and starts over.
+      it.each(['OPEN', 'PREAUTHORIZED'])('should discard a %s attempt and keep its placeholder', async (status) => {
+        getECPaymentMock.mockImplementation(async () => ({ status }));
         mockCreateFlow(cartWithEarlierAttempt());
         jest
           .mocked(getPaymentById)

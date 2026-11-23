@@ -94,5 +94,5 @@ deployAs:
           description: EasyCredit WebShop ID
           required: true
         - key: API_PASSWORD
-          description: EasyCredit API password. Also the key for the signature of the cancel and denial links, so a change makes the links of open easyCredit attempts answer without redirect.
+          description: EasyCredit API password. Also the key for the signature of the cancel and denial links, so after a change the cancel and denial links of open easyCredit attempts answer 400 InvalidRedirectUrl. The payment is then not cancelled and the cart stays frozen, see the CHANGELOG.
           required: true
