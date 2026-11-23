@@ -62,9 +62,10 @@ export class ECWidgetComponent implements WidgetComponent {
 
   // Only the limits the merchant narrowed are sent; easyCredit's widget applies its own limits.
   private isWithinAmountLimits(limits?: AmountLimits): boolean {
-    const { amount } = this.widgetComponentOptions;
+    // Plain JS storefronts may pass a numeric string. An amount that can't be checked fails closed.
+    const amount = Number(this.widgetComponentOptions.amount);
 
-    return !limits || !Number.isFinite(amount) || (amount >= limits.minAmount && amount <= limits.maxAmount);
+    return !limits || (Number.isFinite(amount) && amount >= limits.minAmount && amount <= limits.maxAmount);
   }
 
   public async fetchConfig(): Promise<{

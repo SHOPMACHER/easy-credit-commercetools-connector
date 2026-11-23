@@ -168,6 +168,23 @@ describe('ECWidgetComponent', () => {
       expect(findElement).not.toHaveBeenCalled();
     });
 
+    it.each([
+      [Number.NaN, ' payment-types="INSTALLMENT"'],
+      [Number.POSITIVE_INFINITY, ' payment-types="INSTALLMENT"'],
+      ['250.00', ' payment-types="INSTALLMENT,BILL"'],
+      ['1500', ' payment-types="INSTALLMENT"'],
+    ])('should only advertise a limited payment type for a finite amount, given %s', async (amount, attribute) => {
+      await mountWith(amount as number, {
+        paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+        amountLimits: { BILL_PAYMENT: { minAmount: 100, maxAmount: 1000 } },
+      });
+
+      expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(
+        'afterbegin',
+        `<easycredit-widget amount="${amount}" webshop-id="mock-webshop-id"${attribute} />`,
+      );
+    });
+
     it('should leave the limits to the widget if the processor sends none', async () => {
       await mountWith(10, { paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] });
 

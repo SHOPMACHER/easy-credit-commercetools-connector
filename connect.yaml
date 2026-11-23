@@ -71,6 +71,18 @@ deployAs:
         - key: INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS
           description: Comma-separated custom line item slugs or keys that rule out installment payment if the cart contains one of them. Same format as BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS.
           required: false
+        - key: INSTALLMENT_PAYMENT_MIN_AMOUNT
+          description: Minimum order value in EUR (for example 200 or 99.90) for installment payment. Can only raise the easyCredit minimum. An invalid value, or a value above INSTALLMENT_PAYMENT_MAX_AMOUNT, is ignored together with the maximum and logs a warning at startup.
+          required: false
+        - key: INSTALLMENT_PAYMENT_MAX_AMOUNT
+          description: Maximum order value in EUR for installment payment. Can only lower the easyCredit maximum. Same format and rules as INSTALLMENT_PAYMENT_MIN_AMOUNT.
+          required: false
+        - key: BILL_PAYMENT_MIN_AMOUNT
+          description: Minimum order value in EUR for pay by invoice. Can only raise the easyCredit minimum. Same format and rules as INSTALLMENT_PAYMENT_MIN_AMOUNT.
+          required: false
+        - key: BILL_PAYMENT_MAX_AMOUNT
+          description: Maximum order value in EUR for pay by invoice. Can only lower the easyCredit maximum. Same format and rules as INSTALLMENT_PAYMENT_MIN_AMOUNT.
+          required: false
         - key: WEBSHOP_CACHE_TTL
           description: Cache duration in seconds (0 to 3600) for the easyCredit webshop configuration (activation status and order value limits)
           required: false

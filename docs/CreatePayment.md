@@ -143,7 +143,7 @@ The interest fields are for information only. There is no interest line item in 
 
 ## Payment type availability
 
-For the selected payment type, the connector runs the same check as [Get Payment Method](./GetPaymentMethod.md#payment-type-availability), with the same error codes and the same order. If the check fails, the connector rejects the request before it changes a cart or a payment. For the limits, the caching and the retries, see [Webshop configuration](./GetPaymentMethod.md#webshop-configuration).
+For the selected payment type, the connector runs the same check as [Get Payment Method](./GetPaymentMethod.md#payment-type-availability), with the same error codes and the same order. If the check fails, the connector rejects the request before it changes a cart or a payment. For the limits, the caching and the retries, see [Webshop configuration](./GetPaymentMethod.md#webshop-configuration). The merchant can narrow the limits for each payment type, see [Merchant amount limits](./GetPaymentMethod.md#merchant-amount-limits).
 
 The request field `paymentType` is optional. It defaults to `INSTALLMENT_PAYMENT`. A request without it is therefore rejected with `PaymentTypeNotAvailable` if `INSTALLMENT_PAYMENT_ENABLED=0`. The body schema rejects any other value with `400 InvalidJsonInput`. The checkout component sends the payment type that it was built with.
 
@@ -246,7 +246,7 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The che
 | `InvalidAddress` | The billing address is not complete or not valid: `firstName`, `lastName`, `streetName` or `city` is blank, or `postalCode` does not have 5 digits. The API reports this only if both addresses exist, in addition to the codes above. |
 | `InvalidCurrency` | The cart currency is not `EUR`. |
 | `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or shipping address. |
-| `InvalidAmount` | The cart total is outside the limits of the selected payment type, which is enabled. The message has the limits from the fresh webshop configuration. |
+| `InvalidAmount` | The cart total is outside the limits of the selected payment type, which is enabled. The message has the effective limits. See [Merchant amount limits](./GetPaymentMethod.md#merchant-amount-limits). |
 | `PaymentTypeNotAvailable` | The selected payment type is disabled or not activated for the webshop. A disabled type never returns `InvalidAmount`. |
 | `EasyCreditUnavailable` | `503`: the connector has no fresh easyCredit webshop configuration. This applies to both payment types. See [Webshop configuration](./GetPaymentMethod.md#webshop-configuration). |
 | `InstallmentPaymentExcludedItems` | `INSTALLMENT_PAYMENT` was selected, but the cart has a voucher or another excluded item. See [Excluded cart items](./GetPaymentMethod.md#excluded-cart-items). |
