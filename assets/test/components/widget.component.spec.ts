@@ -81,6 +81,47 @@ describe('ECWidgetComponent', () => {
     );
   });
 
+  it.each([
+    [['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'], ' payment-types="INSTALLMENT,BILL"'],
+    [['BILL_PAYMENT'], ' payment-types="BILL"'],
+    [['INSTALLMENT_PAYMENT', 'UNKNOWN'], ' payment-types="INSTALLMENT"'],
+    [undefined, ''],
+  ])('should render payment-types for %j', async (paymentTypes, attribute) => {
+    (findElement as jest.Mock).mockReturnValue({ insertAdjacentHTML: jest.fn() });
+    (fetch as jest.Mock).mockImplementation(async () =>
+      Promise.resolve({
+        ok: true,
+        // @ts-expect-error test
+        json: jest.fn().mockResolvedValueOnce({ ...mockWidgetConfigEnabled, paymentTypes }),
+      }),
+    );
+
+    await component.mount('#widget-element');
+
+    expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(
+      'afterbegin',
+      `<easycredit-widget amount="100" webshop-id="mock-webshop-id"${attribute} />`,
+    );
+  });
+
+  it.each([[[]], [['UNKNOWN']]])(
+    'should not mount the widget when checkout offers no known payment type (%j)',
+    async (paymentTypes) => {
+      (fetch as jest.Mock).mockImplementation(async () =>
+        Promise.resolve({
+          ok: true,
+          // @ts-expect-error test
+          json: jest.fn().mockResolvedValueOnce({ ...mockWidgetConfigEnabled, paymentTypes }),
+        }),
+      );
+
+      await component.mount('#widget-element');
+
+      expect(importEasyCreditScript).not.toHaveBeenCalled();
+      expect(findElement).not.toHaveBeenCalled();
+    },
+  );
+
   it('should not mount the widget if it is disabled', async () => {
     (fetch as jest.Mock).mockImplementation(async () =>
       Promise.resolve({

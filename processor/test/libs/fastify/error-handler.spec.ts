@@ -138,6 +138,48 @@ describe('error-handler', () => {
     });
   });
 
+  test.each([
+    { context: 'querystring', route: '/', request: { method: 'GET' as const, url: '/?mode=x' } },
+    { context: 'params', route: '/:mode', request: { method: 'GET' as const, url: '/x' } },
+    { context: 'body', route: '/', request: { method: 'POST' as const, url: '/', payload: { mode: 'x' } } },
+  ])('Fastify enum error in the $context reports the invalid value', async ({ context, route, request }) => {
+    fastify.route({
+      method: request.method,
+      url: route,
+      schema: { [context]: { type: 'object', properties: { mode: { type: 'string', enum: ['a', 'b'] } } } },
+      handler: () => ({}),
+    });
+
+    const response = await fastify.inject(request);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().errors).toStrictEqual([
+      {
+        code: 'InvalidField',
+        message: 'The value x is not valid for field mode.',
+        fields: { field: 'mode', invalidValue: 'x', allowedValues: ['a', 'b'] },
+      },
+    ]);
+  });
+
+  test('Fastify enum error without the validated input does not fail', async () => {
+    const validationError: FastifySchemaValidationError = {
+      keyword: 'enum',
+      instancePath: '/mode',
+      schemaPath: '#/properties/mode/enum',
+      params: { allowedValues: ['a', 'b'] },
+      message: 'must be equal to one of the allowed values',
+    };
+    fastify.get('/', () => {
+      throw { code: 'ErrorCode', name: 'fastify-error', message: 'error', validation: [validationError] };
+    });
+
+    const response = await fastify.inject({ method: 'GET', url: '/' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().errors[0]).toEqual(expect.objectContaining({ code: 'InvalidField' }));
+  });
+
   test('ErrorAuthErrorResponse', async () => {
     const opts: ErrorxAdditionalOpts = {
       privateFields: {},

@@ -1,17 +1,92 @@
 import { Cart, Payment } from '@commercetools/connect-payments-sdk';
 import {
+  getActiveCaptureTransaction,
+  getAddedTransaction,
+  getCaptureBooking,
+  getCaptureResult,
   getCompletedRefunds,
+  getOpenRefundTransactions,
   getPayment,
-  getPendingRefundTransactions,
+  getPaymentType,
   getPendingTransaction,
   getSuccessTransaction,
   getTransaction,
 } from '../../src/utils/payment.utils'; // Adjust the import path as necessary
-import { CTTransactionState, CTTransactionType, ECBooking } from '../../src/types/payment.types';
+import {
+  CTTransactionState,
+  CTTransactionType,
+  ECBooking,
+  ECTransactionPaymentType,
+} from '../../src/types/payment.types';
 import { EASYCREDIT_PAYMENT_METHOD } from '../../src/utils/constant.utils';
 import { describe, expect, it } from '@jest/globals';
 
 describe('Payment Utility Functions', () => {
+  describe('getAddedTransaction', () => {
+    const tx = (id: string, type: CTTransactionType, state: CTTransactionState) => ({ id, type, state });
+    const paymentOf = (...transactions: object[]) => ({ transactions }) as unknown as Payment;
+    const older = tx('older', CTTransactionType.Refund, CTTransactionState.Initial);
+    const addedRefund = (before: Payment, after: Payment) =>
+      getAddedTransaction(before, after, CTTransactionType.Refund, CTTransactionState.Initial);
+
+    it('should return the transaction that the update added', () => {
+      const added = tx('added', CTTransactionType.Refund, CTTransactionState.Initial);
+
+      expect(addedRefund(paymentOf(older), paymentOf(older, added))?.id).toBe('added');
+    });
+
+    it('should find the added transaction wherever CT puts it in the array', () => {
+      const added = tx('added', CTTransactionType.Refund, CTTransactionState.Initial);
+
+      expect(addedRefund(paymentOf(older), paymentOf(added, older))?.id).toBe('added');
+    });
+
+    it('should not fall back to an older transaction of another request', () => {
+      const added = tx('added', CTTransactionType.Refund, CTTransactionState.Pending);
+
+      expect(addedRefund(paymentOf(older), paymentOf(older, added))).toBeUndefined();
+    });
+
+    it('should match the requested type', () => {
+      const added = tx('added', CTTransactionType.Charge, CTTransactionState.Pending);
+
+      expect(addedRefund(paymentOf(older), paymentOf(older, added))).toBeUndefined();
+      expect(
+        getAddedTransaction(
+          paymentOf(older),
+          paymentOf(older, added),
+          CTTransactionType.Charge,
+          CTTransactionState.Pending,
+        )?.id,
+      ).toBe('added');
+    });
+
+    it('should return undefined when nothing was added', () => {
+      expect(addedRefund(paymentOf(older), paymentOf(older))).toBeUndefined();
+    });
+  });
+
+  describe('getActiveCaptureTransaction', () => {
+    const paymentWith = (...states: CTTransactionState[]) =>
+      ({
+        transactions: [
+          { id: 'auth', type: CTTransactionType.Authorization, state: CTTransactionState.Success },
+          ...states.map((state, i) => ({ id: `charge-${i}`, type: CTTransactionType.Charge, state })),
+        ],
+      }) as unknown as Payment;
+
+    it.each([[], [CTTransactionState.Failure]])(
+      'should return undefined without an active Charge (%p)',
+      (...states) => {
+        expect(getActiveCaptureTransaction(paymentWith(...states))).toBeUndefined();
+      },
+    );
+
+    it.each([CTTransactionState.Pending, CTTransactionState.Success])('should return a %s Charge', (state) => {
+      expect(getActiveCaptureTransaction(paymentWith(CTTransactionState.Failure, state))?.id).toBe('charge-1');
+    });
+  });
+
   describe('getPendingTransaction', () => {
     it('should return the pending transaction if it exists', () => {
       const payment: Payment = {
@@ -134,8 +209,8 @@ describe('Payment Utility Functions', () => {
     });
   });
 
-  describe('getPendingRefundTransactions', () => {
-    it('should return the pending refund transactions if they exist', () => {
+  describe('getOpenRefundTransactions', () => {
+    it('should return the Initial and Pending refund transactions', () => {
       const payment = {
         transactions: [
           {
@@ -151,14 +226,19 @@ describe('Payment Utility Functions', () => {
           {
             id: 'transaction3',
             type: CTTransactionType.Refund,
+            state: CTTransactionState.Success,
+          },
+          {
+            id: 'transaction4',
+            type: CTTransactionType.Charge,
             state: CTTransactionState.Pending,
           },
         ],
       } as Payment;
 
-      const expectedResult = [payment.transactions[0], payment.transactions[2]];
+      const expectedResult = [payment.transactions[0], payment.transactions[1]];
 
-      expect(getPendingRefundTransactions(payment)).toStrictEqual(expectedResult);
+      expect(getOpenRefundTransactions(payment)).toStrictEqual(expectedResult);
     });
   });
 
@@ -209,5 +289,65 @@ describe('Payment Utility Functions', () => {
 
       expect(getCompletedRefunds(ecBookings)).toStrictEqual(expectedResult);
     });
+  });
+
+  describe('capture bookings', () => {
+    const capture = (status: string, created: string, messageEN?: string) =>
+      ({
+        bookingType: 'ApiBooking',
+        type: 'CAPTURE',
+        status,
+        created,
+        uuid: `capture-${created}`,
+        message: messageEN ? { messageDE: messageEN, messageEN } : null,
+      }) as ECBooking;
+
+    it('getCaptureBooking should keep capture bookings of any status and drop the others', () => {
+      const bookings = [
+        capture('PENDING', '2026-10-28T04:36:07+01:00'),
+        { ...capture('PENDING', '2026-10-28T04:37:00+01:00'), type: 'NOTIFY' },
+        { ...capture('DONE', '2026-10-28T04:37:31+01:00'), bookingType: 'RefundBooking', type: 'REFUND' },
+      ] as ECBooking[];
+
+      expect(getCaptureBooking(bookings)).toStrictEqual([bookings[0]]);
+    });
+
+    it('getCaptureResult should return a DONE booking even if a newer one failed', () => {
+      const done = capture('DONE', '2026-10-28T04:36:07+01:00');
+
+      expect(getCaptureResult([done, capture('FAILED', '2026-10-28T05:00:00+01:00')])).toBe(done);
+    });
+
+    it('getCaptureResult should return the FAILED booking', () => {
+      const failed = capture('FAILED', '2026-10-28T04:00:00Z', 'Capture not possible');
+
+      expect(getCaptureResult([failed])).toBe(failed);
+    });
+
+    it('getCaptureResult should wait while a booking is open', () => {
+      const bookings = [capture('FAILED', '2026-10-28T04:00:00Z'), capture('PENDING', '2026-10-28T05:00:00Z')];
+
+      expect(getCaptureResult(bookings)).toBeUndefined();
+    });
+
+    it('getCaptureResult should return undefined without bookings', () => {
+      expect(getCaptureResult([])).toBeUndefined();
+    });
+  });
+
+  describe('getPaymentType', () => {
+    const withMethod = (method?: string) =>
+      ({ paymentMethodInfo: method === undefined ? undefined : { method } }) as unknown as Payment;
+
+    it('should return bill for BILL_PAYMENT', () => {
+      expect(getPaymentType(withMethod('BILL_PAYMENT'))).toBe(ECTransactionPaymentType.ECTransactionBillPayment);
+    });
+
+    it.each([['INSTALLMENT_PAYMENT'], ['easycredit'], ['something-else'], [undefined]])(
+      'should return installment for %p',
+      (method) => {
+        expect(getPaymentType(withMethod(method))).toBe(ECTransactionPaymentType.ECTransactionInstallmentPayment);
+      },
+    );
   });
 });

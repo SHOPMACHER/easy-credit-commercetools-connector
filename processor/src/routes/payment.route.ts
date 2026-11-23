@@ -8,6 +8,8 @@ import {
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import {
   GetPaymentMethodParamsSchema,
+  GetPaymentMethodQuerySchema,
+  GetPaymentMethodQuerySchemaDTO,
   GetPaymentMethodResponseSchema,
   GetPaymentMethodResponseSchemaDTO,
 } from '../dtos/payments/getPaymentMethod.dto';
@@ -36,13 +38,19 @@ import {
   CreatePaymentResponseSchema,
   CreatePaymentResponseSchemaDTO,
 } from '../dtos/payments/createPayment.dto';
-import { CapturePaymentRequestSchemaDTO, CapturePaymentResponseSchemaDTO } from '../dtos/payments/capturePayment.dto';
+import {
+  CapturePaymentBodySchema,
+  CapturePaymentRequestSchemaDTO,
+  CapturePaymentResponseSchema,
+  CapturePaymentResponseSchemaDTO,
+} from '../dtos/payments/capturePayment.dto';
 import {
   RefundPaymentBodySchema,
   RefundPaymentRequestSchemaDTO,
   RefundPaymentResponseSchema,
   RefundPaymentResponseSchemaDTO,
 } from '../dtos/payments/refundPayment.dto';
+import { PAYMENT_MODIFICATION_SCOPES } from '../utils/constant.utils';
 
 type PaymentRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
@@ -52,12 +60,17 @@ type PaymentRouteOptions = {
 };
 
 export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & PaymentRouteOptions) => {
-  fastify.get<{ Reply: GetPaymentMethodResponseSchemaDTO; Params: { cartId: string } }>(
+  fastify.get<{
+    Reply: GetPaymentMethodResponseSchemaDTO;
+    Params: { cartId: string };
+    Querystring: GetPaymentMethodQuerySchemaDTO;
+  }>(
     '/payment-method/:cartId',
     {
       preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         params: GetPaymentMethodParamsSchema,
+        querystring: GetPaymentMethodQuerySchema,
         response: {
           200: GetPaymentMethodResponseSchema,
           400: ErrorResponse,
@@ -66,8 +79,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
     },
     async (request, reply) => {
       const { cartId } = request.params;
+      const { paymentType } = request.query;
 
-      const method = await handlePaymentMethod(cartId);
+      const method = await handlePaymentMethod(cartId, paymentType);
 
       reply.code(200).send(method);
     },
@@ -86,9 +100,9 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       },
     },
     async (request, reply) => {
-      const { cartId, redirectLinks, customerRelationship } = request.body;
+      const { cartId, redirectLinks, customerRelationship, paymentType } = request.body;
 
-      const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship);
+      const response = await handleCreatePayment(cartId, redirectLinks, customerRelationship, paymentType);
 
       reply.code(201).send(response);
     },
@@ -128,13 +142,15 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
         response: {
           204: AuthorizePaymentResponseSchema,
           400: ErrorResponse,
+          504: ErrorResponse,
         },
       },
     },
     async (request, reply) => {
       const { paymentId } = request.params;
+      const { waitForAuthorization } = request.body ?? {};
 
-      await handleAuthorizeECPayment(paymentId);
+      await handleAuthorizeECPayment(paymentId, waitForAuthorization);
 
       reply.code(204).send();
     },
@@ -147,11 +163,14 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/capture',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
-        body: AuthorizePaymentBodySchema,
+        body: CapturePaymentBodySchema,
         response: {
-          204: AuthorizePaymentResponseSchema,
+          204: CapturePaymentResponseSchema,
           400: ErrorResponse,
         },
       },
@@ -173,7 +192,10 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
   }>(
     '/:paymentId/refund',
     {
-      preHandler: [opts.oauth2AuthHook.authenticate()],
+      preHandler: [
+        opts.oauth2AuthHook.authenticate(),
+        opts.authorizationHook.authorize(...PAYMENT_MODIFICATION_SCOPES),
+      ],
       schema: {
         body: RefundPaymentBodySchema,
         response: {

@@ -1,4 +1,4 @@
-import * as dotenv from 'dotenv';
+import 'dotenv/config';
 import { assertString } from '../utils/assert.utils';
 import { updateCustomObject } from '../commercetools/customObject.commercetools';
 import {
@@ -7,7 +7,6 @@ import {
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
 import { createOrUpdateTransactionCustomType } from '../commercetools/customFields.commercetools';
-dotenv.config();
 
 const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
 

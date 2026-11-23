@@ -2,3 +2,7 @@
 .idea
 .env
 .connect
+.DS_Store
+
+# Local-only release notes
+docs/releases/

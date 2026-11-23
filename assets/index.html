@@ -48,65 +48,95 @@
 
       <div class="album py-5 bg-light">
         <div class="container" id="container">
+          <!-- Usage: /?cartId=<cart id>[&sessionId=<session id>] renders both payment options, add &step=summary for the summary. -->
+          <div class="row">
+            <div class="col-md-6 mb-4" id="installment-payment">
+              <h2 class="h5">INSTALLMENT_PAYMENT</h2>
+              <div id="installment-payment-label"></div>
+              <div id="installment-payment-checkout"></div>
+            </div>
+            <div class="col-md-6 mb-4" id="bill-payment">
+              <h2 class="h5">BILL_PAYMENT</h2>
+              <div id="bill-payment-label"></div>
+              <div id="bill-payment-checkout"></div>
+            </div>
+          </div>
+          <div id="summary"></div>
+
           <script type="module">
             import { Enabler } from '/src/main.ts';
 
-            const testCartId = 'cce7783f-25c8-4295-9325-8f62b7415ce0';
+            const params = new URLSearchParams(window.location.search);
+            const cartId = params.get('cartId');
 
-            const sessionId = await getSessionId(testCartId);
-            console.log('sessionId', sessionId);
+            if (!cartId) {
+              throw new Error('Add ?cartId=<cart id> to the URL.');
+            }
+
+            // A session copied from a storefront (X-Session-Id header) avoids needing an API client with manage_sessions.
+            const sessionId = params.get('sessionId') ?? (await getSessionId(cartId));
 
             const enabler = new Enabler({
               processorUrl: __VITE_PROCESSOR_URL__,
-              sessionId: sessionId,
+              sessionId,
             });
 
-            /* INITIALIZE AND RENDER EASYCREDIT WIDGET */
-            // const widgetBuilder = await enabler.createWidgetBuilder();
-            // const pdpWdiget = await widgetBuilder.build({
-            //   amount: 500
-            // });
+            const pageUrl = (step) => {
+              const url = new URL(window.location.href);
+              url.searchParams.set('step', step);
+              return url.toString();
+            };
 
-            // pdpWdiget.mount("#container");
+            if (params.get('step') === 'summary') {
+              document.querySelector('.row').remove();
 
-            /* INITIALIZE AND RENDER EASYCREDIT CHECKOUT */
-            // const componentBuilder = await enabler.createCheckoutBuilder();
-            // const easyCreditPaymentMethod = await componentBuilder.build({
-            //   cartId: testCartId,
-            //   redirectLinks: {
-            //   urlSuccess: 'http://localhost:3000/de/thank-you/',
-            //   urlCancellation: 'http://localhost:3000/de/checkout/?step=2&status=cancelled',
-            //   urlDenial: 'http://localhost:3000/de/checkout/?step=2&status=denied',
-            //   // urlAuthorizationCallback: 'http://localhost:3000/de/thank-you/',
-            //   },
-            //   customerRelationship: {
-            //     customerStatus: 'EXISTING_CUSTOMER',
-            //     customerSince: '',
-            //     numberOfOrders: 12,
-            //   },
-            //   onLoading: () => {
-            //     console.log('loading...');
-            //   },
-            //   onError: (error) => {
-            //     console.log('failed to checkout', error);
-            //   },
-            //   onSuccess: (response) => {
-            //     console.log('checkout success', response);
-            //   },
-            // });
+              const summaryBuilder = await enabler.createSummaryBuilder();
+              const summaryComponent = summaryBuilder.build({
+                paymentId: sessionStorage.getItem('easyCreditPaymentId'),
+              });
 
-            // easyCreditPaymentMethod.mount('#container');
+              await summaryComponent.mount('#summary');
+            } else {
+              const labelBuilder = await enabler.createLabelBuilder();
+              const checkoutBuilder = await enabler.createCheckoutBuilder();
 
-            /* INITIALIZE AND RENDER EASYCREDIT SUMMARY */
-            const componentBuilder = await enabler.createSummaryBuilder({
-              processorUrl: 'https://service-bk5phtyi8svk2ne51fw3ulsn.europe-west1.gcp.commercetools.app/', // Need to change after deploying connector privately
-              sessionId: sessionId,
-            });
-            const summaryComponent = await componentBuilder.build({
-              paymentId: '2ec768a5-d2f4-4cdf-acf5-78e4abf47b2a',
-            });
+              for (const [paymentType, elementId] of [
+                ['INSTALLMENT_PAYMENT', 'installment-payment'],
+                ['BILL_PAYMENT', 'bill-payment'],
+              ]) {
+                const checkoutComponent = checkoutBuilder.build({
+                  cartId,
+                  paymentType,
+                  redirectLinks: {
+                    urlSuccess: pageUrl('summary'),
+                    urlCancellation: pageUrl('cancelled'),
+                    urlDenial: pageUrl('denied'),
+                  },
+                  customerRelationship: {
+                    customerStatus: 'NEW_CUSTOMER',
+                    numberOfOrders: 0,
+                  },
+                  onLoading: () => console.log(`[${paymentType}] loading...`),
+                  onError: (error) => console.error(`[${paymentType}] failed to checkout`, error),
+                  onSuccess: (response) => {
+                    console.log(`[${paymentType}] checkout success`, response);
+                    sessionStorage.setItem('easyCreditPaymentId', response.paymentId);
+                    window.location.replace(response.redirectUrl);
+                  },
+                });
 
-            summaryComponent.mount('#container');
+                const isAvailable = await checkoutComponent.isAvailable();
+                console.log(`[${paymentType}] isAvailable`, isAvailable);
+
+                if (!isAvailable) {
+                  document.getElementById(elementId).insertAdjacentHTML('beforeend', '<p>Not available</p>');
+                  continue;
+                }
+
+                labelBuilder.build({ paymentType }).mount(`#${elementId}-label`);
+                await checkoutComponent.mount(`#${elementId}-checkout`);
+              }
+            }
           </script>
         </div>
       </div>

@@ -1,22 +1,9 @@
 import { WidgetEnabledResponseSchema, WidgetEnabledResponseSchemaDTO } from './../dtos/operations/widgetEnabled.dto';
-import {
-  AuthorityAuthorizationHook,
-  JWTAuthenticationHook,
-  Oauth2AuthenticationHook,
-  SessionHeaderAuthenticationHook,
-} from '@commercetools/connect-payments-sdk';
 import { HealthCheckResponseSchema, HealthCheckResponseSchemaDTO } from '../dtos/operations/status.dto';
-import { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { healthCheck, isWidgetEnabled } from '../services/connector.service';
 
-type OperationRouteOptions = {
-  sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
-  oauth2AuthHook: Oauth2AuthenticationHook;
-  jwtAuthHook: JWTAuthenticationHook;
-  authorizationHook: AuthorityAuthorizationHook;
-};
-
-export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPluginOptions & OperationRouteOptions) => {
+export const operationsRoute = async (fastify: FastifyInstance) => {
   fastify.get<{ Reply: HealthCheckResponseSchemaDTO }>(
     '/health-check',
     {
@@ -34,10 +21,10 @@ export const operationsRoute = async (fastify: FastifyInstance, opts: FastifyPlu
     },
   );
 
+  // Public: shoppers without a cart have no checkout session.
   fastify.get<{ Reply: WidgetEnabledResponseSchemaDTO }>(
     '/widget-enabled',
     {
-      preHandler: [opts.sessionHeaderAuthHook.authenticate()],
       schema: {
         response: {
           200: WidgetEnabledResponseSchema,

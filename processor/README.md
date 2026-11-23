@@ -36,14 +36,19 @@ Complete integration requires running/intergrating both of the modules. Please f
 | CTP_JWKS_URL | CommerceTools Composable Commerce JWT keys set endpoint e.g: https://mc-api.europe-west1.gcp.commercetools.com/.well-known/jwks.json. Used to initialize the CommerceTools Payment SKD inside the connector. |
 | CTP_JWT_ISSUER |  CommerceTools Composable Commerce JWT Issuer for JWT validation e.g: https://mc-api.europe-west1.gcp.commercetools.com/. Used to initialize the CommerceTools Payment SKD inside the connector. |
 | DEBUG | 0 or 1, if it is enabled (= 1), the logger of the connector will display log message from debug level. |
+| BILL_PAYMENT_ENABLED | 0 or 1 (default 0). Offers easyCredit pay by invoice (`BILL_PAYMENT`) as a separate payment method in the checkout if this is 1, easyCredit reports `availability: true` and `billPaymentActive: true` for the webshop, and the cart total is within `minBillingValue` / `maxBillingValue`. `POST /payments` then accepts `paymentType: BILL_PAYMENT`. |
+| BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES | Optional comma-separated product type keys, for example vouchers. Pay by invoice is not offered if any line item of the cart has one of these product types. Each key has at least 2 characters out of `A-Z`, `a-z`, `0-9`, `_` and `-`; an invalid entry stops the connector at startup. The keys are resolved to ids in one query with the cache duration of `WEBSHOP_CACHE_TTL`, which needs the `view_product_types` scope in `CTP_SCOPES`. If the lookup fails, for example with more than 500 keys, pay by invoice is not offered. See [Excluded cart items](../docs/GetPaymentMethod.md#excluded-cart-items). |
+| BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS | Optional comma-separated custom line item slugs or keys, same format as above. Pay by invoice is not offered if the cart contains a custom line item whose `slug` or `key` is listed. |
+| WEBSHOP_CACHE_TTL | Seconds (0 to 3600, default 300) to cache the easyCredit webshop configuration: activation status and order value limits per payment type. |
 
 ## Features
 Follow the link for further information of each feature.
 | Feature | Documentations |
 |---|---|
+| Get payment method | [LINK](/docs/GetPaymentMethod.md) |
 | Get payment | [LINK](/docs/GetPayment.md) |
-| Create payment | [LINK](/docs/CreatePayment.md) |
-| Authorize payment | [LINK](/docs/AuthorizePayment.md) |
+| Create payment (installment and pay by invoice) | [LINK](/docs/CreatePayment.md) |
+| Authorize payment (waits up to 30 s for the authorization) | [LINK](/docs/AuthorizePayment.md) |
 | Cancel payment | [LINK](/docs/CancelPayment.md) |
 | Capture payment | [LINK](/docs/CapturePayment.md) |
 | Refund payment | [LINK](/docs/RefundPayment.md) |
