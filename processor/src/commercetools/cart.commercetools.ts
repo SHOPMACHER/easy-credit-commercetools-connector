@@ -69,13 +69,21 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
     return cartObject;
   } catch (error: any) {
-    log.error('Error in updateCart', error);
+    // The request body and the error message (InvalidField quotes the rejected value) can hold the shopper's data.
+    // The thrown error is logged again by the error handler, so it carries no commercetools message either.
+    const errors = error?.body?.errors?.map(({ code, field }: { code?: string; field?: string }) => ({ code, field }));
+    log.error('Error in updateCart', {
+      cartId: cart.id,
+      code: error?.code,
+      statusCode: error?.statusCode,
+      errors,
+    });
 
     throw new Errorx({
       code: error?.code as string,
-      message: error?.body?.message as string,
+      message: 'The cart update failed.',
       httpErrorStatus: error?.statusCode,
-      fields: error.body?.errors,
+      fields: errors,
     });
   }
 }

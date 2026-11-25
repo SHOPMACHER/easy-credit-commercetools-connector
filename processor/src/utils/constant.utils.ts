@@ -55,6 +55,9 @@ export const EASYCREDIT_EXPRESS_FIELD = 'easyCreditExpress';
 // Set when the connector added the express placeholder address, so only that one is removed again.
 export const EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD = 'easyCreditExpressPlaceholderAddress';
 
+// Id of the shipping method the connector put on the cart, so a release removes it only while the cart still has it.
+export const EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD = 'easyCreditExpressShippingMethod';
+
 export const EXPRESS_PLACEHOLDER_COUNTRY = 'DE';
 
 export function getPaymentCustomTypeKey(): string {

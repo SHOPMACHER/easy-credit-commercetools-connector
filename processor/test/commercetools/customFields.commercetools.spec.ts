@@ -7,6 +7,7 @@ import { createApiRoot } from '../../src/client/create.client';
 import {
   EASYCREDIT_EXPRESS_FIELD,
   EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+  EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -267,6 +268,16 @@ describe('createOrUpdatePaymentCustomType', () => {
     type: { name: 'Boolean' },
   };
 
+  const shippingMethodFieldDefinition = {
+    name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD,
+    label: {
+      en: 'EasyCredit Express Shipping Method',
+      de: 'EasyCredit Express Versandart',
+    },
+    required: false,
+    type: { name: 'String' },
+  };
+
   const mockExistingType = (resourceTypeIds: string[], fieldNames: string[]) =>
     mockTypesGet.mockReturnValue({
       execute: jest.fn().mockResolvedValue({
@@ -314,7 +325,7 @@ describe('createOrUpdatePaymentCustomType', () => {
           de: 'Custom type for payment resources',
         },
         resourceTypeIds: ['payment'],
-        fieldDefinitions: [expressFieldDefinition, placeholderFieldDefinition],
+        fieldDefinitions: [expressFieldDefinition, placeholderFieldDefinition, shippingMethodFieldDefinition],
       },
     });
   });
@@ -330,24 +341,34 @@ describe('createOrUpdatePaymentCustomType', () => {
         actions: [
           { action: 'addFieldDefinition', fieldDefinition: expressFieldDefinition },
           { action: 'addFieldDefinition', fieldDefinition: placeholderFieldDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: shippingMethodFieldDefinition },
         ],
       },
     });
     expect(mockTypesPost).not.toHaveBeenCalled();
   });
 
-  it('should add only the placeholder field to a type from an earlier deployment', async () => {
+  it('should add only the missing fields to a type from an earlier deployment', async () => {
     mockExistingType(['payment'], [EASYCREDIT_EXPRESS_FIELD]);
 
     await createOrUpdatePaymentCustomType(PAYMENT_TYPE_KEY);
 
     expect(mockWithKeyPost).toHaveBeenCalledWith({
-      body: { version: 5, actions: [{ action: 'addFieldDefinition', fieldDefinition: placeholderFieldDefinition }] },
+      body: {
+        version: 5,
+        actions: [
+          { action: 'addFieldDefinition', fieldDefinition: placeholderFieldDefinition },
+          { action: 'addFieldDefinition', fieldDefinition: shippingMethodFieldDefinition },
+        ],
+      },
     });
   });
 
   it('should leave a payment type alone that already has the express fields', async () => {
-    mockExistingType(['payment'], [EASYCREDIT_EXPRESS_FIELD, EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]);
+    mockExistingType(
+      ['payment'],
+      [EASYCREDIT_EXPRESS_FIELD, EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD, EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD],
+    );
 
     await createOrUpdatePaymentCustomType(PAYMENT_TYPE_KEY);
 
@@ -379,7 +400,11 @@ describe('isPaymentCustomTypeReady', () => {
 
   const completeType = {
     resourceTypeIds: ['payment'],
-    fieldDefinitions: [{ name: EASYCREDIT_EXPRESS_FIELD }, { name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD }],
+    fieldDefinitions: [
+      { name: EASYCREDIT_EXPRESS_FIELD },
+      { name: EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD },
+      { name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD },
+    ],
   };
 
   // Each test uses its own key, as a positive answer is cached per key.

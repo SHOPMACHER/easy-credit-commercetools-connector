@@ -61,9 +61,10 @@ For more information, see the [web components integration guide](./docs/WebCompo
 
 ### Express checkout
 
-The shopper starts easyCredit from the product page or the cart and enters customer data and address on the easyCredit payment page. The backend creates the transaction for the cart of the session without customer and addresses, for both payment methods. Existing deployments need a redeploy so the post-deploy script creates the payment custom type.
+The shopper starts easyCredit from the product page or the cart and enters customer data and address on the easyCredit payment page. The backend creates the transaction for the cart of the session without customer and addresses, for both payment methods, and takes over customer data and address on the express return. Existing deployments need a redeploy so the post-deploy script creates the payment custom type.
 
 - [Create express payments](/docs/CreateExpressPayment.md)
+- [Express return](/docs/ExpressReturn.md)
 
 ## Prerequisite
 

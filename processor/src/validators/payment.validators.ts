@@ -15,7 +15,7 @@ import {
   PaymentTypeAvailability,
 } from '../types/payment.types';
 
-const addressesUnmatchedError = (ecConfig: { webShopId: string }) =>
+export const addressesUnmatchedError = (ecConfig: { webShopId: string }) =>
   new Errorx({
     code: 'AddressesUnmatched',
     httpErrorStatus: 400,

@@ -23,7 +23,7 @@ export enum CTTransactionState {
   Failure = 'Failure',
 }
 
-type ECTransactionOrderDetailsAddress = {
+export type ECTransactionOrderDetailsAddress = {
   address: string;
   additionalAddressInformation: string;
   zip: string;
@@ -221,11 +221,32 @@ export type ECGetPaymentResponse = {
     orderDetails: {
       orderValue: number;
       orderId: string;
+      // Entered by the shopper on the easyCredit page for express.
+      invoiceAddress?: Partial<ECTransactionOrderDetailsAddress> | null;
+      shippingAddress?: Partial<ECTransactionOrderDetailsAddress> | null;
     };
+    // Data minimization: only the fields the express return takes over are typed, nothing else is read.
+    customer?: {
+      firstName?: string;
+      lastName?: string;
+      contact?: {
+        email?: string;
+        mobilePhoneNumber?: string;
+      } | null;
+    } | null;
     paymentType?: ECTransactionPaymentType;
     paymentSwitchPossible?: boolean;
   };
 };
+
+// PATCH /transaction/{technicalTransactionId} body; easyCredit accepts it only while the transaction is PREAUTHORIZED.
+export type ECTransactionUpdate = Pick<
+  ECTransactionOrderDetails,
+  'orderValue' | 'numberOfProductsInShoppingCart' | 'shoppingCartInformation'
+>;
+
+// The PATCH response, the same TransactionSummary that GET returns as decision.
+export type ECTransactionSummary = ECGetPaymentResponse['decision'];
 
 type ECTransactionViolation = {
   field: string;

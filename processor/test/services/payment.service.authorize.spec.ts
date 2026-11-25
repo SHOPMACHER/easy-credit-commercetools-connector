@@ -1437,7 +1437,7 @@ describe('payment type sync before authorizing', () => {
       expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
     });
 
-    it('leaves a transaction that moved to Pending (request in flight) untouched when the bill rules break', async () => {
+    it('leaves a transaction that moved to Pending (request in flight) untouched, even when the bill rules break', async () => {
       setup({ method: BILL, cart: billCart({ billingAddress: { ...address, company: 'ACME GmbH' } }) });
       client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, BILL));
       mock(getCartByPaymentId).mockImplementation(async () => {
@@ -1445,9 +1445,7 @@ describe('payment type sync before authorizing', () => {
         return cart;
       });
 
-      await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
-        errors: expect.arrayContaining([expect.objectContaining({ code: 'CorporateCustomerNotAllowed' })]),
-      });
+      await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotPreauthorized' });
 
       expect(client.authorizePayment).not.toHaveBeenCalled();
       expect(writes()).toEqual([]);
@@ -1455,7 +1453,7 @@ describe('payment type sync before authorizing', () => {
       expect(updateCart).not.toHaveBeenCalled();
     });
 
-    it('leaves the cart frozen when the bill rules break on a transaction that is already Failure', async () => {
+    it('leaves the cart frozen on a transaction that is already Failure, even when the bill rules break', async () => {
       setup({ method: BILL, cart: billCart({ billingAddress: { ...address, company: 'ACME GmbH' } }) });
       client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, BILL));
       mock(getCartByPaymentId).mockImplementation(async () => {
@@ -1465,9 +1463,7 @@ describe('payment type sync before authorizing', () => {
       // The discard also removed this payment from the cart.
       mock(findCartByPaymentId).mockResolvedValue(undefined);
 
-      await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
-        errors: expect.arrayContaining([expect.objectContaining({ code: 'CorporateCustomerNotAllowed' })]),
-      });
+      await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotPreauthorized' });
 
       expect(client.authorizePayment).not.toHaveBeenCalled();
       expect(writes()).toEqual([]);
@@ -1475,7 +1471,7 @@ describe('payment type sync before authorizing', () => {
     });
 
     it.each(['Pending', 'Failure'])(
-      'leaves a transaction that moved to %s untouched when the amount mismatches before the request',
+      'leaves a transaction that moved to %s untouched, even when the amount mismatches before the request',
       async (movedTo) => {
         setup({ method: BILL, txCents: 10000, cart: buildCart('Frozen', 15000) });
         client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, BILL));
@@ -1486,7 +1482,9 @@ describe('payment type sync before authorizing', () => {
         // A concurrent discard also removed the payment from the cart.
         mock(findCartByPaymentId).mockResolvedValue(undefined);
 
-        await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'AmountMismatch' });
+        await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({
+          code: 'TransactionNotPreauthorized',
+        });
 
         expect(client.authorizePayment).not.toHaveBeenCalled();
         expect(writes()).toEqual([]);
@@ -1494,6 +1492,20 @@ describe('payment type sync before authorizing', () => {
         expect(updateCart).not.toHaveBeenCalled();
       },
     );
+
+    it('sends no authorization request when a cancel failed the transaction before the cart was unfrozen', async () => {
+      setup({ method: BILL, cart: billCart({}) });
+      client.getPayment.mockResolvedValue(ec('PREAUTHORIZED', 100, BILL));
+      mock(getCartByPaymentId).mockImplementation(async () => {
+        ctState = 'Failure'; // the cancel wrote Failure; the cart is still frozen and the totals still match
+        return cart;
+      });
+
+      await expect(handleAuthorizeECPayment(PAYMENT_ID)).rejects.toMatchObject({ code: 'TransactionNotPreauthorized' });
+
+      expect(client.authorizePayment).not.toHaveBeenCalled();
+      expect(writes()).toEqual([]);
+    });
 
     it('authorizes an installment payment as before when the addresses differ', async () => {
       setup({ method: INSTALLMENT, cart: billCart({ shippingAddress: { ...address, streetName: 'Anders' } }) });

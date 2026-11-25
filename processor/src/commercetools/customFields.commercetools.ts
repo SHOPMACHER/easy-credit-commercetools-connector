@@ -3,6 +3,7 @@ import { createApiRoot } from '../client/create.client';
 import {
   EASYCREDIT_EXPRESS_FIELD,
   EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+  EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_TECHNICAL_TRANSACTION_ID_FIELD,
   EASYCREDIT_TOTAL_VALUE_FIELD,
@@ -65,6 +66,17 @@ const PAYMENT_FIELD_DEFINITIONS: FieldDefinition[] = [
     required: false,
     type: {
       name: 'Boolean',
+    },
+  },
+  {
+    name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD,
+    label: {
+      en: 'EasyCredit Express Shipping Method',
+      de: 'EasyCredit Express Versandart',
+    },
+    required: false,
+    type: {
+      name: 'String',
     },
   },
 ];

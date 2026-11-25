@@ -2,6 +2,7 @@
 
 * [Differences to Create Payment](#differences-to-create-payment)
 * [Placeholder address](#placeholder-address)
+* [Shipping costs](#shipping-costs)
 * [Customer relationship](#customer-relationship)
 * [Stored express flag](#stored-express-flag)
 * [Second express click](#second-express-click)
@@ -35,24 +36,35 @@ Everything that is not listed below works as in [Create Payment](./CreatePayment
 | `customerRelationship` | Required in the body and passed to easyCredit | Derived from commercetools, a value in the body is ignored, see [Customer relationship](#customer-relationship) |
 | Redirect links | Any string, unless `REDIRECT_ALLOWED_HOSTS` is set, see [Redirect links](./CreatePayment.md#redirect-links) | Always checked, see [Redirect links](./CreatePayment.md#redirect-links) |
 | CT payment | No custom type | Payment custom type with `easyCreditExpress: true`, see [Stored express flag](#stored-express-flag) |
-| Cart freeze | See [Cart freeze](./CreatePayment.md#cart-freeze) | Same. A cart without shipping address first gets a placeholder, see [Placeholder address](#placeholder-address) |
+| Cart freeze | See [Cart freeze](./CreatePayment.md#cart-freeze) | Same. A cart without shipping address first gets a placeholder, see [Placeholder address](#placeholder-address), and a cart without shipping method gets the default one, see [Shipping costs](#shipping-costs) |
 
 The currency, the payment type availability, the limits and the [excluded cart items](./GetPaymentMethod.md#excluded-cart-items) are checked against the cart exactly as in Create Payment. The `paymentType` sent by the express button is only a selection.
 
-The amount check uses the cart total at the time of the request. Shipping costs are only known once easyCredit returns the address.
+The amount check uses the cart total after the default shipping method is set, see [Shipping costs](#shipping-costs).
 
-`urlCancellation` and `urlDenial` are routed through the connector, which releases the cart before it redirects, see [Cancel Payment](./CancelPayment.md). The webhook link carries a signature of the target, so the connector redirects only to the link given here. Which hosts these links may point to is only limited with `REDIRECT_ALLOWED_HOSTS`, see [Redirect links](./CreatePayment.md#redirect-links). `urlSuccess` is passed to easyCredit and should point to the express return page of the shop. The connector cannot check which page it is. A page that authorizes the payment without taking over the address from easyCredit gets `400 ExpressAddressMissing`, so the placeholder can never end up in an order.
+`urlCancellation` and `urlDenial` are routed through the connector, which releases the cart before it redirects, see [Cancel Payment](./CancelPayment.md). The webhook link carries a signature of the target, so the connector redirects only to the link given here. Which hosts these links may point to is only limited with `REDIRECT_ALLOWED_HOSTS`, see [Redirect links](./CreatePayment.md#redirect-links). `urlSuccess` is passed to easyCredit and should point to the express return page of the shop. That page calls [Express Return](./ExpressReturn.md), which takes over the customer data, sets the shipping method and syncs the amount. The connector cannot check which page it is. A page that authorizes the payment without taking over the address from easyCredit gets `400 ExpressAddressMissing`, so the placeholder can never end up in an order.
 <br />
 
 ## Placeholder address
 
-commercetools cannot freeze a cart without shipping address. A cart without one therefore gets the placeholder `{ "country": "DE" }` in the same update that freezes it. The placeholder keeps the cart total unchanged and is replaced by the address from easyCredit after the return.
+commercetools cannot freeze a cart without shipping address. A cart without one therefore gets the placeholder `{ "country": "DE" }` in the same update that freezes it. The placeholder keeps the cart total unchanged and is replaced by the address from easyCredit in [Express Return](./ExpressReturn.md).
 
-With the default `SoftFreeze`, addresses, email and the shipping method can still be set on the frozen cart (checked against commercetools on 2026-11-03). A shipping method that changes the cart total fails the authorization with `400 AmountMismatch`, see [Cart freeze](./CreatePayment.md#cart-freeze).
+With the default `SoftFreeze`, addresses, email and the shipping method can still be set on the frozen cart (checked against commercetools on 2026-11-03). Express Return sets the shipping method for the easyCredit address, and the authorization syncs a total that changed after the return, see [Authorize Payment](./AuthorizePayment.md#express-payments).
 
-The CT payment records in `easyCreditExpressPlaceholderAddress` whether the connector added the placeholder. When the attempt ends without an order, the connector puts the cart back as it was before the express click: it unfreezes the cart and removes the placeholder in the same update. This happens on cancel and denial, on `DECLINED`, `EXPIRED` and failed checks during the authorization, and when the create request itself fails. A shipping method set on the placeholder is removed too, because commercetools does not unset a shipping address while a shipping method is set. Without an address before the express click, the shopper can only have set it on the placeholder.
+The CT payment records in `easyCreditExpressPlaceholderAddress` whether the connector added the placeholder, and in `easyCreditExpressShippingMethod` which shipping method it set. When the attempt ends without an order, the connector puts the cart back as it was before the express click: it unfreezes the cart and removes the placeholder and its shipping method in the same update. This happens on cancel and denial, on `DECLINED`, `EXPIRED` and failed checks during the authorization, and when the create request itself fails. A shipping method set on the placeholder is removed too, because commercetools does not unset a shipping address while a shipping method is set. Without an address before the express click, the shopper can only have set it on the placeholder.
 
 The cart keeps its shipping address if it no longer holds only the country (the express return or the shop replaced the placeholder), or if the shop had set it before the express click.
+<br />
+
+## Shipping costs
+
+easyCredit finances the order value including shipping costs, and it rejects any later increase of a transaction (`PATCH` with a higher `orderValue`, checked in the sandbox on 2026-11-15). The amount sent here must therefore already include the shipping costs, as in TeamBank's Magento plugin (`prepareExpressCheckout`).
+
+A cart without shipping method gets the default method that matches the cart in the same update that freezes it: for the placeholder `{ "country": "DE" }`, or for the shipping address the cart already has. A method the shopper already chose is kept. A cart the shop froze before the express click keeps its freeze: with `SoftFreeze` it gets the method in its own update, and with `HardFreeze`, which rejects `setShippingMethod`, a cart without a method is refused with `400 ShippingMethodMissing` before anything changes. Otherwise the return would always add shipping costs that easyCredit cannot accept. Without a matching method the cart is frozen without one, and [Express Return](./ExpressReturn.md) abandons the attempt if no method matches the easyCredit address either.
+
+Express Return keeps this method if it still matches the easyCredit address. If the total still rises after the return (another method, an address in another shipping zone), easyCredit rejects the update and the attempt ends with `400 AmountIncreaseNotPossible`, see [Express Return](./ExpressReturn.md#shipping-costs-and-amount-sync).
+
+When the attempt ends without an order, the method the connector set is removed, also on a cart that had a shipping address before the express click. A method the shopper chose since (for example on the confirm page) stays, as does a method Express Return kept. A method Express Return swapped in counts as set by the connector.
 
 ### Abandoned attempt
 
@@ -65,11 +77,11 @@ Whether the attempt is over depends on its state, read from easyCredit for an `I
 
 | State | Get Payment Method | Create Payment |
 | --- | --- | --- |
-| `Failure` transaction, `DECLINED`, `EXPIRED`, or unknown to easyCredit (`404`, `410`) | Ends it | Ends it |
+| `Failure` transaction, `DECLINED`, `EXPIRED`, unknown to easyCredit (`404`, `410`), or expired (`400 CONSTRAINT_VIOLATION` on `decision`) | Ends it | Ends it |
 | `OPEN`: the shopper may still be on the easyCredit page | Keeps it | Ends it, as a new checkout does for [stale attempts](./CreatePayment.md#switching-in-the-shop-checkout) |
 | `PREAUTHORIZED` (waits for the shop's authorize), `AUTHORIZED`, a `Pending` or `Success` transaction, or a failed lookup | Keeps it | `400 PaymentInProgress`, nothing is changed |
 
-A kept attempt leaves the cart as it is, so Get Payment Method reports the placeholder like any incomplete address. easyCredit expires an `OPEN` transaction about 30 minutes after the shopper's last action.
+A kept attempt leaves the cart as it is, so Get Payment Method reports the placeholder like any incomplete address. easyCredit expires a transaction 30 minutes after the last activity of the shopper or a `PATCH` of the shop (checked in the sandbox on 2026-11-15), and then answers the lookup with `400 CONSTRAINT_VIOLATION` on `decision` instead of a status.
 
 easyCredit reports `PREAUTHORIZED` as soon as its decision page shows, before the shopper clicks on to the shop, so closing the tab there leaves a `PREAUTHORIZED` attempt. The shopper is not stuck with it:
 
@@ -88,7 +100,7 @@ easyCredit uses `customerRelationship` for its risk assessment. For express the 
 | `orderDoneWithLogin` | `false` | `true` |
 | `numberOfOrders` | `0` | Orders of the customer in commercetools |
 | `customerSince` | not sent | Date the account was created |
-| `logisticsServiceProvider` | Name of the shipping method of the cart, at most 255 characters. Not sent without a shipping method, which is the usual case for an express click. | Same |
+| `logisticsServiceProvider` | Name of the shipping method of the cart, at most 255 characters: the default method set before the transaction is created, see [Shipping costs](#shipping-costs). Not sent if no method matches. | Same |
 
 easyCredit rejects a logged-in order without `customerSince`, so the connector always sends one:
 
@@ -100,12 +112,13 @@ Orders of a guest are not counted by email, because anyone can enter another sho
 
 ## Stored express flag
 
-The CT payment gets the custom type configured in `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) with these Boolean fields:
+The CT payment gets the custom type configured in `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) with these fields:
 
 | Field | Content |
 | --- | --- |
-| `easyCreditExpress` | Always `true`. |
-| `easyCreditExpressPlaceholderAddress` | `true` if the connector added the placeholder address, see [Placeholder address](#placeholder-address). |
+| `easyCreditExpress` | Boolean, always `true`. |
+| `easyCreditExpressPlaceholderAddress` | Boolean, `true` if the connector added the placeholder address, see [Placeholder address](#placeholder-address). |
+| `easyCreditExpressShippingMethod` | String, id of the shipping method the connector set at init or at the return, see [Shipping costs](#shipping-costs). Not set when the cart kept its own method. |
 
 The post-deploy script creates the type, or adds missing fields to an existing type with this key, so the type can be shared with other connectors. The existing type must include `payment` in its `resourceTypeIds`, otherwise the deployment fails.
 

@@ -38,7 +38,13 @@ export async function updatePayment(payment: Payment, updateActions: PaymentUpda
 
     return paymentObject;
   } catch (error: any) {
-    log.error('Error in updatePayment', error);
+    // The raw SDK error carries the request body, which can hold the shopper's address and email.
+    log.error('Error in updatePayment', {
+      paymentId: payment.id,
+      code: error?.code,
+      statusCode: error?.statusCode,
+      message: error?.body?.message,
+    });
 
     throw new Errorx({
       code: error?.code as string,

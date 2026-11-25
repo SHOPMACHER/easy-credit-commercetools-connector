@@ -165,11 +165,14 @@ describe('Cart Functions', () => {
       expect(createApiRoot).toHaveBeenCalled();
     });
 
-    it('should log an error and throw an Errorx if the update request fails', async () => {
+    it('should log an error without the rejected value and throw an Errorx if the update request fails', async () => {
       const errorResponse = {
-        code: 'UpdateError',
-        body: { message: 'Update failed', errors: [{ field: 'version', message: 'Version mismatch' }] },
-        statusCode: 409,
+        code: 'InvalidField',
+        body: {
+          message: "The value 'jane@example.com' is not valid for field 'email'.",
+          errors: [{ code: 'InvalidField', field: 'email', invalidValue: 'jane@example.com', message: 'invalid' }],
+        },
+        statusCode: 400,
       };
 
       (createApiRoot as jest.Mock).mockReturnValue({
@@ -183,8 +186,22 @@ describe('Cart Functions', () => {
       });
 
       // @ts-expect-error test
-      await expect(updateCart(cart, updateActions)).rejects.toThrow(Errorx);
-      expect(log.error).toHaveBeenCalledWith('Error in updateCart', errorResponse);
+      const error = await updateCart(cart, updateActions).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Errorx);
+      expect(error).toMatchObject({
+        code: 'InvalidField',
+        httpErrorStatus: 400,
+        fields: [{ code: 'InvalidField', field: 'email' }],
+      });
+      expect(log.error).toHaveBeenCalledWith('Error in updateCart', {
+        cartId: cart.id,
+        code: 'InvalidField',
+        statusCode: 400,
+        errors: [{ code: 'InvalidField', field: 'email' }],
+      });
+      expect(JSON.stringify(jest.mocked(log.error).mock.calls)).not.toContain('jane@example.com');
+      expect((error as Errorx).message).not.toContain('jane@example.com');
+      expect(JSON.stringify((error as Errorx).fields)).not.toContain('jane@example.com');
     });
   });
 });

@@ -25,6 +25,7 @@ import {
   handleCreateExpressPayment,
   handleCreatePayment,
   handleExpressPaymentMethod,
+  handleExpressReturn,
   handleGetPayment,
   handlePaymentMethod,
   handleRefundPayment,
@@ -161,6 +162,34 @@ export const paymentsRoute = async (fastify: FastifyInstance, opts: FastifyPlugi
       reply.code(201).send(response);
     },
   );
+
+  // The request has no body, but storefront clients often still send a JSON content type; scoped to this route only.
+  await fastify.register(async (scoped) => {
+    const parseJson = fastify.getDefaultJsonParser('error', 'error');
+    scoped.removeContentTypeParser('application/json');
+    scoped.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) =>
+      body === '' ? done(null, undefined) : parseJson(request, body.toString(), done),
+    );
+
+    scoped.post<{ Params: { paymentId: string }; Reply: GetPaymentResponseSchemaDTO }>(
+      '/express/:paymentId/return',
+      {
+        preHandler: [opts.sessionHeaderAuthHook.authenticate()],
+        schema: {
+          params: GetPaymentParamsSchema,
+          response: {
+            200: GetPaymentResponseSchema,
+            400: ErrorResponse,
+          },
+        },
+      },
+      async (request, reply) => {
+        const response = await handleExpressReturn(getCartIdFromContext(), request.params.paymentId);
+
+        reply.code(200).send(response);
+      },
+    );
+  });
 
   fastify.get<{ Params: { paymentId: string }; Reply: GetPaymentResponseSchemaDTO }>(
     '/:paymentId',
