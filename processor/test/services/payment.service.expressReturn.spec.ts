@@ -520,6 +520,17 @@ describe('handleExpressReturn', () => {
     expectAbandoned();
   });
 
+  it.each([408, 409, 429])('should keep the attempt when easyCredit answers the PATCH with %i', async (status) => {
+    setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
+    updateECPayment.mockImplementationOnce(async () => {
+      throw new Errorx({ code: 'TransactionUpdateFailed', message: 'failed', httpErrorStatus: status });
+    });
+
+    expect(await getErrorCodes(handleExpressReturn('session-cart', 'payment123'))).toEqual(['TransactionUpdateFailed']);
+    expect(authorization('Initial')).toMatchObject([{ id: 'tx-1', amount: { centAmount: 50000 } }]);
+    expect(state.cart.cartState).toBe('Frozen');
+  });
+
   it.each([
     ['timed out', 504],
     ['failed without an answer', 502],
@@ -673,6 +684,44 @@ describe('handleExpressReturn', () => {
     expectAbandoned();
     expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('express');
     expect(state.cart.shippingInfo).toBeUndefined();
+  });
+
+  it('should keep the recorded method when a concurrent return updated the cart first', async () => {
+    setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
+    const write = jest.mocked(updateCart).getMockImplementation() as typeof updateCart;
+    jest.mocked(updateCart).mockImplementation(async (cart, actions) => {
+      if (cart.version !== state.cart.version) {
+        throw new Errorx({ code: 'ConcurrentModification', message: 'version', httpErrorStatus: 409 });
+      }
+      return write(cart, actions);
+    });
+
+    const results = await Promise.allSettled([
+      handleExpressReturn('session-cart', 'payment123'),
+      handleExpressReturn('session-cart', 'payment123'),
+    ]);
+
+    expect(results.map(({ status }) => status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(state.cart.shippingInfo?.shippingMethod?.id).toBe('standard');
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('standard');
+  });
+
+  it('should keep the recorded method when the outcome of the cart update is unknown', async () => {
+    setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
+    const write = jest.mocked(updateCart).getMockImplementation() as typeof updateCart;
+    jest.mocked(updateCart).mockImplementationOnce(async (cart, actions) => {
+      await write(cart, actions);
+      throw new Errorx({ code: 'ServiceUnavailable', message: 'unavailable', httpErrorStatus: 503 });
+    });
+
+    expect(await getErrorCodes(handleExpressReturn('session-cart', 'payment123'))).toEqual(['ServiceUnavailable']);
+    expect(authorization('Initial')).toHaveLength(1);
+    expect(state.cart.shippingInfo?.shippingMethod?.id).toBe('standard');
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('standard');
+
+    await handleExpressReturn('session-cart', 'payment123');
+
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('standard');
   });
 
   it('should record the shipping method on the new payment version after a 409', async () => {

@@ -1563,13 +1563,14 @@ const applyExpressCustomerData = async (
   try {
     return { cart: await updateCart(cart, actions), payment: current };
   } catch (error: unknown) {
+    if ((error as Partial<Errorx>)?.httpErrorStatus !== 400) {
+      throw error;
+    }
+    // Only a 400 surely left the cart as it was; after a 409 or 5xx another return or this one may have set the method.
     if (swapsMethod) {
       await restoreExpressShippingMethod(current, recordedMethodId);
     }
-    if ((error as Partial<Errorx>)?.httpErrorStatus === 400) {
-      return abandonExpress(payment.id, error);
-    }
-    throw error;
+    return abandonExpress(payment.id, error);
   }
 };
 
