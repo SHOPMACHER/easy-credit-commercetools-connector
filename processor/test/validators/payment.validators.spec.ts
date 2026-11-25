@@ -290,8 +290,24 @@ describe('Validation Functions', () => {
       );
 
       expect(errors[0].message).toBe('Die Summe des Warenkorbs muss zwischen 1.500€ und 10.000€ liegen.');
-      expect(toLocaleStringSpy.mock.calls).toEqual([['de-DE'], ['de-DE']]);
+      expect(toLocaleStringSpy.mock.calls.map(([locale]) => locale)).toEqual(['de-DE', 'de-DE']);
       toLocaleStringSpy.mockRestore();
+    });
+
+    it.each([
+      [99.9, 1000, 'zwischen 99,90€ und 1.000€'],
+      [100, 999.99, 'zwischen 100€ und 999,99€'],
+      [0.5, 1234.5, 'zwischen 0,50€ und 1.234,50€'],
+    ])('should show the cents of the limits %s and %s with two digits', (minAmount, maxAmount, limits) => {
+      validatePaymentTypeAvailability(
+        5000,
+        { enabled: true, available: false, minAmount, maxAmount },
+        ecConfig,
+        errors,
+        ECTransactionPaymentType.ECTransactionBillPayment,
+      );
+
+      expect(errors[0].message).toBe(`Die Summe des Warenkorbs muss ${limits} liegen.`);
     });
 
     it.each([10, 500, 6000])(

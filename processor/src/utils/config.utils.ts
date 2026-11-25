@@ -47,6 +47,10 @@ export const readConfiguration = () => {
       installmentPaymentExcludedCustomLineItems: parseList(process.env.INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS),
       // Host names compare lowercase, as the URL parser lowercases them.
       redirectAllowedHosts: parseList(process.env.REDIRECT_ALLOWED_HOSTS?.toLowerCase()),
+      installmentPaymentMinAmount: process.env.INSTALLMENT_PAYMENT_MIN_AMOUNT,
+      installmentPaymentMaxAmount: process.env.INSTALLMENT_PAYMENT_MAX_AMOUNT,
+      billPaymentMinAmount: process.env.BILL_PAYMENT_MIN_AMOUNT,
+      billPaymentMaxAmount: process.env.BILL_PAYMENT_MAX_AMOUNT,
     },
   };
 
@@ -61,10 +65,55 @@ export const readConfiguration = () => {
   return envVars;
 };
 
+export type MerchantAmountLimits = {
+  minAmount?: number;
+  maxAmount?: number;
+};
+
 type PaymentTypeConfig = {
   enabled: boolean;
   excludedProductTypes: string[];
   excludedCustomLineItems: string[];
+  amountLimits: MerchantAmountLimits;
+  // Set when the merchant limits were dropped because they are not a valid range.
+  invalidAmountLimits: boolean;
+};
+
+const AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
+
+// EUR amount with up to 2 decimals; NaN marks a value that is set but invalid.
+const parseAmount = (value: string | undefined): number | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return AMOUNT_PATTERN.test(trimmed) ? Number(trimmed) : Number.NaN;
+};
+
+// Invalid limits are ignored instead of stopping the connector, so easyCredit's limits apply.
+const parseAmountLimits = (
+  min: string | undefined,
+  max: string | undefined,
+): Pick<PaymentTypeConfig, 'amountLimits' | 'invalidAmountLimits'> => {
+  const minAmount = parseAmount(min);
+  const maxAmount = parseAmount(max);
+  const invalid =
+    Number.isNaN(minAmount) ||
+    Number.isNaN(maxAmount) ||
+    (minAmount !== undefined && maxAmount !== undefined && minAmount > maxAmount);
+
+  if (invalid) {
+    return { amountLimits: {}, invalidAmountLimits: true };
+  }
+
+  return {
+    amountLimits: {
+      ...(minAmount !== undefined && { minAmount }),
+      ...(maxAmount !== undefined && { maxAmount }),
+    },
+    invalidAmountLimits: false,
+  };
 };
 
 // The merchant settings of one payment type, so callers don't branch on the type.
@@ -78,9 +127,11 @@ export const getPaymentTypeConfig = (
         enabled: easyCredit.billPaymentEnabled === '1',
         excludedProductTypes: easyCredit.billPaymentExcludedProductTypes ?? [],
         excludedCustomLineItems: easyCredit.billPaymentExcludedCustomLineItems ?? [],
+        ...parseAmountLimits(easyCredit.billPaymentMinAmount, easyCredit.billPaymentMaxAmount),
       }
     : {
         enabled: easyCredit.installmentPaymentEnabled !== '0',
         excludedProductTypes: easyCredit.installmentPaymentExcludedProductTypes ?? [],
         excludedCustomLineItems: easyCredit.installmentPaymentExcludedCustomLineItems ?? [],
+        ...parseAmountLimits(easyCredit.installmentPaymentMinAmount, easyCredit.installmentPaymentMaxAmount),
       };

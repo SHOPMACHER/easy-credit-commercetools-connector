@@ -40,14 +40,14 @@ To use this function, these conditions must be true:
 
 | Payment type | Offered if |
 | --- | --- |
-| `INSTALLMENT_PAYMENT` | `INSTALLMENT_PAYMENT_ENABLED` is `1` (default). `availability` and `installmentPaymentActive` are `true`. `minInstallmentValue <= amount <= maxInstallmentValue`. The cart has no line item whose product type key is in `INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES`. The cart has no custom line item whose `slug` or `key` is in `INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`. The product type lookup succeeds, unless a matching excluded custom line item already rules out the cart (see [Excluded cart items](#excluded-cart-items)). |
-| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`. `availability` and `billPaymentActive` are `true`. `minBillingValue <= amount <= maxBillingValue`. The cart has no line item whose product type key is in `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`. The cart has no custom line item whose `slug` or `key` is in `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`. The product type lookup succeeds, unless a matching excluded custom line item already rules out the cart (see [Excluded cart items](#excluded-cart-items)). |
+| `INSTALLMENT_PAYMENT` | `INSTALLMENT_PAYMENT_ENABLED` is `1` (default). `availability` and `installmentPaymentActive` are `true`. The cart total is within the installment limits, see [Merchant amount limits](#merchant-amount-limits). The cart has no line item whose product type key is in `INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES`. The cart has no custom line item whose `slug` or `key` is in `INSTALLMENT_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`. The product type lookup succeeds, unless a matching excluded custom line item already rules out the cart (see [Excluded cart items](#excluded-cart-items)). |
+| `BILL_PAYMENT` | `BILL_PAYMENT_ENABLED` is `1`. `availability` and `billPaymentActive` are `true`. The cart total is within the bill limits, see [Merchant amount limits](#merchant-amount-limits). The cart has no line item whose product type key is in `BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`. The cart has no custom line item whose `slug` or `key` is in `BILL_PAYMENT_EXCLUDED_CUSTOM_LINE_ITEMS`. The product type lookup succeeds, unless a matching excluded custom line item already rules out the cart (see [Excluded cart items](#excluded-cart-items)). |
 
 The connector offers pay by invoice only to private persons. It rejects a cart with a Business Unit or a `company` in the billing or shipping address with `CorporateCustomerNotAllowed`. For both payment types, the billing and shipping address must be identical and in Germany. Identical means the same `firstName`, `lastName`, `email`, `phone`, `mobile`, `streetName`, `streetNumber`, `additionalStreetInfo`, `postalCode`, `city` and `country`. For pay by invoice, this applies to every shipping address of the cart. This includes all addresses with `shippingMode: Multiple` and the item shipping addresses that line items ship to.
 
 Both payment types also need a fresh easyCredit webshop configuration (see below). If both `INSTALLMENT_PAYMENT_ENABLED=0` and `BILL_PAYMENT_ENABLED=0`, the connector offers no easyCredit payment method. It logs a warning at startup.
 
-easyCredit defines the limits for each webshop in EUR. You cannot configure them in the connector. There are no default limits. If the connector has no fresh webshop configuration, it offers no payment type.
+easyCredit defines the limits for each webshop in EUR: `minInstallmentValue` and `maxInstallmentValue` for installment, `minBillingValue` and `maxBillingValue` for pay by invoice. The merchant can narrow them for each payment type, see [Merchant amount limits](#merchant-amount-limits). There are no default limits. If the connector has no fresh webshop configuration, it offers no payment type.
 
 <br />
 
@@ -77,6 +77,35 @@ If the lookup fails (for example, because of a missing scope or a commercetools 
 | `BILL_PAYMENT` | `400 BillPaymentExcludedItems` | `503 BillPaymentCheckFailed` |
 
 The check runs only while the payment type is otherwise enabled. The connector checks the requested payment type in this call, in `POST /payments` and when the shopper switches to it on the easyCredit page. This call also checks the other payment type, but only to report it. An exclusion of the other type does not change the status of this call. It only sets `available` of that type to `false`.
+
+<br />
+
+## Merchant amount limits
+
+The merchant can narrow the easyCredit order value limits for each payment type. All four settings are optional:
+
+| Payment type | Minimum | Maximum |
+| --- | --- | --- |
+| `INSTALLMENT_PAYMENT` | `INSTALLMENT_PAYMENT_MIN_AMOUNT` | `INSTALLMENT_PAYMENT_MAX_AMOUNT` |
+| `BILL_PAYMENT` | `BILL_PAYMENT_MIN_AMOUNT` | `BILL_PAYMENT_MAX_AMOUNT` |
+
+The values are in EUR, with up to 2 decimals and a dot as separator, for example `200` or `99.90`. You can set only a minimum, only a maximum or both.
+
+The connector uses the narrower value on each side. The effective minimum is the higher of the merchant minimum and the easyCredit minimum. The effective maximum is the lower of the merchant maximum and the easyCredit maximum. The merchant limits never extend the easyCredit limits. Example: easyCredit allows pay by invoice from 50 to 5000 EUR, and `BILL_PAYMENT_MIN_AMOUNT=100`. The connector then offers pay by invoice from 100 to 5000 EUR.
+
+The effective limits apply everywhere the connector checks the cart total:
+
+- this call, including `minAmount` and `maxAmount` in the response,
+- [Create Payment](./CreatePayment.md) and [Create Express Payment](./CreateExpressPayment.md),
+- the check after the shopper switches the payment type on the easyCredit page,
+- the widget, see [Pay by invoice in the widget](./WebComponents.md#pay-by-invoice-in-the-widget).
+
+A cart total outside the effective limits returns `400 InvalidAmount`. The message has the effective limits, for example "Die Summe des Warenkorbs muss zwischen 100€ und 5.000€ liegen.". A request that skips the storefront check is therefore rejected as well.
+
+The connector ignores merchant limits it cannot use and applies the easyCredit limits of that payment type:
+
+- **Invalid value, or the minimum is above the maximum.** For example `BILL_PAYMENT_MIN_AMOUNT=1,50` or `-10`. The connector drops both values of that payment type and logs a warning at startup. It still starts.
+- **The range does not overlap the easyCredit limits.** For example `BILL_PAYMENT_MIN_AMOUNT=6000` while easyCredit allows at most 5000 EUR. The connector logs a warning on the first check with these limits. It does not warn for a payment type that is disabled.
 
 <br />
 
@@ -144,7 +173,7 @@ The API returns this if it can offer the requested payment type. `INSTALLMENT_PA
 | `webShopId` | easyCredit webshop ID from the connector configuration. |
 | `amount` | Cart total in EUR. |
 | `paymentTypes.<type>.available` | If the connector can offer the payment type for this cart. |
-| `paymentTypes.<type>.minAmount` / `maxAmount` | Limits in EUR from the fresh webshop configuration. The API omits them for `BILL_PAYMENT` if a bill configuration field is missing or not valid, `null` included. |
+| `paymentTypes.<type>.minAmount` / `maxAmount` | Effective limits in EUR: the limits of the fresh webshop configuration, narrowed by the [merchant amount limits](#merchant-amount-limits). The API omits them for `BILL_PAYMENT` if a bill configuration field is missing or not valid, `null` included. |
 
 #### Error Responses
 
@@ -154,7 +183,7 @@ The API returns this if it can offer the requested payment type. `INSTALLMENT_PA
 | 400 | `CorporateCustomerNotAllowed` | Only for `BILL_PAYMENT`: the cart has a Business Unit or a company in the billing or any shipping address. |
 | 400 | `InvalidField` | `paymentType` is not `INSTALLMENT_PAYMENT` or `BILL_PAYMENT`. `fields` has the value that is not valid and the allowed values. |
 | 400 | `InvalidAddress` | The billing address is not complete or not valid: `firstName`, `lastName`, `streetName` or `city` is blank, or `postalCode` does not have 5 digits. The API reports this in addition to the codes above if both addresses exist. |
-| 400 | `InvalidAmount` | The cart total is outside the limits of the requested payment type. The message has the limits from the fresh webshop configuration. |
+| 400 | `InvalidAmount` | The cart total is outside the effective limits of the requested payment type. The message has these limits. See [Merchant amount limits](#merchant-amount-limits). |
 | 400 | `PaymentTypeNotAvailable` | The requested payment type is switched off or not activated: `INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED=0`, or easyCredit reports `availability: false`, `installmentPaymentActive: false` or `billPaymentActive: false`. For `BILL_PAYMENT`, it also occurs if the bill configuration is missing or not valid. |
 | 400 | `InstallmentPaymentExcludedItems`, `BillPaymentExcludedItems` | The cart has an excluded item for the requested payment type. See [Excluded cart items](#excluded-cart-items). This error comes before `InvalidAmount`. |
 | 503 | `InstallmentPaymentCheckFailed`, `BillPaymentCheckFailed` | The connector could not load the excluded product types of the requested payment type from commercetools. This error comes before `InvalidAmount`. |

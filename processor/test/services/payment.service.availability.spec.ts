@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import fastify from 'fastify';
-import { Cart, Errorx, MultiErrorx } from '@commercetools/connect-payments-sdk';
-import { handleCreatePayment, handlePaymentMethod } from '../../src/services/payment.service';
+import { Cart, Errorx, MultiErrorx, Payment } from '@commercetools/connect-payments-sdk';
+import { handleCreatePayment, handleGetPayment, handlePaymentMethod } from '../../src/services/payment.service';
 import { resetWebshopInfoCache } from '../../src/services/webshop.service';
-import { getCartById, updateCart } from '../../src/commercetools/cart.commercetools';
-import { createPayment, updatePayment } from '../../src/commercetools/payment.commercetools';
+import {
+  findCartByPaymentId,
+  getCartById,
+  getCartByPaymentId,
+  updateCart,
+} from '../../src/commercetools/cart.commercetools';
+import { createPayment, getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { getCustomObjectByKey } from '../../src/commercetools/customObject.commercetools';
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
 import { resetPaymentTypeRestrictionCache } from '../../src/services/paymentTypeRestriction.service';
@@ -948,6 +953,114 @@ describe('payment type availability', () => {
 
       expect(result.paymentTypes.INSTALLMENT_PAYMENT.available).toBe(true);
       expect(result.paymentTypes.BILL_PAYMENT.available).toBe(false);
+    });
+  });
+  // A shopper can call the API directly, so the merchant limits must hold server-side, not only in the widget.
+  describe('merchant amount limits', () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    it.each([
+      ['BILL_PAYMENT', 'BILL_PAYMENT_MAX_AMOUNT', '400', BILL, 'zwischen 50€ und 400€'],
+      ['BILL_PAYMENT', 'BILL_PAYMENT_MIN_AMOUNT', '600', BILL, 'zwischen 600€ und 5.000€'],
+      ['the default installment', 'INSTALLMENT_PAYMENT_MIN_AMOUNT', '600', undefined, 'zwischen 600€ und 10.000€'],
+    ])(
+      'should reject POST /payments for %s with InvalidAmount when %s=%s excludes a 500€ cart',
+      async (_, key, value, paymentType, limits) => {
+        process.env[key] = value;
+        jest.mocked(getCartById).mockResolvedValue(mockCart(500));
+        const app = await buildApp();
+
+        try {
+          const response = await app.inject({
+            method: 'POST',
+            url: '/payments',
+            payload: { cartId: 'cart123', redirectLinks, customerRelationship: shopRelationship, paymentType },
+          });
+
+          expect(response.statusCode).toBe(400);
+          expect(response.json().errors).toEqual([
+            expect.objectContaining({ code: 'InvalidAmount', message: expect.stringContaining(limits) }),
+          ]);
+          expect(updateCart).not.toHaveBeenCalled();
+          expect(createPayment).not.toHaveBeenCalled();
+          expect(createECPaymentMock).not.toHaveBeenCalled();
+        } finally {
+          await app.close();
+        }
+      },
+    );
+
+    it('should create the payment for a cart inside the merchant limits', async () => {
+      process.env.BILL_PAYMENT_MIN_AMOUNT = '100';
+      process.env.BILL_PAYMENT_MAX_AMOUNT = '600';
+      mockCreateFlow(mockCart(500));
+
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship, BILL);
+
+      expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
+    });
+
+    describe('after a switch on the easyCredit page', () => {
+      const getECPaymentMock = jest.fn<() => Promise<unknown>>();
+      const installmentPayment = (state: string) => ({
+        id: 'payment123',
+        version: 1,
+        paymentMethodInfo: { paymentInterface: 'easycredit', method: 'easycredit' },
+        transactions: [
+          {
+            id: 'tx-1',
+            type: 'Authorization',
+            state,
+            interactionId: 'ec-1',
+            amount: { centAmount: 50000, currencyCode: 'EUR', fractionDigits: 2 },
+            custom: { fields: { easyCreditTechnicalTransactionId: 'tech123' } },
+          },
+        ],
+      });
+
+      beforeEach(() => {
+        (initEasyCreditClient as jest.Mock).mockReturnValue({
+          getWebshopInfo: getWebshopInfoMock,
+          getPayment: getECPaymentMock,
+        });
+        getECPaymentMock.mockResolvedValue({
+          status: 'PREAUTHORIZED',
+          decision: { transactionId: 'tech123', orderValue: 500, decisionOutcome: 'POSITIVE' },
+          transaction: { paymentType: 'BILL_PAYMENT' },
+        });
+        const cart = { ...mockCart(500), cartState: 'Frozen', paymentInfo: { payments: [{ id: 'payment123' }] } };
+        jest.mocked(getCartByPaymentId).mockResolvedValue(cart as unknown as Cart);
+        jest.mocked(findCartByPaymentId).mockResolvedValue(cart as unknown as Cart);
+        jest.mocked(getPaymentById).mockResolvedValue(installmentPayment('Initial') as unknown as Payment);
+        jest.mocked(updatePayment).mockResolvedValue(installmentPayment('Failure') as unknown as Payment);
+      });
+
+      it('should fail the transaction with InvalidAmount when the cart is outside the merchant limits', async () => {
+        process.env.BILL_PAYMENT_MAX_AMOUNT = '400';
+
+        await expect(getErrorCodes(handleGetPayment('payment123'))).resolves.toEqual([
+          { code: 'InvalidAmount', httpErrorStatus: 400 },
+        ]);
+        expect(updatePayment).toHaveBeenCalledWith(expect.anything(), [
+          { action: 'changeTransactionState', transactionId: 'tx-1', state: 'Failure' },
+        ]);
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [{ action: 'unfreezeCart' }]);
+      });
+
+      it('should accept the switch when the cart is inside the merchant limits', async () => {
+        process.env.BILL_PAYMENT_MAX_AMOUNT = '600';
+
+        const result = await handleGetPayment('payment123');
+
+        expect(result.paymentType).toBe(BILL);
+        expect(updatePayment).not.toHaveBeenCalledWith(expect.anything(), [
+          expect.objectContaining({ action: 'changeTransactionState' }),
+        ]);
+      });
     });
   });
 });

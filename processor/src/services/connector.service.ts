@@ -1,8 +1,24 @@
 import { log } from '../libs/logger';
-import { readConfiguration } from '../utils/config.utils';
+import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { ECTransactionPaymentType } from '../types/payment.types';
+import { WidgetEnabledResponseSchemaDTO } from '../dtos/operations/widgetEnabled.dto';
+
+// Settings that don't stop the connector but likely aren't what the merchant meant; logged once at startup.
+export const logConfigurationWarnings = (): void => {
+  const { easyCredit } = readConfiguration();
+
+  if (easyCredit.installmentPaymentEnabled === '0' && easyCredit.billPaymentEnabled === '0') {
+    log.warn('Installment and bill payment are both disabled, the connector offers no easyCredit payment method');
+  }
+
+  for (const paymentType of Object.values(ECTransactionPaymentType)) {
+    if (getPaymentTypeConfig(easyCredit, paymentType).invalidAmountLimits) {
+      log.warn(`Invalid ${paymentType}_MIN_AMOUNT or ${paymentType}_MAX_AMOUNT, using the easyCredit limits`);
+    }
+  }
+};
 
 export const healthCheck = async () => {
   try {
@@ -18,7 +34,9 @@ export const healthCheck = async () => {
   }
 };
 
-export const isWidgetEnabled = async () => {
+type WidgetPaymentTypes = Pick<WidgetEnabledResponseSchemaDTO, 'paymentTypes' | 'amountLimits'>;
+
+export const isWidgetEnabled = async (): Promise<WidgetEnabledResponseSchemaDTO> => {
   const config = readConfiguration();
 
   log.debug('get Widget config');
@@ -29,7 +47,7 @@ export const isWidgetEnabled = async () => {
     isEnabled,
     webShopId: config.easyCredit.webShopId,
     // A disabled widget is not rendered, so there is no reason to ask easyCredit.
-    paymentTypes: isEnabled ? await getWidgetPaymentTypes() : [],
+    ...(isEnabled ? await getWidgetPaymentTypes() : { paymentTypes: [] }),
   };
 };
 
@@ -38,8 +56,9 @@ export const isWidgetEnabled = async () => {
 export const WIDGET_PAYMENT_TYPES_TIMEOUT_MS = 1500;
 
 // The widget advertises a payment type only when checkout offers it, with the same rules (both types fail closed).
-// An empty list means checkout offers nothing, so the assets render no widget. The amount limits are left to the widget.
-const getWidgetPaymentTypes = async (): Promise<ECTransactionPaymentType[]> => {
+// An empty list means checkout offers nothing, so the assets render no widget.
+// easyCredit's limits are left to the widget, so only the limits the merchant narrowed are sent along.
+const getWidgetPaymentTypes = async (): Promise<WidgetPaymentTypes> => {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), WIDGET_PAYMENT_TYPES_TIMEOUT_MS);
@@ -54,17 +73,27 @@ const getWidgetPaymentTypes = async (): Promise<ECTransactionPaymentType[]> => {
     if (availability === 'timeout') {
       // Not known to be offered yet, and a switched-off installment must not be advertised either.
       log.debug('get Widget payment types timed out, hiding the widget');
-      return [];
+      return { paymentTypes: [] };
     }
 
-    return [
+    const paymentTypes = [
       ECTransactionPaymentType.ECTransactionInstallmentPayment,
       ECTransactionPaymentType.ECTransactionBillPayment,
     ].filter((paymentType) => availability[paymentType].enabled);
+    const amountLimits: NonNullable<WidgetPaymentTypes['amountLimits']> = {};
+
+    for (const paymentType of paymentTypes) {
+      const { merchantLimited, minAmount, maxAmount } = availability[paymentType];
+      if (merchantLimited && minAmount !== undefined && maxAmount !== undefined) {
+        amountLimits[paymentType] = { minAmount, maxAmount };
+      }
+    }
+
+    return Object.keys(amountLimits).length > 0 ? { paymentTypes, amountLimits } : { paymentTypes };
   } catch (error) {
     // Checkout refuses what it can't check, so the widget doesn't advertise it either. Debug only: runs on every mount.
     log.debug('get Widget payment types failed, hiding the widget', error);
-    return [];
+    return { paymentTypes: [] };
   } finally {
     clearTimeout(timer);
   }

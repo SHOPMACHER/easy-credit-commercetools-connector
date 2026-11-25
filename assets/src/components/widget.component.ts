@@ -8,6 +8,8 @@ import {
   WidgetComponentOptions,
 } from '../types/main';
 
+type AmountLimits = { minAmount: number; maxAmount: number };
+
 export class ECWidgetComponentBuilder implements WidgetComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
 
@@ -38,7 +40,9 @@ export class ECWidgetComponent implements WidgetComponent {
       const widgetConfig = await this.fetchConfig();
 
       // An empty list means checkout offers no easyCredit payment type right now. Older processors send no list.
-      const paymentTypes = widgetConfig.paymentTypes?.filter(isPaymentType);
+      const paymentTypes = widgetConfig.paymentTypes
+        ?.filter(isPaymentType)
+        .filter((paymentType) => this.isWithinAmountLimits(widgetConfig.amountLimits?.[paymentType]));
       const offersNothing = paymentTypes?.length === 0;
 
       if (widgetConfig.isEnabled === true && !offersNothing) {
@@ -56,7 +60,20 @@ export class ECWidgetComponent implements WidgetComponent {
     }
   }
 
-  public async fetchConfig(): Promise<{ isEnabled: boolean; webShopId: string; paymentTypes?: unknown[] }> {
+  // Only the limits the merchant narrowed are sent; easyCredit's widget applies its own limits.
+  private isWithinAmountLimits(limits?: AmountLimits): boolean {
+    // Plain JS storefronts may pass a numeric string. An amount that can't be checked fails closed.
+    const amount = Number(this.widgetComponentOptions.amount);
+
+    return !limits || (Number.isFinite(amount) && amount >= limits.minAmount && amount <= limits.maxAmount);
+  }
+
+  public async fetchConfig(): Promise<{
+    isEnabled: boolean;
+    webShopId: string;
+    paymentTypes?: unknown[];
+    amountLimits?: Partial<Record<PaymentType, AmountLimits>>;
+  }> {
     const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.sessionId },

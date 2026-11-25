@@ -1,4 +1,9 @@
-import { healthCheck, isWidgetEnabled, WIDGET_PAYMENT_TYPES_TIMEOUT_MS } from '../../src/services/connector.service';
+import {
+  healthCheck,
+  isWidgetEnabled,
+  logConfigurationWarnings,
+  WIDGET_PAYMENT_TYPES_TIMEOUT_MS,
+} from '../../src/services/connector.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -92,6 +97,29 @@ describe('Health Check and Widget Functions', () => {
       });
     });
 
+    it('should send only the merchant limited limits of the advertised payment types', async () => {
+      (getPaymentTypesAvailability as jest.Mock).mockResolvedValue({
+        INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: true, available: false, minAmount: 100, maxAmount: 1000, merchantLimited: true },
+      } as never);
+
+      expect(await isWidgetEnabled()).toEqual({
+        isEnabled: true,
+        webShopId: 'mock-webshop-id',
+        paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
+        amountLimits: { BILL_PAYMENT: { minAmount: 100, maxAmount: 1000 } },
+      });
+    });
+
+    it('should not send the limits of a payment type that is not advertised', async () => {
+      (getPaymentTypesAvailability as jest.Mock).mockResolvedValue({
+        INSTALLMENT_PAYMENT: { enabled: true, available: false, minAmount: 200, maxAmount: 10000 },
+        BILL_PAYMENT: { enabled: false, available: false, minAmount: 100, maxAmount: 1000, merchantLimited: true },
+      } as never);
+
+      expect(await isWidgetEnabled()).not.toHaveProperty('amountLimits');
+    });
+
     it('should advertise bill payment when checkout offers it', async () => {
       (getPaymentTypesAvailability as jest.Mock).mockResolvedValue(availability(true, true) as never);
 
@@ -162,6 +190,43 @@ describe('Health Check and Widget Functions', () => {
         webShopId: 'mock-webshop-id',
         paymentTypes: [],
       });
+    });
+  });
+  describe('logConfigurationWarnings', () => {
+    const withEasyCredit = (easyCredit: Record<string, string>) =>
+      (readConfiguration as jest.Mock).mockReturnValueOnce({ easyCredit });
+
+    it('should not warn for a valid configuration', () => {
+      withEasyCredit({ billPaymentEnabled: '1', billPaymentMinAmount: '100', billPaymentMaxAmount: '1000' });
+
+      logConfigurationWarnings();
+
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('should warn if both payment types are disabled', () => {
+      withEasyCredit({ installmentPaymentEnabled: '0', billPaymentEnabled: '0' });
+
+      logConfigurationWarnings();
+
+      expect(log.warn).toHaveBeenCalledWith(
+        'Installment and bill payment are both disabled, the connector offers no easyCredit payment method',
+      );
+    });
+
+    it('should warn once for each payment type with invalid amount limits', () => {
+      withEasyCredit({
+        installmentPaymentMinAmount: 'abc',
+        billPaymentMinAmount: '1000',
+        billPaymentMaxAmount: '100',
+      });
+
+      logConfigurationWarnings();
+
+      expect((log.warn as jest.Mock).mock.calls).toEqual([
+        ['Invalid INSTALLMENT_PAYMENT_MIN_AMOUNT or INSTALLMENT_PAYMENT_MAX_AMOUNT, using the easyCredit limits'],
+        ['Invalid BILL_PAYMENT_MIN_AMOUNT or BILL_PAYMENT_MAX_AMOUNT, using the easyCredit limits'],
+      ]);
     });
   });
 });

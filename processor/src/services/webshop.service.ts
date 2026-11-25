@@ -3,8 +3,14 @@ import { Static, Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { log } from '../libs/logger';
-import { ECTransactionPaymentType, ECWebshopInfo, PaymentTypesAvailability } from '../types/payment.types';
-import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
+import {
+  ECTransactionPaymentType,
+  ECWebshopInfo,
+  PaymentTypeAvailability,
+  PaymentTypesAvailability,
+} from '../types/payment.types';
+import { getPaymentTypeConfig, MerchantAmountLimits, readConfiguration } from '../utils/config.utils';
+import { ConnectorEnvVars } from '../types/index.types';
 import { EASYCREDIT_WEBSHOP_INFO_RETRY_MS } from '../utils/constant.utils';
 
 const Limit = Type.Number({ minimum: 0 });
@@ -33,12 +39,14 @@ class WebshopInfoRetryError extends Error {}
 
 const cachedWebshopInfoById = new Map<string, CachedWebshopInfo>();
 const pendingWebshopInfoById = new Map<string, Promise<ECWebshopInfo>>();
+const warnedLimitConflicts = new Set<string>();
 // Lets a reset discard the result of a request that was in flight before it.
 let cacheGeneration = 0;
 
 export const resetWebshopInfoCache = (): void => {
   cachedWebshopInfoById.clear();
   pendingWebshopInfoById.clear();
+  warnedLimitConflicts.clear();
   cacheGeneration += 1;
 };
 
@@ -174,6 +182,60 @@ const easyCreditUnavailableError = (webShopId: string, cause?: unknown): Errorx 
 const isWithinLimits = (amount: number, minAmount: number, maxAmount: number): boolean =>
   amount >= minAmount && amount <= maxAmount;
 
+type AmountLimits = { minAmount: number; maxAmount: number; merchantLimited?: true };
+
+// Merchant limits can only narrow easyCredit's range. Without an overlap they are ignored, warned once per range.
+const getEffectiveLimits = (
+  paymentType: ECTransactionPaymentType,
+  ecMin: number,
+  ecMax: number,
+  merchant: MerchantAmountLimits,
+  warnOnConflict: boolean,
+): AmountLimits => {
+  const minAmount = Math.max(merchant.minAmount ?? ecMin, ecMin);
+  const maxAmount = Math.min(merchant.maxAmount ?? ecMax, ecMax);
+
+  if (minAmount > maxAmount) {
+    const key = `${paymentType}:${ecMin}-${ecMax}:${merchant.minAmount}-${merchant.maxAmount}`;
+    if (warnOnConflict && !warnedLimitConflicts.has(key)) {
+      warnedLimitConflicts.add(key);
+      log.warn(`The ${paymentType} merchant limits do not overlap the easyCredit limits, using the easyCredit limits`, {
+        merchantLimits: merchant,
+        easyCreditLimits: { minAmount: ecMin, maxAmount: ecMax },
+      });
+    }
+
+    return { minAmount: ecMin, maxAmount: ecMax };
+  }
+
+  return minAmount === ecMin && maxAmount === ecMax
+    ? { minAmount, maxAmount }
+    : { minAmount, maxAmount, merchantLimited: true };
+};
+
+const toAvailability = (
+  easyCredit: ConnectorEnvVars['easyCredit'],
+  paymentType: ECTransactionPaymentType,
+  amount: number,
+  enabled: boolean,
+  ecMin: number | undefined,
+  ecMax: number | undefined,
+): PaymentTypeAvailability => {
+  if (ecMin === undefined || ecMax === undefined) {
+    return { enabled, available: false };
+  }
+
+  // A disabled type is never offered, so a conflict in its limits isn't worth a warning.
+  const { amountLimits } = getPaymentTypeConfig(easyCredit, paymentType);
+  const limits = getEffectiveLimits(paymentType, ecMin, ecMax, amountLimits, enabled);
+
+  return {
+    enabled,
+    available: enabled && isWithinLimits(amount, limits.minAmount, limits.maxAmount),
+    ...limits,
+  };
+};
+
 // Fails closed for every payment type: without a valid easyCredit response nothing is offered.
 export const getPaymentTypesAvailability = async (amount: number): Promise<PaymentTypesAvailability> => {
   const { easyCredit } = readConfiguration();
@@ -208,17 +270,21 @@ export const getPaymentTypesAvailability = async (amount: number): Promise<Payme
     maxBillingValue !== undefined;
 
   return {
-    [ECTransactionPaymentType.ECTransactionInstallmentPayment]: {
-      enabled: isInstallmentEnabled,
-      available: isInstallmentEnabled && isWithinLimits(amount, minInstallmentValue, maxInstallmentValue),
-      minAmount: minInstallmentValue,
-      maxAmount: maxInstallmentValue,
-    },
-    [ECTransactionPaymentType.ECTransactionBillPayment]: {
-      enabled: isBillEnabled,
-      available: isBillEnabled && isWithinLimits(amount, minBillingValue, maxBillingValue),
-      minAmount: minBillingValue,
-      maxAmount: maxBillingValue,
-    },
+    [ECTransactionPaymentType.ECTransactionInstallmentPayment]: toAvailability(
+      easyCredit,
+      ECTransactionPaymentType.ECTransactionInstallmentPayment,
+      amount,
+      isInstallmentEnabled,
+      minInstallmentValue,
+      maxInstallmentValue,
+    ),
+    [ECTransactionPaymentType.ECTransactionBillPayment]: toAvailability(
+      easyCredit,
+      ECTransactionPaymentType.ECTransactionBillPayment,
+      amount,
+      isBillEnabled,
+      minBillingValue,
+      maxBillingValue,
+    ),
   };
 };

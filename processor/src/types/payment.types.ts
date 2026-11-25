@@ -145,6 +145,8 @@ export type PaymentTypeAvailability = {
   exclusion?: PaymentTypeExclusion;
   minAmount?: number;
   maxAmount?: number;
+  // Set when the merchant limits narrow easyCredit's range; not exposed by the API.
+  merchantLimited?: true;
 };
 
 export type PaymentTypesAvailability = Record<ECTransactionPaymentType, PaymentTypeAvailability>;

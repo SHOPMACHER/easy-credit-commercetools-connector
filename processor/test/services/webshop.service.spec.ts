@@ -38,11 +38,14 @@ describe('webshop.service', () => {
     webshopCacheTtl = '300',
     webShopId = 'webShopId123',
     installmentPaymentEnabled = '1',
+    amountLimits: Record<string, string> = {},
   ) => {
     (readConfiguration as jest.Mock).mockReturnValue({
-      easyCredit: { webShopId, billPaymentEnabled, webshopCacheTtl, installmentPaymentEnabled },
+      easyCredit: { webShopId, billPaymentEnabled, webshopCacheTtl, installmentPaymentEnabled, ...amountLimits },
     });
   };
+  const mockLimits = (amountLimits: Record<string, string>) =>
+    mockConfig('1', '300', 'webShopId123', '1', amountLimits);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -475,6 +478,142 @@ describe('webshop.service', () => {
       // The retry window answers from the failed state without calling easyCredit again.
       await expect(getPaymentTypesAvailability(500)).rejects.toMatchObject({ code: 'EasyCreditUnavailable' });
       expect(getWebshopInfoMock).toHaveBeenCalledTimes(1);
+    });
+
+    describe('merchant amount limits', () => {
+      it('should use the easyCredit limits without merchant limits', async () => {
+        const result = await getPaymentTypesAvailability(500);
+
+        expect(result.INSTALLMENT_PAYMENT).toEqual({
+          enabled: true,
+          available: true,
+          minAmount: 200,
+          maxAmount: 10000,
+        });
+        expect(result.BILL_PAYMENT).toEqual({ enabled: true, available: true, minAmount: 50, maxAmount: 5000 });
+      });
+
+      it('should narrow both payment types to merchant limits inside the easyCredit range', async () => {
+        mockLimits({
+          installmentPaymentMinAmount: '500',
+          installmentPaymentMaxAmount: '8000',
+          billPaymentMinAmount: '100',
+          billPaymentMaxAmount: '1000',
+        });
+
+        const result = await getPaymentTypesAvailability(300);
+
+        expect(result.INSTALLMENT_PAYMENT).toEqual({
+          enabled: true,
+          available: false,
+          minAmount: 500,
+          maxAmount: 8000,
+          merchantLimited: true,
+        });
+        expect(result.BILL_PAYMENT).toEqual({
+          enabled: true,
+          available: true,
+          minAmount: 100,
+          maxAmount: 1000,
+          merchantLimited: true,
+        });
+      });
+
+      it.each([
+        [99.99, false],
+        [100, true],
+        [1000, true],
+        [1000.01, false],
+      ])('should check the merchant bill limits for amount %s', async (amount, available) => {
+        mockLimits({ billPaymentMinAmount: '100', billPaymentMaxAmount: '1000' });
+
+        expect((await getPaymentTypesAvailability(amount)).BILL_PAYMENT.available).toBe(available);
+      });
+
+      it('should keep the easyCredit limit where the merchant range reaches beyond it', async () => {
+        mockLimits({ installmentPaymentMinAmount: '100', installmentPaymentMaxAmount: '5000' });
+
+        const { INSTALLMENT_PAYMENT } = await getPaymentTypesAvailability(150);
+
+        expect(INSTALLMENT_PAYMENT).toEqual({
+          enabled: true,
+          available: false,
+          minAmount: 200,
+          maxAmount: 5000,
+          merchantLimited: true,
+        });
+      });
+
+      it('should not mark limits as merchant limited if they match the easyCredit limits', async () => {
+        mockLimits({ billPaymentMinAmount: '10', billPaymentMaxAmount: '9000' });
+
+        expect((await getPaymentTypesAvailability(500)).BILL_PAYMENT).toEqual({
+          enabled: true,
+          available: true,
+          minAmount: 50,
+          maxAmount: 5000,
+        });
+      });
+
+      it('should use the easyCredit limits and warn once if the merchant range does not overlap', async () => {
+        mockLimits({ installmentPaymentMinAmount: '20000' });
+
+        await getPaymentTypesAvailability(500);
+        const { INSTALLMENT_PAYMENT, BILL_PAYMENT } = await getPaymentTypesAvailability(500);
+
+        expect(INSTALLMENT_PAYMENT).toEqual({ enabled: true, available: true, minAmount: 200, maxAmount: 10000 });
+        expect(BILL_PAYMENT).toEqual({ enabled: true, available: true, minAmount: 50, maxAmount: 5000 });
+        expect(log.warn).toHaveBeenCalledTimes(1);
+        expect(log.warn).toHaveBeenCalledWith(
+          'The INSTALLMENT_PAYMENT merchant limits do not overlap the easyCredit limits, using the easyCredit limits',
+          { merchantLimits: { minAmount: 20000 }, easyCreditLimits: { minAmount: 200, maxAmount: 10000 } },
+        );
+      });
+
+      it('should narrow the limits of a disabled payment type', async () => {
+        mockConfig('0', '300', 'webShopId123', '1', { billPaymentMinAmount: '100' });
+
+        const { BILL_PAYMENT } = await getPaymentTypesAvailability(500);
+
+        expect(BILL_PAYMENT).toEqual({
+          enabled: false,
+          available: false,
+          minAmount: 100,
+          maxAmount: 5000,
+          merchantLimited: true,
+        });
+      });
+
+      it('should not warn about the merchant limits of a disabled payment type', async () => {
+        mockConfig('0', '300', 'webShopId123', '1', { billPaymentMaxAmount: '40' });
+
+        const { BILL_PAYMENT } = await getPaymentTypesAvailability(500);
+
+        expect(BILL_PAYMENT).toEqual({ enabled: false, available: false, minAmount: 50, maxAmount: 5000 });
+        expect(log.warn).not.toHaveBeenCalled();
+      });
+
+      it('should use the easyCredit limits if the merchant limits are invalid', async () => {
+        mockLimits({ billPaymentMinAmount: '1000', billPaymentMaxAmount: '100' });
+
+        expect((await getPaymentTypesAvailability(3000)).BILL_PAYMENT).toEqual({
+          enabled: true,
+          available: true,
+          minAmount: 50,
+          maxAmount: 5000,
+        });
+      });
+
+      it('should report no limits for bill payment without easyCredit bill limits', async () => {
+        mockLimits({ billPaymentMinAmount: '100', billPaymentMaxAmount: '1000' });
+        getWebshopInfoMock.mockResolvedValue({
+          ...webshopInfo,
+          minBillingValue: undefined,
+          maxBillingValue: undefined,
+        });
+
+        expect((await getPaymentTypesAvailability(500)).BILL_PAYMENT).toEqual({ enabled: false, available: false });
+      });
     });
 
     it('should throw an EasyCreditUnavailable error with the cause if the webshop config is rejected', async () => {

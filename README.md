@@ -46,7 +46,7 @@ The connector also supports easyCredit-Rechnung (pay by invoice). This is a seco
 
 ### Installment payment
 
-Installment payment is on by default. The connector offers it if easyCredit has activated it for the webshop. To offer pay by invoice only, set `INSTALLMENT_PAYMENT_ENABLED=0`. You can exclude product types and custom line items from installment payment. If the connector cannot reach easyCredit, it offers no easyCredit payment method. For the settings, see [Configure processor settings](./processor/README.md#configure-processor-settings) and [Payment type availability](./docs/GetPaymentMethod.md#payment-type-availability).
+Installment payment is on by default. The connector offers it if easyCredit has activated it for the webshop. To offer pay by invoice only, set `INSTALLMENT_PAYMENT_ENABLED=0`. You can exclude product types and custom line items from installment payment and narrow its order value limits. If the connector cannot reach easyCredit, it offers no easyCredit payment method. For the settings, see [Configure processor settings](./processor/README.md#configure-processor-settings) and [Payment type availability](./docs/GetPaymentMethod.md#payment-type-availability).
 
 - [Create payments](/docs/CreatePayment.md)
 - [Authorize payments](/docs/AuthorizePayment.md)
@@ -55,7 +55,7 @@ Installment payment is on by default. The connector offers it if easyCredit has 
 
 ### Pay by invoice (easyCredit-Rechnung)
 
-The checkout offers pay by invoice as a separate payment method. It has its own label and checkout widget. The backend creates and authorizes transactions with `paymentType: BILL_PAYMENT`. To use it, set `BILL_PAYMENT_ENABLED=1`, and make sure that easyCredit activates pay by invoice for the webshop. Pay by invoice is only for physical goods. You can exclude product types and custom line items from pay by invoice. For the settings, see [Configure processor settings](./processor/README.md#configure-processor-settings).
+The checkout offers pay by invoice as a separate payment method. It has its own label and checkout widget. The backend creates and authorizes transactions with `paymentType: BILL_PAYMENT`. To use it, set `BILL_PAYMENT_ENABLED=1`, and make sure that easyCredit activates pay by invoice for the webshop. Pay by invoice is only for physical goods. You can exclude product types and custom line items from pay by invoice and narrow its order value limits. For the settings, see [Configure processor settings](./processor/README.md#configure-processor-settings).
 
 For more information, see the [web components integration guide](./docs/WebComponents.md#pay-by-invoice-as-a-separate-payment-method) and [Create payments](/docs/CreatePayment.md).
 

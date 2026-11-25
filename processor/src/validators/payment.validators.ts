@@ -111,6 +111,10 @@ const EXCLUSION_ERRORS: Record<ECTransactionPaymentType, { prefix: string; label
   },
 };
 
+// German format regardless of the runtime locale; cents always show two digits (99,90 rather than 99,9).
+const formatEur = (amount: number): string =>
+  amount.toLocaleString('de-DE', { minimumFractionDigits: Number.isInteger(amount) ? 0 : 2, maximumFractionDigits: 2 });
+
 export const validatePaymentTypeAvailability = (
   amountInEur: number,
   availability: PaymentTypeAvailability,
@@ -164,7 +168,7 @@ export const validatePaymentTypeAvailability = (
       new Errorx({
         code: 'InvalidAmount',
         httpErrorStatus: 400,
-        message: `Die Summe des Warenkorbs muss zwischen ${minAmount.toLocaleString('de-DE')}€ und ${maxAmount.toLocaleString('de-DE')}€ liegen.`,
+        message: `Die Summe des Warenkorbs muss zwischen ${formatEur(minAmount)}€ und ${formatEur(maxAmount)}€ liegen.`,
         fields: ecConfig,
         skipLog: true,
       }),
