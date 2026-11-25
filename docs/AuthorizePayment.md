@@ -126,7 +126,7 @@ Updates of the CT payment can run at the same time as the easyCredit callback. I
 
 ## Sync the final payment type
 
-Note: for the easyCredit API of the switch and the result of the sandbox check, see [Switching on the easyCredit page](./CreatePayment.md#switching-on-the-easycredit-page). The sandbox page offered no switch, so this section describes the sync from the code only.
+Note: for the easyCredit API of the switch and the result of the sandbox check, see [Switching on the easyCredit page](./CreatePayment.md#switching-on-the-easycredit-page). The sandbox page offered no switch. A switch from installment to pay by invoice was tested with the easyCredit API instead. The other direction is described from the code only.
 
 The easyCredit transaction (`GET /transaction`) holds the final payment type in `transaction.paymentType`. The connector compares it with the type stored on the CT payment (`paymentMethodInfo.method`). `BILL_PAYMENT` is pay by invoice. Any other value, normally `easycredit`, is installment. The action depends on the easyCredit status and the CT transaction state:
 
