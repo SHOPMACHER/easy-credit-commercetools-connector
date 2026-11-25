@@ -200,4 +200,46 @@ describe('readConfiguration', () => {
       });
     });
   });
+
+  describe('express button', () => {
+    beforeEach(() => {
+      delete process.env.EXPRESS_BUTTON_ENABLED;
+      delete process.env.EXPRESS_BUTTON_VISIBILITY;
+    });
+
+    it('defaults the express button to off and PDP_AND_CART', () => {
+      const { easyCredit } = readConfiguration();
+
+      expect(easyCredit.expressButtonEnabled).toBe('0');
+      expect(easyCredit.expressButtonVisibility).toBe('PDP_AND_CART');
+    });
+
+    it('treats an empty EXPRESS_BUTTON_VISIBILITY as PDP_AND_CART', () => {
+      process.env.EXPRESS_BUTTON_VISIBILITY = '';
+
+      expect(readConfiguration().easyCredit.expressButtonVisibility).toBe('PDP_AND_CART');
+    });
+
+    it('reads EXPRESS_BUTTON_ENABLED=1 and EXPRESS_BUTTON_VISIBILITY=CART', () => {
+      process.env.EXPRESS_BUTTON_ENABLED = '1';
+      process.env.EXPRESS_BUTTON_VISIBILITY = 'CART';
+
+      const { easyCredit } = readConfiguration();
+
+      expect(easyCredit.expressButtonEnabled).toBe('1');
+      expect(easyCredit.expressButtonVisibility).toBe('CART');
+    });
+
+    it('rejects EXPRESS_BUTTON_VISIBILITY=PDP_ONLY', () => {
+      process.env.EXPRESS_BUTTON_VISIBILITY = 'PDP_ONLY';
+
+      expect(() => readConfiguration()).toThrow('InvalidExpressButtonVisibility');
+    });
+
+    it('rejects EXPRESS_BUTTON_ENABLED=yes', () => {
+      process.env.EXPRESS_BUTTON_ENABLED = 'yes';
+
+      expect(() => readConfiguration()).toThrow('InvalidExpressButtonEnabled');
+    });
+  });
 });

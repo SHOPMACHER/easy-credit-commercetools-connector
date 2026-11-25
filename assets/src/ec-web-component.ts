@@ -1,5 +1,6 @@
 import {
   CheckoutComponentBuilder,
+  ExpressButtonComponentBuilder,
   SummaryComponentBuilder,
   WebComponent,
   WebComponentOptions,
@@ -9,6 +10,7 @@ import { ECWidgetComponentBuilder } from './components/widget.component.ts';
 import { ECCheckoutComponentBuilder } from './components/checkout.component.ts';
 import { ECSummaryComponentBuilder } from './components/summary.component.ts';
 import { ECLabelComponentBuilder } from './components/label.component.ts';
+import { ECExpressButtonComponentBuilder } from './components/express.component.ts';
 
 export class ECWebComponent implements WebComponent {
   setupData: Promise<{ baseOptions: WebComponentOptions }>;
@@ -50,5 +52,11 @@ export class ECWebComponent implements WebComponent {
     const { baseOptions } = await this.setupData;
 
     return new ECWidgetComponentBuilder(baseOptions);
+  }
+
+  async createExpressButtonBuilder(): Promise<ExpressButtonComponentBuilder> {
+    const { baseOptions } = await this.setupData;
+
+    return new ECExpressButtonComponentBuilder(baseOptions);
   }
 }

@@ -65,6 +65,7 @@ The shopper starts easyCredit from the product page or the cart and enters custo
 
 - [Create express payments](/docs/CreateExpressPayment.md)
 - [Express return](/docs/ExpressReturn.md)
+- [Express button component](/docs/WebComponents.md#express-button-component). To show it, set `EXPRESS_BUTTON_ENABLED=1`. `EXPRESS_BUTTON_VISIBILITY` selects `PDP_AND_CART` (default), `PDP` or `CART`. See [Configure processor settings](./processor/README.md#configure-processor-settings).
 
 ## Prerequisite
 

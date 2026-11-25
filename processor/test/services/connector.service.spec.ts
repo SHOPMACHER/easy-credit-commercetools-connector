@@ -37,6 +37,8 @@ jest.mock('../../src/utils/config.utils', () => ({
     easyCredit: {
       widgetEnabled: '1',
       webShopId: 'mock-webshop-id',
+      expressButtonEnabled: '0',
+      expressButtonVisibility: 'PDP_AND_CART',
     },
   }),
 }));
@@ -94,6 +96,8 @@ describe('Health Check and Widget Functions', () => {
         isEnabled: true,
         webShopId: 'mock-webshop-id',
         paymentTypes: ['INSTALLMENT_PAYMENT'],
+        expressButtonEnabled: false,
+        expressButtonVisibility: 'PDP_AND_CART',
       });
     });
 
@@ -108,6 +112,8 @@ describe('Health Check and Widget Functions', () => {
         webShopId: 'mock-webshop-id',
         paymentTypes: ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'],
         amountLimits: { BILL_PAYMENT: { minAmount: 100, maxAmount: 1000 } },
+        expressButtonEnabled: false,
+        expressButtonVisibility: 'PDP_AND_CART',
       });
     });
 
@@ -179,6 +185,8 @@ describe('Health Check and Widget Functions', () => {
         easyCredit: {
           widgetEnabled: '0',
           webShopId: 'mock-webshop-id',
+          expressButtonEnabled: '0',
+          expressButtonVisibility: 'PDP_AND_CART',
         },
       });
 
@@ -189,7 +197,55 @@ describe('Health Check and Widget Functions', () => {
         isEnabled: false,
         webShopId: 'mock-webshop-id',
         paymentTypes: [],
+        expressButtonEnabled: false,
+        expressButtonVisibility: 'PDP_AND_CART',
       });
+    });
+
+    it('should report the express button settings', async () => {
+      (readConfiguration as jest.Mock).mockReturnValueOnce({
+        easyCredit: {
+          widgetEnabled: '1',
+          webShopId: 'mock-webshop-id',
+          expressButtonEnabled: '1',
+          expressButtonVisibility: 'PDP',
+        },
+      });
+
+      const result = await isWidgetEnabled();
+
+      expect(result.expressButtonEnabled).toBe(true);
+      expect(result.expressButtonVisibility).toBe('PDP');
+    });
+
+    it('should look up payment types when only express is on', async () => {
+      (readConfiguration as jest.Mock).mockReturnValueOnce({
+        easyCredit: {
+          widgetEnabled: '0',
+          webShopId: 'mock-webshop-id',
+          expressButtonEnabled: '1',
+          expressButtonVisibility: 'PDP_AND_CART',
+        },
+      });
+
+      const result = await isWidgetEnabled();
+
+      expect(result.isEnabled).toBe(false);
+      expect(result.paymentTypes).toEqual(['INSTALLMENT_PAYMENT']);
+    });
+
+    it('should skip the lookup when widget and express are off', async () => {
+      (readConfiguration as jest.Mock).mockReturnValueOnce({
+        easyCredit: {
+          widgetEnabled: '0',
+          webShopId: 'mock-webshop-id',
+          expressButtonEnabled: '0',
+          expressButtonVisibility: 'PDP_AND_CART',
+        },
+      });
+
+      expect((await isWidgetEnabled()).paymentTypes).toEqual([]);
+      expect(getPaymentTypesAvailability).not.toHaveBeenCalled();
     });
   });
   describe('logConfigurationWarnings', () => {

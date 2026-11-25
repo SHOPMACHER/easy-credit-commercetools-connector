@@ -41,6 +41,25 @@
  *          });
  *          widgetElement.mount('#widget-component')
  *    });
+ *
+ *    webComponent.createExpressButtonBuilder()
+ *      .then(builder => {
+ *          const expressElement = builder.build({
+ *            placement: "PDP",
+ *            amount: 100,
+ *            redirectLinks: {
+ *                urlSuccess: "https://google.com",
+ *                urlCancellation: "https://google.com",
+ *                urlDenial: "https://google.com"
+ *            },
+ *            prepareCart: async () => sessionId,
+ *            onLoading: () => {},
+ *            onError: (error) => {},
+ *            onSuccess: (response) => { window.location.href = response.redirectUrl; },
+ *          });
+ *          expressElement.mount('#express-component')
+ *            .then(rendered => {})
+ *    });
  */
 export interface WebComponent {
   createCheckoutBuilder: () => Promise<CheckoutComponentBuilder>;
@@ -50,6 +69,9 @@ export interface WebComponent {
   createWidgetBuilder: () => Promise<WidgetComponentBuilder>;
 
   createLabelBuilder: () => Promise<LabelComponentBuilder>;
+
+  // Optional so that implementations written for earlier versions still compile; the supplied enabler has it.
+  createExpressButtonBuilder?: () => Promise<ExpressButtonComponentBuilder>;
 }
 
 export interface CheckoutComponent {
@@ -140,6 +162,33 @@ export type LabelComponentOptions = {
 export type WidgetComponentOptions = {
   amount: number;
 };
+
+export type ExpressButtonPlacement = 'PDP' | 'CART';
+
+export type ExpressButtonComponentOptions = {
+  placement: ExpressButtonPlacement;
+  // EUR
+  amount: number;
+  redirectLinks: {
+    urlSuccess: string;
+    urlCancellation: string;
+    urlDenial: string;
+  };
+  // Returns the checkout session id of the prepared cart.
+  prepareCart?: () => Promise<string>;
+  onLoading?: () => void;
+  onError: (error: unknown) => void;
+  onSuccess: (response: CreatePaymentResponse) => void;
+};
+
+export interface ExpressButtonComponent {
+  // Resolves true when a button was rendered, so the shop can hide the container without a second lookup.
+  mount(selector: string): Promise<boolean>;
+}
+
+export interface ExpressButtonComponentBuilder {
+  build(options: ExpressButtonComponentOptions): ExpressButtonComponent;
+}
 
 import { ECWebComponent } from './ec-web-component';
 

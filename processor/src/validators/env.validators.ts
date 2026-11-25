@@ -10,6 +10,7 @@ import {
   standardUrl,
 } from './helpers.validators';
 import { MAX_WEBSHOP_CACHE_TTL_SECONDS } from '../utils/constant.utils';
+import { EXPRESS_BUTTON_VISIBILITIES } from '../types/index.types';
 
 /**
  * Create here your own validators
@@ -113,6 +114,26 @@ const envValidators = [
       min: 1,
       max: 1,
     },
+  ),
+
+  standardOneOf(
+    ['easyCredit', 'expressButtonEnabled'],
+    {
+      code: 'InvalidExpressButtonEnabled',
+      message: 'Express button enabled should be either "0" or "1".',
+      referencedBy: 'environmentVariables',
+    },
+    ['0', '1'],
+  ),
+
+  standardOneOf(
+    ['easyCredit', 'expressButtonVisibility'],
+    {
+      code: 'InvalidExpressButtonVisibility',
+      message: 'Express button visibility should be one of "PDP_AND_CART", "PDP" or "CART".',
+      referencedBy: 'environmentVariables',
+    },
+    [...EXPRESS_BUTTON_VISIBILITIES],
   ),
 
   standardOneOf(

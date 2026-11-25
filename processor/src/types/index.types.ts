@@ -1,3 +1,6 @@
+export const EXPRESS_BUTTON_VISIBILITIES = ['PDP_AND_CART', 'PDP', 'CART'] as const;
+export type ExpressButtonVisibility = (typeof EXPRESS_BUTTON_VISIBILITIES)[number];
+
 export type ConnectorEnvVars = {
   commerceTools: {
     clientId: string;
@@ -9,6 +12,8 @@ export type ConnectorEnvVars = {
   };
   easyCredit: {
     widgetEnabled: string;
+    expressButtonEnabled: string;
+    expressButtonVisibility: ExpressButtonVisibility;
     webShopId: string;
     apiPassword: string;
     debug: string;

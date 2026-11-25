@@ -4,6 +4,7 @@ import { ECWidgetComponentBuilder } from '../src/components/widget.component';
 import { WebComponentOptions } from '../src/types/main';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { ECSummaryComponentBuilder } from '../src/components/summary.component.ts';
+import { ECExpressButtonComponentBuilder } from '../src/components/express.component';
 
 describe('ECWebComponent', () => {
   const mockOptions: WebComponentOptions = {
@@ -65,5 +66,13 @@ describe('ECWebComponent', () => {
     const baseOptions = await ecWebComponent.setupData;
 
     expect((widgetBuilder as ECWidgetComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
+  });
+
+  it('should create an ECExpressButtonComponentBuilder with the base options', async () => {
+    const expressBuilder = await ecWebComponent.createExpressButtonBuilder();
+    const baseOptions = await ecWebComponent.setupData;
+
+    expect(expressBuilder).toBeInstanceOf(ECExpressButtonComponentBuilder);
+    expect((expressBuilder as ECExpressButtonComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
   });
 });

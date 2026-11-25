@@ -51,6 +51,14 @@ deployAs:
           description: Toggle display the EasyCredit Widget (0 or 1)
           required: true
           default: "1"
+        - key: EXPRESS_BUTTON_ENABLED
+          description: Show the easyCredit express button (0 or 1). Controls the express button only and is independent of WIDGET_ENABLED. Default 0.
+          required: false
+          default: "0"
+        - key: EXPRESS_BUTTON_VISIBILITY
+          description: Where the express button is shown, one of PDP_AND_CART, PDP or CART. Has an effect only if EXPRESS_BUTTON_ENABLED is 1, independent of WIDGET_ENABLED. Default PDP_AND_CART. Both express settings are checked each time the connector reads its configuration, as BILL_PAYMENT_ENABLED is; an invalid value makes every request of the connector fail, also the regular checkout.
+          required: false
+          default: PDP_AND_CART
         - key: BILL_PAYMENT_ENABLED
           description: Offer easyCredit pay by invoice as a separate payment method in the checkout (0 or 1). Transactions with paymentType BILL_PAYMENT are accepted if this is 1 and easyCredit has activated pay by invoice for the webshop.
           required: false
