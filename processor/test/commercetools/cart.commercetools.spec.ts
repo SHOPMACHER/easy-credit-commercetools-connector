@@ -186,7 +186,13 @@ describe('Cart Functions', () => {
       });
 
       // @ts-expect-error test
-      await expect(updateCart(cart, updateActions)).rejects.toThrow(Errorx);
+      const error = await updateCart(cart, updateActions).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Errorx);
+      expect(error).toMatchObject({
+        code: 'InvalidField',
+        httpErrorStatus: 400,
+        fields: [{ code: 'InvalidField', field: 'email' }],
+      });
       expect(log.error).toHaveBeenCalledWith('Error in updateCart', {
         cartId: cart.id,
         code: 'InvalidField',
@@ -194,6 +200,8 @@ describe('Cart Functions', () => {
         errors: [{ code: 'InvalidField', field: 'email' }],
       });
       expect(JSON.stringify(jest.mocked(log.error).mock.calls)).not.toContain('jane@example.com');
+      expect((error as Errorx).message).not.toContain('jane@example.com');
+      expect(JSON.stringify((error as Errorx).fields)).not.toContain('jane@example.com');
     });
   });
 });

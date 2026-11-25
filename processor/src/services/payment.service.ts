@@ -1534,13 +1534,18 @@ const chooseExpressShippingMethod = async (paymentId: string, cart: Cart, countr
 // A logged-in customer keeps the account email and address book; a guest only gets the easyCredit email on the cart,
 // nothing is looked up or merged by it. The method is set again even if unchanged, as only that recalculates the rate.
 // A 400 would repeat on every retry, so it abandons; a 409 can be retried.
+// A swapped method is recorded first: a retried return finds it on the cart and could not tell it was the connector's.
 const applyExpressCustomerData = async (
-  paymentId: string,
+  payment: Payment,
   cart: Cart,
   address: BaseAddress,
   email: string | undefined,
   shippingMethod: ShippingMethod,
-): Promise<Cart> => {
+): Promise<{ cart: Cart; payment: Payment }> => {
+  const recordedMethodId = payment.custom?.fields?.[EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD] as string | undefined;
+  const swapsMethod = shippingMethod.id !== cart.shippingInfo?.shippingMethod?.id;
+  const current = swapsMethod ? await recordExpressShippingMethod(payment, shippingMethod.id) : payment;
+
   const actions: CartUpdateAction[] = [
     { action: 'setShippingAddress', address },
     { action: 'setBillingAddress', address },
@@ -1556,42 +1561,47 @@ const applyExpressCustomerData = async (
   ];
 
   try {
-    return await updateCart(cart, actions);
+    return { cart: await updateCart(cart, actions), payment: current };
   } catch (error: unknown) {
+    if (swapsMethod) {
+      await restoreExpressShippingMethod(current, recordedMethodId);
+    }
     if ((error as Partial<Errorx>)?.httpErrorStatus === 400) {
-      return abandonExpress(paymentId, error);
+      return abandonExpress(payment.id, error);
     }
     throw error;
   }
 };
 
-// A method the return swapped in is the connector's choice too. Best effort: the attempt does not depend on it.
-// A later return sees the method already on the cart and records nothing, so a 409 is retried once on the new version.
-const recordExpressShippingMethod = async (payment: Payment, shippingMethodId: string): Promise<Payment> => {
-  const record = (current: Payment) =>
-    updatePayment(current, [
-      { action: 'setCustomField', name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD, value: shippingMethodId },
-    ]);
+const setExpressShippingMethodField = (payment: Payment, shippingMethodId: string | undefined) =>
+  updatePayment(payment, [
+    { action: 'setCustomField', name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD, value: shippingMethodId },
+  ]);
 
-  let failure: unknown;
+// A method the return swaps in is the connector's choice too. A 409 is retried once on the new version; any other
+// failure ends the return before the cart changes, so a retry records it again.
+const recordExpressShippingMethod = async (payment: Payment, shippingMethodId: string): Promise<Payment> => {
   try {
-    return await record(payment);
+    return await setExpressShippingMethodField(payment, shippingMethodId);
   } catch (error: unknown) {
-    failure = error;
-  }
-  if ((failure as Partial<Errorx>)?.httpErrorStatus === 409) {
-    const current = await getPaymentById(payment.id);
-    if (current.custom?.fields?.[EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD] === shippingMethodId) {
-      return current;
-    }
-    try {
-      return await record(current);
-    } catch (error: unknown) {
-      failure = error;
+    if ((error as Partial<Errorx>)?.httpErrorStatus !== 409) {
+      throw error;
     }
   }
-  log.warn('Could not record the shipping method the express return set', { paymentId: payment.id, error: failure });
-  return getPaymentById(payment.id);
+  const current = await getPaymentById(payment.id);
+  if (current.custom?.fields?.[EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD] === shippingMethodId) {
+    return current;
+  }
+  return setExpressShippingMethodField(current, shippingMethodId);
+};
+
+// The cart kept its method, so a release must still find the one recorded before. Best effort.
+const restoreExpressShippingMethod = async (payment: Payment, shippingMethodId: string | undefined): Promise<void> => {
+  try {
+    await setExpressShippingMethodField(payment, shippingMethodId);
+  } catch (error: unknown) {
+    log.warn('Could not restore the recorded express shipping method', { paymentId: payment.id, error });
+  }
 };
 
 // commercetools cannot change a transaction amount, so the Initial one is failed and replaced in one update.
@@ -1649,6 +1659,9 @@ const isAmountInSync = (cart: Cart, ecPayment: ECGetPaymentResponse, payment: Pa
   cart.totalPrice.centAmount === getEcCents(ecPayment) &&
   cart.totalPrice.centAmount === (getTransaction(payment) as Transaction).amount.centAmount;
 
+// 408, 409 and 429 say nothing about the attempt itself, so a retry may still succeed.
+const TRANSIENT_UPDATE_STATUSES = [408, 409, 429];
+
 // A rejected PATCH (easyCredit allows no increase) or a decision that is not POSITIVE abandons the attempt. Without an
 // answer easyCredit may have changed the amount, so the attempt stays and a retry reads it.
 const patchExpressAmount = async (
@@ -1666,10 +1679,11 @@ const patchExpressAmount = async (
   try {
     summary = await initEasyCreditClient().updatePayment(technicalTransactionId, mapCTCartToECUpdate(cart), signal);
   } catch (error: unknown) {
-    if (error instanceof ECOutcomeUnknownError) {
+    const status = (error as Partial<Errorx>)?.httpErrorStatus;
+    if (error instanceof ECOutcomeUnknownError || TRANSIENT_UPDATE_STATUSES.includes(status as number)) {
       throw error;
     }
-    const rejected = isIncrease && (error as Partial<Errorx>)?.httpErrorStatus === 400;
+    const rejected = isIncrease && status === 400;
     return abandonExpress(payment.id, rejected ? amountIncreaseNotPossibleError(error) : error);
   }
 
@@ -1820,18 +1834,14 @@ export const handleExpressReturn = async (
     return await abandonExpress(paymentId, error);
   }
 
-  const previousMethodId = cart.shippingInfo?.shippingMethod?.id;
   const shippingMethod = await chooseExpressShippingMethod(paymentId, cart, address.country);
-  cart = await applyExpressCustomerData(
-    paymentId,
+  ({ cart, payment } = await applyExpressCustomerData(
+    payment,
     cart,
     address,
     ecPayment.transaction?.customer?.contact?.email,
     shippingMethod,
-  );
-  if (shippingMethod.id !== previousMethodId) {
-    payment = await recordExpressShippingMethod(payment, shippingMethod.id);
-  }
+  ));
 
   // After the cart update: a type switch on the easyCredit page is validated against the real address.
   const paymentType = await syncPaymentType(payment, ecPayment);
@@ -1866,6 +1876,11 @@ const prepareExpressAuthorization = async (
   paymentType: ECTransactionPaymentType,
   deadline: number,
 ): Promise<ECGetPaymentResponse> => {
+  // An unanswered PATCH may have been applied with a new decision, and a retry then finds the amounts in sync.
+  if (ecPayment.decision?.decisionOutcome !== ECTransactionDecision.POSITIVE) {
+    await abandonExpress(paymentId, decisionNotPositiveError());
+  }
+
   const cart = await getCartByPaymentId(paymentId);
   // Not a transaction failure: the express return may still set the address.
   if (isPlaceholderAddress(cart.shippingAddress)) {

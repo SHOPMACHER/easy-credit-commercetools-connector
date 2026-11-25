@@ -628,20 +628,51 @@ describe('handleExpressReturn', () => {
     });
   });
 
-  it('should finish the return when the shipping method cannot be recorded on the payment', async () => {
+  it('should stop before the cart update when the shipping method cannot be recorded, and record it on a retry', async () => {
     setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
     const write = jest.mocked(updatePayment).getMockImplementation() as typeof updatePayment;
-    jest.mocked(updatePayment).mockImplementation(async (payment, actions) => {
-      if (actions.some(({ action }) => action === 'setCustomField')) {
-        throw new Errorx({ code: 'ConcurrentModification', message: 'version', httpErrorStatus: 409 });
-      }
-      return write(payment, actions);
+    jest.mocked(updatePayment).mockImplementationOnce(async () => {
+      throw new Errorx({ code: 'ServiceUnavailable', message: 'unavailable', httpErrorStatus: 503 });
     });
+    jest.mocked(updatePayment).mockImplementation(write);
+
+    expect(await getErrorCodes(handleExpressReturn('session-cart', 'payment123'))).toEqual(['ServiceUnavailable']);
+    expect(updateCart).not.toHaveBeenCalled();
+    expect(authorization('Initial')).toHaveLength(1);
 
     const response = await handleExpressReturn('session-cart', 'payment123');
 
     expect(response).toMatchObject({ amount: 504.95 });
-    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBeUndefined();
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('standard');
+  });
+
+  it('should keep the recorded method of the init when commercetools rejects the swap', async () => {
+    setup({
+      cart: buildCart(50000, {
+        shippingInfo: { shippingMethod: { typeId: 'shipping-method', id: 'express' } },
+        totalPrice: { type: 'centPrecision', currencyCode: 'EUR', centAmount: 51290, fractionDigits: 2 },
+      }),
+      payment: buildPayment(51290, {
+        custom: {
+          type: { typeId: 'type', id: 'payment-type-id' },
+          fields: { easyCreditExpress: true, easyCreditExpressShippingMethod: 'express' },
+        },
+      }),
+      ec: buildECPayment(512.9),
+    });
+    jest.mocked(getMatchingShippingMethods).mockResolvedValue([{ id: 'standard' }] as ShippingMethod[]);
+    const write = jest.mocked(updateCart).getMockImplementation() as typeof updateCart;
+    jest.mocked(updateCart).mockImplementation(async (cart, actions) => {
+      if (actions.some(({ action }) => action === 'setBillingAddress')) {
+        throw new Errorx({ code: 'InvalidOperation', message: 'rejected', httpErrorStatus: 400 });
+      }
+      return write(cart, actions);
+    });
+
+    expect(await getErrorCodes(handleExpressReturn('session-cart', 'payment123'))).toEqual(['InvalidOperation']);
+    expectAbandoned();
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('express');
+    expect(state.cart.shippingInfo).toBeUndefined();
   });
 
   it('should record the shipping method on the new payment version after a 409', async () => {
@@ -1019,6 +1050,29 @@ describe('handleAuthorizeECPayment for express', () => {
     expect(await getErrorCodes(handleAuthorizeECPayment('payment123'))).toEqual(['TransactionUpdateFailed']);
     expect(authorization('Initial')).toMatchObject([{ id: 'tx-1' }]);
     expect(state.cart.cartState).toBe('Frozen');
+  });
+
+  it.each([408, 409, 429])('should keep the attempt when easyCredit answers the PATCH with %i', async (status) => {
+    returned({ totalPrice: { type: 'centPrecision', currencyCode: 'EUR', centAmount: 51290, fractionDigits: 2 } });
+    updateECPayment.mockImplementation(async () => {
+      throw new Errorx({ code: 'TransactionUpdateFailed', message: 'failed', httpErrorStatus: status });
+    });
+
+    expect(await getErrorCodes(handleAuthorizeECPayment('payment123'))).toEqual(['TransactionUpdateFailed']);
+    expect(authorizeECPayment).not.toHaveBeenCalled();
+    expect(authorization('Initial')).toMatchObject([{ id: 'tx-1' }]);
+    expect(state.cart.cartState).toBe('Frozen');
+  });
+
+  // An unanswered PATCH easyCredit applied with a new decision: the retry finds the amounts in sync.
+  it('should refuse the authorization when the decision is no longer positive', async () => {
+    returned();
+    ecPayment.decision.decisionOutcome = 'NEGATIVE' as ECGetPaymentResponse['decision']['decisionOutcome'];
+
+    expect(await getErrorCodes(handleAuthorizeECPayment('payment123'))).toEqual(['DecisionNotPositive']);
+    expect(updateECPayment).not.toHaveBeenCalled();
+    expect(authorizeECPayment).not.toHaveBeenCalled();
+    expectAbandoned();
   });
 
   it('should abandon an attempt that expired at easyCredit', async () => {
