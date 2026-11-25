@@ -165,8 +165,8 @@ export type WidgetComponentOptions = {
 
 export type ExpressButtonPlacement = 'PDP' | 'CART';
 
-export type ExpressButtonComponentOptions = {
-  placement: ExpressButtonPlacement;
+// The options both placements share.
+export type ExpressButtonBaseOptions = {
   // EUR
   amount: number;
   redirectLinks: {
@@ -174,12 +174,18 @@ export type ExpressButtonComponentOptions = {
     urlCancellation: string;
     urlDenial: string;
   };
-  // Returns the checkout session id of the prepared cart.
-  prepareCart?: () => Promise<string>;
   onLoading?: () => void;
   onError: (error: unknown) => void;
   onSuccess: (response: CreatePaymentResponse) => void;
 };
+
+// prepareCart returns the checkout session id of the prepared cart. The PDP requires it: the express payment charges
+// the whole cart of the session. Without it, a PDP mount renders nothing.
+export type ExpressButtonComponentOptions = ExpressButtonBaseOptions &
+  (
+    | { placement: 'PDP'; prepareCart: () => Promise<string> }
+    | { placement: 'CART'; prepareCart?: () => Promise<string> }
+  );
 
 export interface ExpressButtonComponent {
   // Resolves true when a button was rendered, so the shop can hide the container without a second lookup.

@@ -285,7 +285,7 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 
     const expressBuilder = await enabler.createExpressButtonBuilder();
     const expressButton = expressBuilder.build({
-      placement: 'CART', // 'PDP' or 'CART'
+      placement: 'CART', // 'PDP' or 'CART'. PDP needs prepareCart, see below.
       amount: amount,
       redirectLinks: {
         urlSuccess: window.location.origin + '/express/return',
@@ -311,7 +311,7 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 | `placement` | yes | `PDP` or `CART`. It selects the payment type check and the visibility setting. |
 | `amount` | yes | The amount in EUR major units. If it is not a finite number, the button is not rendered. |
 | `redirectLinks` | yes | `urlSuccess`, `urlCancellation` and `urlDenial`. They follow the rules in [Create Express Payment](./CreateExpressPayment.md). |
-| `prepareCart` | no | A function that empties the cart, puts only this product in it and returns the checkout session ID of that cart. See [Product page](#product-page). |
+| `prepareCart` | on `PDP` | A function that empties the cart, puts only this product in it and returns the checkout session ID of that cart. Required on the PDP: without it, `mount()` renders nothing, resolves to `false` and logs an error to the console. Optional on the cart. See [Product page](#product-page). |
 | `onLoading` | no | Called when the shopper clicks the button, before any request. |
 | `onError` | yes | Called with the error body of the processor, with `{ statusCode }` if the error body is not JSON (for example a gateway `502` or `504`), or with an `Error`. |
 | `onSuccess` | yes | Called with the response of `POST /payments/express`. Send the shopper to `redirectUrl`. |
@@ -330,13 +330,13 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 - A second `mount()` in the same container replaces the button. Call it again for each new amount. If two mounts overlap, only the one that started last changes the container. The earlier one resolves to `false` without touching the container. Use only the result of the last mount to show or hide the container.
 - Do not mount the button inside a `<form>`. The web component also fires a deprecated `submit` event that bubbles.
 - A click while an earlier click is still running is ignored.
-- On click, the component calls `prepareCart` (if set). Then it sends `POST /payments/express` with the chosen payment type and `redirectLinks`, and calls `onSuccess` or `onError`.
+- On click, the component calls `prepareCart` (always on the PDP, on the cart if set). Then it sends `POST /payments/express` with the chosen payment type and `redirectLinks`, and calls `onSuccess` or `onError`.
 - Only the payment type goes to the connector. The number of installments that the shopper chose in the easyCredit modal is not forwarded.
 - After the shopper accepts, the easyCredit modal stays open. If the page has not navigated away after 10 seconds, easyCredit shows its own alert that easyCredit payment is not possible at the moment and closes the modal. So `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. After `onError`, the shopper also sees this alert from easyCredit.
 
 #### Product page
 
-- On the PDP, pass `prepareCart`. `POST /payments/express` charges the whole cart of the session, but the button shows the price of this product. So `prepareCart` must empty the cart and put only this product in it, quantity 1. This is a requirement of easyCredit (TeamBank). It returns the checkout session ID of this cart. The component sends the express request with this session ID.
+- On the PDP, `prepareCart` is required. `POST /payments/express` charges the whole cart of the session, but the button shows the price of this product. So `prepareCart` must empty the cart and put only this product in it, quantity 1. This is a requirement of easyCredit (TeamBank). It returns the checkout session ID of this cart. The component sends the express request with this session ID.
 - The function runs on every click, also when the shopper clicks again after `onError`. It must be idempotent: after each run, the cart holds exactly this product, quantity 1.
 - An error in the function goes to `onError`.
 

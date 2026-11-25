@@ -73,6 +73,14 @@ export class ECExpressButtonComponent implements ExpressButtonComponent {
         return render();
       }
 
+      // Plain JS shops get no type check. Without prepareCart the PDP would charge the whole session cart.
+      if (this.options.placement === 'PDP' && typeof this.options.prepareCart !== 'function') {
+        // eslint-disable-next-line no-console
+        console.error('EasyCredit Express Button: prepareCart is required on the PDP');
+
+        return render();
+      }
+
       // The widget switch (isEnabled) does not apply to the express button.
       const config: ExpressConfig = await this.get('/operations/widget-enabled').then((res) => res.json());
       const visible = [this.options.placement, 'PDP_AND_CART'].includes(config.expressButtonVisibility ?? '');

@@ -1,7 +1,7 @@
 /* eslint-disable no-global-assign */
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ECExpressButtonComponent, ECExpressButtonComponentBuilder } from '../../src/components/express.component';
-import { ExpressButtonComponentOptions } from '../../src/types/main';
+import { ExpressButtonBaseOptions, ExpressButtonComponentOptions, ExpressButtonPlacement } from '../../src/types/main';
 import { importEasyCreditScript } from '../../src/utils/app.utils';
 
 // Keep the real findElement: the submit event is dispatched on the rendered element.
@@ -52,11 +52,18 @@ const fetchedUrls = () => (fetch as jest.Mock).mock.calls.map(([url]) => url as 
 
 const renderedButton = () => document.querySelector('#express easycredit-express-button');
 
-const createComponent = (options: Partial<ExpressButtonComponentOptions> = {}) =>
+// The PDP requires prepareCart, so the default PDP component has one.
+type Overrides = Partial<ExpressButtonBaseOptions> & {
+  placement?: ExpressButtonPlacement;
+  prepareCart?: ExpressButtonComponentOptions['prepareCart'];
+};
+
+const createComponent = (options: Overrides = {}) =>
   new ECExpressButtonComponentBuilder(baseOptions).build({
     placement: 'PDP',
     amount: 299.9,
     redirectLinks,
+    prepareCart: async () => 'prepared-session',
     onError: jest.fn(),
     onSuccess: jest.fn(),
     ...options,
@@ -134,6 +141,19 @@ describe('ECExpressButtonComponent', () => {
         headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'built-session' },
       });
       expect(fetchedUrls().some((url) => url.includes('/payments/express/payment-method'))).toBe(false);
+    });
+
+    it('on PDP renders nothing and logs an error without prepareCart', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      await expect(createComponent().mount('#express')).resolves.toBe(true);
+
+      await expect(createComponent({ prepareCart: undefined }).mount('#express')).resolves.toBe(false);
+
+      expect(renderedButton()).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('prepareCart is required'));
+      expect(fetch).toHaveBeenCalledTimes(1);
+      consoleSpy.mockRestore();
     });
 
     it('renders nothing when widget-enabled offers no payment type', async () => {
@@ -297,7 +317,7 @@ describe('ECExpressButtonComponent', () => {
       expect(onLoading).toHaveBeenCalled();
       expect(fetch).toHaveBeenCalledWith(`${baseOptions.processorUrl}/payments/express`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'built-session' },
+        headers: { 'Content-Type': 'application/json', 'X-Session-Id': 'prepared-session' },
         body: JSON.stringify({ paymentType: 'BILL_PAYMENT', redirectLinks }),
       });
       expect(onSuccess).toHaveBeenCalledWith(createdPayment);

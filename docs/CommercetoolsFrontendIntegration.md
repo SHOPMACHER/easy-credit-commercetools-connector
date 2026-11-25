@@ -713,6 +713,7 @@ The two settings are independent of `WIDGET_ENABLED`. They control only the butt
 
 ```ts
 // Browser. File easycredit-express-button.ts: express button on the product page (PDP) or the cart page (CART).
+import type { ExpressButtonBaseOptions } from '@shopmacher/easy-credit-commercetools-component';
 import { createEnabler } from './easycredit-enabler';
 
 type Placement = 'PDP' | 'CART';
@@ -721,7 +722,9 @@ type Placement = 'PDP' | 'CART';
 const latestRun = new Map<string, number>();
 
 // Call this when the page loads, and again when the amount or the product changes.
-// amount: EUR major units, for example 599.9. sku: only on the product page.
+// amount: EUR major units, for example 599.9. sku: only on the product page, where it is required.
+export function mountExpressButton(placement: 'PDP', amount: number, sku: string): Promise<void>;
+export function mountExpressButton(placement: 'CART', amount: number): Promise<void>;
 export async function mountExpressButton(placement: Placement, amount: number, sku?: string): Promise<void> {
   const containerId = `easycredit-express-${placement.toLowerCase()}`;
   const run = (latestRun.get(containerId) ?? 0) + 1;
@@ -736,23 +739,28 @@ export async function mountExpressButton(placement: Placement, amount: number, s
 
     if (builder && run === latestRun.get(containerId)) {
       const origin = window.location.origin;
-      rendered = await builder
-        .build({
-          placement,
-          amount,
-          // The shop routes these URLs itself. The names are examples. Express links must be absolute.
-          redirectLinks: {
-            urlSuccess: `${origin}/checkout?step=review&express=1`,
-            urlCancellation: `${origin}/cart?status=cancelled`,
-            urlDenial: `${origin}/cart?status=denied`,
-          },
-          prepareCart: sku
-            ? async () => (await callAction<{ sessionId: string }>('cart/prepareExpressCart', { sku })).sessionId
-            : undefined,
-          onError: () => showError('The payment did not start. Please try again.'),
-          onSuccess: (response) => window.location.replace(response.redirectUrl),
-        })
-        .mount(`#${containerId}`);
+      const common: ExpressButtonBaseOptions = {
+        amount,
+        // The shop routes these URLs itself. The names are examples. Express links must be absolute.
+        redirectLinks: {
+          urlSuccess: `${origin}/checkout?step=review&express=1`,
+          urlCancellation: `${origin}/cart?status=cancelled`,
+          urlDenial: `${origin}/cart?status=denied`,
+        },
+        onError: () => showError('The payment did not start. Please try again.'),
+        onSuccess: (response) => window.location.replace(response.redirectUrl),
+      };
+      // The product page requires prepareCart: the express payment charges the whole cart of the session.
+      const options =
+        placement === 'PDP'
+          ? {
+              ...common,
+              placement,
+              prepareCart: async () =>
+                (await callAction<{ sessionId: string }>('cart/prepareExpressCart', { sku })).sessionId,
+            }
+          : { ...common, placement };
+      rendered = await builder.build(options).mount(`#${containerId}`);
     }
   } catch (error) {
     console.error('Cannot mount the express button', error);
