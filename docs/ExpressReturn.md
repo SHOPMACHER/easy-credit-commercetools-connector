@@ -9,7 +9,7 @@
 * [Error response](#error-responses)
 
 ## Overview
-This API completes an express checkout started with [Create Express Payment](./CreateExpressPayment.md). The shopper entered name, email, phone and address on the easyCredit payment page; the connector takes them over onto the cart, sets the shipping method and brings the easyCredit transaction to the new cart total. Call it from the page behind `urlSuccess`, then show the regular confirm page. The order is created as usual after [Authorize Payment](./AuthorizePayment.md) answered `204`.
+This API completes an express checkout started with [Create Express Payment](./CreateExpressPayment.md). The shopper entered name, email, phone and address on the easyCredit payment page; the connector takes them over onto the cart, sets the shipping method and brings the easyCredit transaction to the new cart total. Call it from the page behind `urlSuccess`, then show the regular confirm page. Create the order as for a regular payment, see [Authorize and create the order](./CommercetoolsFrontendIntegration.md#authorize-and-create-the-order): only after the authorization succeeded, that is a `204` with `waitForAuthorization: true`. Without it, a `204` only means the request was sent and the transaction is still `Pending`.
 <br />
 
 ## Conditions
@@ -82,7 +82,7 @@ If they differ, the connector:
 3. replaces the CT `Authorization` transaction, as commercetools cannot change a transaction amount: the old one is set to `Failure`, a new `Initial` one with the new amount, the same `interactionId` and the same custom fields is added, and `amountPlanned` follows. The connector always works with the transaction that is not `Failure`.
 4. stores `easyCreditInterest` and `easyCreditTotalValue` from the response on the new transaction.
 
-A rejected PATCH or a decision that is not `POSITIVE` abandons the attempt. A PATCH without an answer (`502` / `504 TransactionUpdateFailed`) keeps it, as easyCredit may have changed the amount: a retry reads the new `orderValue` and only replaces the CT transaction. A commercetools error in step 3 (for example `409` from a second return call that replaced the transaction first) keeps it: a retry finds easyCredit already updated and only replaces the transaction.
+A rejected PATCH or a decision that is not `POSITIVE` abandons the attempt. A PATCH without a clear answer (no answer, a `5xx` or an unreadable body: `502` / `504 TransactionUpdateFailed`) keeps it, as easyCredit may have changed the amount: a retry reads the new `orderValue` and only replaces the CT transaction. A commercetools error in step 3 (for example `409` from a second return call that replaced the transaction first) keeps it: a retry finds easyCredit already updated and only replaces the transaction.
 
 The limits are validated for the new total before the PATCH. The later authorization needs no amount: easyCredit authorizes the updated `orderValue`.
 
@@ -95,7 +95,7 @@ easyCredit cannot change the address of an existing transaction and requires tha
 
 [Authorize Payment](./AuthorizePayment.md#express-payments) checks this again before it sends the authorization request, and syncs a total that changed after the return (another shipping method, a removed discount code) in the same way as this call.
 
-A transaction expires 30 minutes after the last activity of the shopper or a `PATCH` of the shop. easyCredit then answers the lookup with `400 CONSTRAINT_VIOLATION` on `decision` instead of the status `EXPIRED` (sandbox, 2026-11-15). Both abandon the attempt here and at authorization with `400 TransactionExpired`, so the shopper can start a new express checkout.
+A transaction expires 30 minutes after the last activity of the shopper or a `PATCH` of the shop. easyCredit then answers the lookup with `400 CONSTRAINT_VIOLATION` on `decision` instead of the status `EXPIRED` (sandbox, 2026-11-15). Both abandon the attempt, so the shopper can start a new express checkout. This call answers both with `400 TransactionExpired`. [Authorize Payment](./AuthorizePayment.md#workflow) answers the lookup error with `400 TransactionExpired` and the status `EXPIRED` with `400 TransactionNotPreauthorized`, as for regular payments. Authorize does not end an `OPEN` transaction: the shopper may still be on the easyCredit page, so it answers `400 TransactionNotPreauthorized` and keeps the attempt.
 <br />
 
 ## Example URL Call
@@ -115,7 +115,7 @@ X-Session-Id: <session_id>
 
 #### Success Response:
 
-`200` with the same body as [Get Payment](./GetPayment.md#response-format). `amount` is the new transaction amount, and `decision` comes from the PATCH response if the amount was synced.
+`200` with the same body as [Get Payment](./GetPayment.md#response-format). `amount` is the new transaction amount, and `decision` comes from the PATCH response if the amount was synced. For a `BILL_PAYMENT`, the PATCH response still carries installment values; the connector drops them, so `decision` has no `interest`, `installment` or `lastInstallment`, `numberOfInstallments` is `1` and `totalValue` equals `orderValue`, as in Get Payment.
 
 ```json
 {
@@ -163,4 +163,4 @@ X-Session-Id: <session_id>
 | `TransactionNotPreauthorized` | The `Authorization` transaction is no longer `Initial`, or easyCredit reports `AUTHORIZED` |
 | `PaymentTypeNotAvailable`, `EasyCreditUnavailable` | The payment type cannot be offered right now |
 | commercetools or easyCredit error with `409` or `5xx` | Transient failure while reading or updating, including a `409` while replacing the CT transaction after the PATCH |
-| `TransactionUpdateFailed` (`502` / `504`) | easyCredit did not answer the PATCH. A retry reads whether easyCredit applied it |
+| `TransactionUpdateFailed` (`502` / `504`) | easyCredit did not answer the PATCH, answered with `5xx` or with an unreadable body. A retry reads whether easyCredit applied it |

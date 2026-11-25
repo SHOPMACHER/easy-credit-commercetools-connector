@@ -227,14 +227,29 @@ class EasyCreditApiClient implements EasyCreditClient {
         signal,
       });
     } catch (error: unknown) {
-      log.error('Failed to update the transaction', error);
-      throw new ECOutcomeUnknownError({
-        code: 'TransactionUpdateFailed',
-        message: 'Transaction update failed',
-        httpErrorStatus: isAbortError(error) ? 504 : 502,
-      });
+      throw this.updateOutcomeUnknown(error);
     }
-    return this.handleResponse(response, 'TransactionUpdateFailed', 'Transaction update failed');
+    // A 5xx may come from a gateway after easyCredit applied the change; only a 4xx is a definitive rejection.
+    if (response.status >= 500) {
+      throw this.updateOutcomeUnknown(`easyCredit answered ${response.status}`);
+    }
+    if (!response.ok) {
+      return this.handleResponse(response, 'TransactionUpdateFailed', 'Transaction update failed');
+    }
+    try {
+      return (await response.json()) as ECTransactionSummary;
+    } catch (error: unknown) {
+      throw this.updateOutcomeUnknown(error);
+    }
+  }
+
+  private updateOutcomeUnknown(cause: unknown): ECOutcomeUnknownError {
+    log.error('Failed to update the transaction', cause);
+    return new ECOutcomeUnknownError({
+      code: 'TransactionUpdateFailed',
+      message: 'Transaction update failed',
+      httpErrorStatus: isAbortError(cause) ? 504 : 502,
+    });
   }
 
   public async refundPayment(

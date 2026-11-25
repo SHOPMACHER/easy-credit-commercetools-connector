@@ -359,6 +359,41 @@ describe('initEasyCreditClient', () => {
       await expect(promise).rejects.toMatchObject({ code: 'TransactionUpdateFailed', httpErrorStatus: status });
       logSpy.mockRestore();
     });
+
+    it.each([500, 502, 503, 504])('should map an easyCredit or gateway %s to an unknown outcome', async (status) => {
+      const logSpy = jest.spyOn(log, 'error').mockImplementation(() => log);
+      jest.mocked(fetch).mockResolvedValueOnce({
+        ok: false,
+        status,
+        json: async () => ({ title: 'Gateway Timeout' }),
+      } as unknown as Response);
+
+      const promise = easyCreditClient.updatePayment('tech123', payload);
+
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code: 'TransactionUpdateFailed', httpErrorStatus: 502 });
+      logSpy.mockRestore();
+    });
+
+    it.each([
+      ['a truncated body', new SyntaxError('Unexpected end of JSON input'), 502],
+      ['a timeout while reading the body', new DOMException('timed out', 'TimeoutError'), 504],
+    ])('should map %s of a 200 to an unknown outcome', async (_case, error, status) => {
+      const logSpy = jest.spyOn(log, 'error').mockImplementation(() => log);
+      jest.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw error;
+        },
+      } as unknown as Response);
+
+      const promise = easyCreditClient.updatePayment('tech123', payload);
+
+      await expect(promise).rejects.toBeInstanceOf(ECOutcomeUnknownError);
+      await expect(promise).rejects.toMatchObject({ code: 'TransactionUpdateFailed', httpErrorStatus: status });
+      logSpy.mockRestore();
+    });
   });
 
   describe('getPayment', () => {

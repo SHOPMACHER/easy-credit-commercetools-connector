@@ -69,12 +69,12 @@ export async function updateCart(cart: Cart, updateActions: CartUpdateAction[]):
 
     return cartObject;
   } catch (error: any) {
-    // The raw SDK error carries the request body, which can hold the shopper's address and email.
+    // The request body and the error message (InvalidField quotes the rejected value) can hold the shopper's data.
     log.error('Error in updateCart', {
       cartId: cart.id,
       code: error?.code,
       statusCode: error?.statusCode,
-      message: error?.body?.message,
+      errors: error?.body?.errors?.map(({ code, field }: { code?: string; field?: string }) => ({ code, field })),
     });
 
     throw new Errorx({

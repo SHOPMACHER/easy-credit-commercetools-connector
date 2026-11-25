@@ -644,6 +644,19 @@ describe('handleExpressReturn', () => {
     expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBeUndefined();
   });
 
+  it('should record the shipping method on the new payment version after a 409', async () => {
+    setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
+    const write = jest.mocked(updatePayment).getMockImplementation() as typeof updatePayment;
+    jest.mocked(updatePayment).mockImplementationOnce(async () => {
+      throw new Errorx({ code: 'ConcurrentModification', message: 'version', httpErrorStatus: 409 });
+    });
+    jest.mocked(updatePayment).mockImplementation(write);
+
+    await handleExpressReturn('session-cart', 'payment123');
+
+    expect(state.payment.custom?.fields.easyCreditExpressShippingMethod).toBe('standard');
+  });
+
   it('should abandon the attempt when commercetools rejects the customer data', async () => {
     setup({ cart: buildCart(50000), payment: buildPayment(50000), ec: buildECPayment(500) });
     const write = jest.mocked(updateCart).getMockImplementation() as typeof updateCart;
@@ -809,6 +822,35 @@ describe('handleExpressReturn', () => {
       'ShippingModeNotSupported',
     ]);
     expectAbandoned();
+  });
+
+  it('should answer a patched bill payment without the installment values of the PATCH answer', async () => {
+    const ec = buildECPayment(500);
+    ec.transaction.paymentType = ECTransactionPaymentType.ECTransactionBillPayment;
+    setup({
+      cart: buildCart(50000),
+      payment: buildPayment(50000, { paymentMethodInfo: { paymentInterface: 'easycredit', method: 'BILL_PAYMENT' } }),
+      ec,
+    });
+    // As in the sandbox: the PATCH answer of a bill payment carries an installment plan.
+    updateECPayment.mockImplementation(async (_id: string, payload: { orderValue: number }) => ({
+      ...summary(payload.orderValue),
+      numberOfInstallments: 12,
+      installment: 43,
+      lastInstallment: 40.1,
+    }));
+
+    const response = await handleExpressReturn('session-cart', 'payment123');
+
+    expect(updateECPayment).toHaveBeenCalled();
+    expect(response.paymentType).toBe(ECTransactionPaymentType.ECTransactionBillPayment);
+    expect(response.decision).toEqual(
+      expect.objectContaining({ orderValue: 504.95, totalValue: 504.95, numberOfInstallments: 1 }),
+    );
+    expect(response.decision).not.toHaveProperty('interest');
+    expect(response.decision.installment).toBeUndefined();
+    expect(response.decision.lastInstallment).toBeUndefined();
+    expect(authorization('Initial')[0]?.custom?.fields.easyCreditInterest).toBeUndefined();
   });
 
   it('should leave a bill payment open when the limits cannot be read', async () => {
@@ -1031,6 +1073,40 @@ describe('handleAuthorizeECPayment for express', () => {
     expect(updateECPayment).not.toHaveBeenCalled();
     expect(authorizeECPayment).not.toHaveBeenCalled();
     expect(authorization('Failure')).toMatchObject([{ id: 'tx-1' }]);
+    expectAbandoned();
+  });
+
+  it('should send no authorization request when a cancel failed the transaction but has not unfrozen the cart yet', async () => {
+    returned();
+    const webshop = initEasyCreditClient() as unknown as { getWebshopInfo: jest.Mock };
+    webshop.getWebshopInfo.mockImplementationOnce(async () => {
+      state.payment = applyPaymentAction(
+        { ...state.payment, version: state.payment.version + 1 },
+        { action: 'changeTransactionState', transactionId: 'tx-1', state: 'Failure' },
+      );
+      return webshopInfo;
+    });
+
+    expect(await getErrorCodes(handleAuthorizeECPayment('payment123'))).toEqual(['TransactionNotPreauthorized']);
+    expect(authorizeECPayment).not.toHaveBeenCalled();
+  });
+
+  it('should refuse the authorization when the address changes during the checks', async () => {
+    returned();
+    const otherAddress = { ...ctAddress, streetNumber: '27' };
+    const webshop = initEasyCreditClient() as unknown as { getWebshopInfo: jest.Mock };
+    webshop.getWebshopInfo.mockImplementationOnce(async () => {
+      state.cart = {
+        ...state.cart,
+        version: state.cart.version + 1,
+        billingAddress: otherAddress,
+        shippingAddress: otherAddress,
+      };
+      return webshopInfo;
+    });
+
+    expect(await getErrorCodes(handleAuthorizeECPayment('payment123'))).toEqual(['ExpressAddressMismatch']);
+    expect(authorizeECPayment).not.toHaveBeenCalled();
     expectAbandoned();
   });
 

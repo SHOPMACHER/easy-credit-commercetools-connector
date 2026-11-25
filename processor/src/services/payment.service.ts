@@ -1267,6 +1267,11 @@ const assertAmountMatches = async (
   const transaction = getTransaction(await getPaymentById(paymentId)) as Transaction;
   const ecCents = getEcCents(ecPayment);
 
+  // A concurrent cancel or authorize moved the transaction: send no authorization request for it.
+  if (expectedFrom && transaction.state !== expectedFrom) {
+    throw notPreauthorizedError();
+  }
+
   if (
     cart.cartState !== CTCartState.Frozen ||
     ecCents === undefined ||
@@ -1561,15 +1566,32 @@ const applyExpressCustomerData = async (
 };
 
 // A method the return swapped in is the connector's choice too. Best effort: the attempt does not depend on it.
+// A later return sees the method already on the cart and records nothing, so a 409 is retried once on the new version.
 const recordExpressShippingMethod = async (payment: Payment, shippingMethodId: string): Promise<Payment> => {
-  try {
-    return await updatePayment(payment, [
+  const record = (current: Payment) =>
+    updatePayment(current, [
       { action: 'setCustomField', name: EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD, value: shippingMethodId },
     ]);
+
+  let failure: unknown;
+  try {
+    return await record(payment);
   } catch (error: unknown) {
-    log.warn('Could not record the shipping method the express return set', { paymentId: payment.id, error });
-    return getPaymentById(payment.id);
+    failure = error;
   }
+  if ((failure as Partial<Errorx>)?.httpErrorStatus === 409) {
+    const current = await getPaymentById(payment.id);
+    if (current.custom?.fields?.[EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD] === shippingMethodId) {
+      return current;
+    }
+    try {
+      return await record(current);
+    } catch (error: unknown) {
+      failure = error;
+    }
+  }
+  log.warn('Could not record the shipping method the express return set', { paymentId: payment.id, error: failure });
+  return getPaymentById(payment.id);
 };
 
 // commercetools cannot change a transaction amount, so the Initial one is failed and replaced in one update.
@@ -1597,9 +1619,26 @@ const replaceAuthorization = async (payment: Payment, cart: Cart): Promise<Payme
   ]);
 };
 
-const withSummary = (ecPayment: ECGetPaymentResponse, summary: ECTransactionSummary): ECGetPaymentResponse => ({
+// easyCredit's PATCH answer for a bill payment still carries installment values, which its lookup does not report.
+const toDecision = (summary: ECTransactionSummary, paymentType: ECTransactionPaymentType): ECTransactionSummary =>
+  paymentType === ECTransactionPaymentType.ECTransactionBillPayment
+    ? {
+        ...summary,
+        interest: null,
+        totalValue: summary.orderValue,
+        numberOfInstallments: 1,
+        installment: undefined,
+        lastInstallment: undefined,
+      }
+    : summary;
+
+const withSummary = (
+  ecPayment: ECGetPaymentResponse,
+  summary: ECTransactionSummary,
+  paymentType: ECTransactionPaymentType,
+): ECGetPaymentResponse => ({
   ...ecPayment,
-  decision: summary,
+  decision: toDecision(summary, paymentType),
   transaction: {
     ...ecPayment.transaction,
     orderDetails: { ...ecPayment.transaction.orderDetails, orderValue: summary.orderValue },
@@ -1616,6 +1655,7 @@ const patchExpressAmount = async (
   payment: Payment,
   cart: Cart,
   ecPayment: ECGetPaymentResponse,
+  paymentType: ECTransactionPaymentType,
   signal?: AbortSignal,
 ): Promise<ECGetPaymentResponse> => {
   const transaction = getTransaction(payment) as Transaction;
@@ -1643,7 +1683,7 @@ const patchExpressAmount = async (
     return abandonExpress(payment.id, decisionNotPositiveError());
   }
 
-  return withSummary(ecPayment, summary);
+  return withSummary(ecPayment, summary, paymentType);
 };
 
 // Shipping costs and cart changes move the total after the decision. easyCredit finances the cart total (the cart
@@ -1665,7 +1705,7 @@ const syncExpressAmount = async (
   const updated =
     cart.totalPrice.centAmount === getEcCents(ecPayment)
       ? ecPayment
-      : await patchExpressAmount(payment, cart, ecPayment, signal);
+      : await patchExpressAmount(payment, cart, ecPayment, paymentType, signal);
 
   const synced =
     (getTransaction(payment) as Transaction).amount.centAmount === cart.totalPrice.centAmount
@@ -1804,6 +1844,19 @@ export const handleExpressReturn = async (
   return toGetPaymentResponse(ecPayment, paymentType, getTransaction(payment) as Transaction);
 };
 
+// easyCredit cannot change the address of a transaction, so the order must go to the one the shopper entered there.
+const assertExpressAddressOnCart = async (paymentId: string, cart: Cart, address: BaseAddress): Promise<void> => {
+  const shippingAddress = getShippingAddress(cart);
+  if (
+    !cart.billingAddress ||
+    !shippingAddress ||
+    !isSameAddress(cart.billingAddress, address) ||
+    !isSameAddress(shippingAddress, address)
+  ) {
+    await abandonExpress(paymentId, expressAddressMismatchError());
+  }
+};
+
 // Express only, before the amount check: the return must have set the easyCredit address, the cart must still carry it,
 // and a total changed since the return (shipping method, discount code) is synced like on the return.
 // The cart is validated even with the totals in sync: a shop that unfroze it may have swapped items at the same total.
@@ -1827,15 +1880,7 @@ const prepareExpressAuthorization = async (
     return abandonExpress(paymentId, error);
   }
 
-  const shippingAddress = getShippingAddress(cart);
-  if (
-    !cart.billingAddress ||
-    !shippingAddress ||
-    !isSameAddress(cart.billingAddress, address) ||
-    !isSameAddress(shippingAddress, address)
-  ) {
-    await abandonExpress(paymentId, expressAddressMismatchError());
-  }
+  await assertExpressAddressOnCart(paymentId, cart, address);
 
   // An unfrozen cart fails the amount check anyway; easyCredit must not be changed for it.
   if (cart.cartState !== CTCartState.Frozen) {
@@ -1883,6 +1928,10 @@ const requestAuthorization = async (
 ): Promise<void> => {
   const checked = express ? await prepareExpressAuthorization(paymentId, ecPayment, paymentType, deadline) : ecPayment;
   const cart = await assertAmountMatches(paymentId, checked, CTTransactionState.Initial);
+  if (express) {
+    // This is the cart the request is sent for; the address may have changed since the first check.
+    await assertExpressAddressOnCart(paymentId, cart, getExpressAddress(checked));
+  }
   if (express || paymentType === ECTransactionPaymentType.ECTransactionBillPayment) {
     await assertCartRulesHold(paymentId, cart, paymentType);
   }

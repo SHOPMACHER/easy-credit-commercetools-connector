@@ -133,7 +133,11 @@ Rules for rendering:
 ```ts
 const method = payment.paymentMethodInfo.method;
 const isInstallment = method !== 'BILL_PAYMENT';
-const authorization = payment.transactions.find((transaction) => transaction.type === 'Authorization');
+// After an express amount change, the payment also holds the replaced Authorization in state Failure.
+const authorizations = payment.transactions.filter((transaction) => transaction.type === 'Authorization');
+const authorization =
+  authorizations.find((transaction) => transaction.state === 'Success') ??
+  authorizations.find((transaction) => transaction.state !== 'Failure');
 const fields = isInstallment ? authorization?.custom?.fields : undefined;
 const interest = fields?.easyCreditInterest;
 const totalValue = fields?.easyCreditTotalValue;

@@ -1316,7 +1316,7 @@
 				{
 					"name": "4.2 Express return",
 					"request": {
-						"description": "Call from the page behind urlSuccess. Takes over name, email (guests only), phone and address from easyCredit onto the session cart, sets the shipping method and, if the cart total changed, updates the easyCredit transaction (PATCH) and replaces the CT Authorization transaction. Answers 200 with the same body as Get EasyCredit Transaction (Payment). Definitive failures (TransactionNotPreauthorized for OPEN/DECLINED/EXPIRED, DecisionNotPositive, AddressesUnmatched, NoShippingMethod, InvalidAmount, a rejected PATCH) set the transaction to Failure and unfreeze the cart. See docs/ExpressReturn.md.",
+						"description": "Call from the page behind urlSuccess. Takes over name, email (guests only), phone and address from easyCredit onto the session cart, sets the shipping method and, if the cart total changed, updates the easyCredit transaction (PATCH) and replaces the CT Authorization transaction. Answers 200 with the same body as Get EasyCredit Transaction (Payment). Definitive failures (TransactionNotPreauthorized for OPEN/DECLINED, TransactionExpired for EXPIRED, DecisionNotPositive, AddressesUnmatched, NoShippingMethod, InvalidAmount, a rejected PATCH) set the transaction to Failure and unfreeze the cart. See docs/ExpressReturn.md.",
 						"method": "POST",
 						"header": [
 							{

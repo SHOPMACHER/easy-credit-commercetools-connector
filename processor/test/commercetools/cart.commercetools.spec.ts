@@ -165,11 +165,14 @@ describe('Cart Functions', () => {
       expect(createApiRoot).toHaveBeenCalled();
     });
 
-    it('should log an error and throw an Errorx if the update request fails', async () => {
+    it('should log an error without the rejected value and throw an Errorx if the update request fails', async () => {
       const errorResponse = {
-        code: 'UpdateError',
-        body: { message: 'Update failed', errors: [{ field: 'version', message: 'Version mismatch' }] },
-        statusCode: 409,
+        code: 'InvalidField',
+        body: {
+          message: "The value 'jane@example.com' is not valid for field 'email'.",
+          errors: [{ code: 'InvalidField', field: 'email', invalidValue: 'jane@example.com', message: 'invalid' }],
+        },
+        statusCode: 400,
       };
 
       (createApiRoot as jest.Mock).mockReturnValue({
@@ -186,10 +189,11 @@ describe('Cart Functions', () => {
       await expect(updateCart(cart, updateActions)).rejects.toThrow(Errorx);
       expect(log.error).toHaveBeenCalledWith('Error in updateCart', {
         cartId: cart.id,
-        code: 'UpdateError',
-        statusCode: 409,
-        message: 'Update failed',
+        code: 'InvalidField',
+        statusCode: 400,
+        errors: [{ code: 'InvalidField', field: 'email' }],
       });
+      expect(JSON.stringify(jest.mocked(log.error).mock.calls)).not.toContain('jane@example.com');
     });
   });
 });
