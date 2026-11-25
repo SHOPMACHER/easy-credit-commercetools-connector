@@ -3,6 +3,7 @@
 For the terms in this document (EC, CT, easyCredit status values, cart freeze), see [Terms](./CommercetoolsFrontendIntegration.md#terms).
 
 * [Switching to another payment method](#switching-to-another-payment-method)
+* [Already failed attempt](#already-failed-attempt)
 * [Representation: CT Payment](#representation-ct-payment)
 * [Creating CommerceTools Actions from Easy Credit's Response](#creating-commercetools-actions-from-easy-credits-response)
 
@@ -16,7 +17,7 @@ This function cancels an easyCredit payment that is not complete.
 To cancel a payment, the customer must have a payment that is created but not paid. The CommerceTools Payment object must meet these criteria:
 
 1. The payment is an easyCredit payment: `paymentMethodInfo.paymentInterface` is `easycredit`. The comparison is not case-sensitive. A value such as `EasyCredit` (in the example below) also matches. The connector writes `easycredit`.
-2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5.
+2. A transaction of type `Authorization` exists. Its state is `Initial` or `Pending`. For `Pending`, see step 5. The connector does not change a `Failure` transaction and answers like a successful cancel, see [Already failed attempt](#already-failed-attempt).
 3. The transaction has an `interactionId`. This is the easyCredit Payment ID.
 4. The connector checks the status of the easyCredit transaction through the easyCredit API.
    - If the status is AUTHORIZED, the connector blocks the cancellation. It returns an error: you cannot cancel an authorized easyCredit payment.
@@ -43,7 +44,7 @@ If easyCredit no longer finds the transaction because it expired (in the sandbox
 
 The call is idempotent. If the `Authorization` transaction is already `Failure`, the connector does not change the payment. It still responds with success or the redirect. This occurs, for example, when the shopper opens the cancel link again through the browser history.
 
-After the cancellation, the cart unfreezes. The exception: another easyCredit payment on the same cart is still `Initial` or `Pending`. A new checkout discards older `Initial` easyCredit payments on the cart (see the create flow). The checkout is refused while one is `Pending` or authorized at easyCredit.
+After the cancellation, the cart unfreezes. The exception: another easyCredit payment on the same cart is still `Initial` or `Pending`, or is `Success` and waits for its order. A new checkout discards older `Initial` easyCredit payments on the cart (see the create flow). The checkout is refused while one is `Pending` or authorized at easyCredit.
 
 <br />
 
@@ -56,13 +57,25 @@ A `Pending` payment can stay `Pending`. For example, easyCredit no longer finds 
 3. If the portal shows the transaction as authorized, do not change the payment. Create the order, or settle the payment manually in the portal.
 4. If the portal shows that the transaction is not authorized, use the commercetools API:
    1. Set the `Authorization` transaction to `Failure` with the update action `changeTransactionState`.
-   2. If no other easyCredit payment of the cart is `Initial` or `Pending`, unfreeze the cart with the update action `unfreezeCart`.
+   2. If no other easyCredit payment of the cart is `Initial`, `Pending` or `Success`, unfreeze the cart with the update action `unfreezeCart`.
 
 <br />
 
 ## Several payments on one order
 
 A cancelled attempt stays on the cart and on the order with a `Failure` transaction. To find the payment that the shopper used, see [Find the used payment](./CommercetoolsFrontendIntegration.md#find-the-used-payment).
+
+<br />
+
+## Already failed attempt
+
+A `Failure` transaction means the attempt is already over, for example because a newer attempt for the same cart discarded it (a second express click on the product page while the first easyCredit page is still open in another tab), or because an earlier cancel set it but could not release the cart. The webhook does not change the transaction and answers like a successful cancel: `302` to a signed `redirectUrl`, or `200` without it.
+
+It releases the cart as in [Cart cleanup](#cart-cleanup), unless another easyCredit payment on the cart has an `Initial`, `Pending` or `Success` transaction: that attempt holds the cart, and an authorized one needs it frozen for its order. A payment the newer attempt discarded is no longer on any cart, so nothing changes. A failing release is logged and the answer stays the same, so a retry of the cancel can release the cart.
+
+## Cart cleanup
+
+The cart is unfrozen if it is still `Frozen`. For an express payment whose placeholder address the connector added and that is still on the cart, the placeholder is removed in the same update, together with a shipping method set on it. See [Create Express Payment](./CreateExpressPayment.md#placeholder-address).
 
 <br />
 
@@ -124,7 +137,7 @@ Use this form from your BFF or a server job, for example when the shopper switch
 **HTTP Method:** `GET`  
 **URL:** `https://your-api-endpoint.com/webhook/{{payment_id}}/cancel?redirectUrl={{redirect_url}}&successUrl={{success_url}}&sig={{signature}}`  
 
-The connector builds this URL when it creates the payment. It gives the URL to easyCredit. `successUrl` is the `urlSuccess` of the shop. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]`, with `API_PASSWORD` as the key. The URLs in the array are plain, not URL-encoded. Use `null` if there is no success URL. If the call has a `redirectUrl` without a valid `sig`, the connector rejects it with `400 InvalidRedirectUrl`. It then does not cancel the payment. This way, nobody can use the route as an open redirect.  
+The connector builds this URL when it creates the payment. It gives the URL to easyCredit. `successUrl` is the `urlSuccess` of the shop. `sig` is the hex HMAC-SHA256 of the JSON array `["{{payment_id}}", "{{redirect_url}}", "{{success_url}}"]`, with `API_PASSWORD` as the key. The URLs in the array are plain, not URL-encoded. Use `null` if there is no success URL. If the call has a `redirectUrl` without a valid `sig`, the connector rejects it with `400 InvalidRedirectUrl`. It then does not cancel the payment. This way, the route only redirects to the links of its own payment. The signature does not limit the host of these links: set `REDIRECT_ALLOWED_HOSTS`, see [Redirect links](./CreatePayment.md#redirect-links).  
 
 With a valid `redirectUrl`, the shopper always returns to the shop:
 

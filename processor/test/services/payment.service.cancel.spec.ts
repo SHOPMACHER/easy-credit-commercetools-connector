@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Errorx } from '@commercetools/connect-payments-sdk';
 import { handleCancelPayment } from '../../src/services/payment.service';
-import { getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
+import { findCartByPaymentId, getCartByPaymentId, updateCart } from '../../src/commercetools/cart.commercetools';
 import { getPaymentById, updatePayment } from '../../src/commercetools/payment.commercetools';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { log } from '../../src/libs/logger';
 
 jest.mock('../../src/commercetools/cart.commercetools');
+
+// The cart release looks the cart up without throwing; the tests set the cart through getCartByPaymentId.
+beforeEach(() => {
+  jest.mocked(findCartByPaymentId).mockImplementation((paymentId) => jest.mocked(getCartByPaymentId)(paymentId));
+});
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
 jest.mock('../../src/libs/logger');

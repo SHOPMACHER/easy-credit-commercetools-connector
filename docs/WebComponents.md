@@ -119,9 +119,9 @@ This guide tells you how to add the web components of the connector to your shop
           urlDenial: window.location.origin + window.location.pathname + '?step=2&status=denied',
         },
         customerRelationship: {
-          customerStatus: isLoggedIn && numberOfOrders > 0 ? 'EXISTING_CUSTOMER' : 'NEW_CUSTOMER',
-          customerSince: customerCreatedAt?.slice(0, 10), // format yyyy-MM-dd
-          numberOfOrders: numberOfOrders,
+          customerStatus: loggedIn === true ? 'EXISTING_CUSTOMER' : 'NEW_CUSTOMER',
+          customerSince: account?.createdAt,
+          numberOfOrders: myOrdersCount,
         },
 
         onError: (err) => {

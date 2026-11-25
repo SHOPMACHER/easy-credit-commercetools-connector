@@ -2,6 +2,27 @@
 
 This file lists the notable changes to the easyCredit commercetools connector (processor and enabler). The changelog starts with release `1.1.0`. It does not list earlier changes.
 
+## [Unreleased]
+
+### Added
+
+- **Express checkout.** `POST /payments/express` creates the easyCredit transaction for the cart of the session without customer data or addresses, and `GET /payments/express/payment-method` tells the shop which express buttons to show. The payment is flagged with `easyCreditExpress` in a new payment custom type. A cart without shipping address gets the placeholder `{ "country": "DE" }` so it can be frozen; the connector removes it when the attempt ends without an order. For express, the connector derives `customerRelationship` from commercetools, including `logisticsServiceProvider` from the shipping method. Authorization checks the address the shop takes over from the express return. See [Create Express Payment](docs/CreateExpressPayment.md) and [Authorize Payment](docs/AuthorizePayment.md#express-payments).
+- **Abandoned express attempts are ended.** Payment-method lookup and payment creation for the cart of the session end an express attempt that the shopper left without a callback and that still holds its placeholder address: the cart is unfrozen, and the placeholder and the payment are removed. The lookup only ends attempts that easyCredit can no longer authorize; payment creation also ends an `OPEN` one and refuses a `PREAUTHORIZED` one with `400 PaymentInProgress`. See [Abandoned attempt](docs/CreateExpressPayment.md#abandoned-attempt).
+
+### Changed
+
+- The cancel webhook keeps the cart frozen while another easyCredit payment on it is `Success` and waits for its order. Before, it unfroze the cart when no other attempt was `Initial` or `Pending`. See [Cancel Payment](docs/CancelPayment.md).
+
+### Configuration
+
+- `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) names the payment custom type for express payments. The post-deploy script creates it. Until then, the express endpoints return `503 ExpressNotConfigured`; the regular checkout is not affected.
+- `REDIRECT_ALLOWED_HOSTS` (optional) limits the hosts of the shop's redirect links for regular and express payments; other links return `400 InvalidField`. Without it, regular links are not checked, as before. See [Redirect links](docs/CreatePayment.md#redirect-links).
+- The optional `view_customers` scope lets express payments send the account creation date as `customerSince`. Without it, a logged-in express customer's `customerSince` is the date of their first order.
+
+### Security
+
+- Express redirect links must be absolute `http` or `https` URLs without user name or password, whitespace, control characters or backslashes. A link such as `https://shop.example.com@evil.example` returns `400 InvalidField`. The checked link is the one stored and signed. This does not limit the host; set `REDIRECT_ALLOWED_HOSTS` for that.
+
 ## [1.1.0] - 2026-11-16
 
 This release adds pay by invoice next to installment. It also improves payment creation, authorization, capture and refunds.

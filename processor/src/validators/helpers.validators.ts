@@ -40,6 +40,12 @@ export const standardKey = (path, message) => [
   [[required((value) => validator.isLength(String(value), { min: 2 }) && /^[a-zA-Z0-9-_]+$/.test(value)), message]],
 ];
 
+// A bare host name such as shop.example.com or localhost, or an IP address; no scheme, port or path.
+export const standardHost = (path, message) => [
+  path,
+  [[required((value) => validator.isFQDN(value, { require_tld: false }) || validator.isIP(value)), message]],
+];
+
 export const standardUrl = (path, message, overrideOptions = {}) => [
   path,
   [

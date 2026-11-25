@@ -88,6 +88,28 @@ describe('readConfiguration', () => {
     expect(() => readConfiguration()).toThrow(code);
   });
 
+  it.each([
+    [undefined, []],
+    ['', []],
+    ['Shop.Example.com, www.shop.example.com,localhost', ['shop.example.com', 'www.shop.example.com', 'localhost']],
+  ])('should read REDIRECT_ALLOWED_HOSTS=%s as lowercase host names', (value, expected) => {
+    process.env.REDIRECT_ALLOWED_HOSTS = value;
+    if (value === undefined) {
+      delete process.env.REDIRECT_ALLOWED_HOSTS;
+    }
+
+    expect(readConfiguration().easyCredit.redirectAllowedHosts).toEqual(expected);
+  });
+
+  it.each(['https://shop.example.com', 'shop.example.com/cart', 'shop.example.com:443', 'shop example.com'])(
+    'should reject REDIRECT_ALLOWED_HOSTS=%s',
+    (value) => {
+      process.env.REDIRECT_ALLOWED_HOSTS = value;
+
+      expect(() => readConfiguration()).toThrow('InvalidRedirectAllowedHosts');
+    },
+  );
+
   it('should read the settings of each payment type from its own variables', () => {
     process.env.INSTALLMENT_PAYMENT_ENABLED = '0';
     process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'gift-card';

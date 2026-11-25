@@ -48,6 +48,19 @@ export function getTransactionCustomTypeKey(): string {
   return process.env.TRANSACTION_CUSTOM_TYPE_KEY ?? EASYCREDIT_TRANSACTION_CUSTOM_TYPE_DEFAULT_KEY;
 }
 
+export const EASYCREDIT_PAYMENT_CUSTOM_TYPE_DEFAULT_KEY = 'easy-credit-payment';
+
+export const EASYCREDIT_EXPRESS_FIELD = 'easyCreditExpress';
+
+// Set when the connector added the express placeholder address, so only that one is removed again.
+export const EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD = 'easyCreditExpressPlaceholderAddress';
+
+export const EXPRESS_PLACEHOLDER_COUNTRY = 'DE';
+
+export function getPaymentCustomTypeKey(): string {
+  return process.env.PAYMENT_CUSTOM_TYPE_KEY ?? EASYCREDIT_PAYMENT_CUSTOM_TYPE_DEFAULT_KEY;
+}
+
 export const EASYCREDIT_CAPTURE_BOOKING_TYPE = 'ApiBooking';
 
 // The scopes that may capture and refund; a token needs one of them.

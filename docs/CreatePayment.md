@@ -6,11 +6,14 @@ For the terms in this document (EC, CT, easyCredit status values, cart freeze), 
 * [Example request](#request)
 * [Switching in the shop checkout](#switching-in-the-shop-checkout)
 * [Switching on the easyCredit page](#switching-on-the-easycredit-page)
+* [Redirect links](#redirect-links)
 * [Response Format](#success-response)
 * [Error response](#error-response-4xx)
 
 ## Overview
 This API creates payment details from CommerceTools. It uses the `cartId`, the necessary `redirectLinks` and the `customerRelationship` data. The optional `paymentType` selects `INSTALLMENT_PAYMENT` (default) or `BILL_PAYMENT`.
+
+For an express checkout from the product page or the cart, without addresses, see [Create Express Payment](./CreateExpressPayment.md).
 <br />
 
 ## Conditions
@@ -23,7 +26,7 @@ To use this function, these conditions must be true:
 
 ## Workflow
 
-1. **Get `cart`**: Get the CT `cart` instance with the `cartId`. If the selected payment type is off in the connector configuration (`INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED=0`), the connector rejects the request before it reads the cart.
+1. **Get `cart`**: Get the CT `cart` instance with the `cartId`. If the selected payment type is off in the connector configuration (`INSTALLMENT_PAYMENT_ENABLED=0` or `BILL_PAYMENT_ENABLED=0`), the connector rejects the request before it reads the cart. If the cart of the session holds the placeholder address of an abandoned express attempt, the connector first ends that attempt. While easyCredit can still authorize the attempt, the connector refuses the request with `400 PaymentInProgress`. See [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt).
 2. **Check payment type availability, then the cart**: The connector checks the selected payment type, see [Payment type availability](#payment-type-availability). Then the connector validates the addresses and the currency. The connector gets the cart again for this request. It therefore also checks items that you added after the GET payment method call.
 3. **Discard stale attempts and freeze the cart**: The connector discards or refuses earlier easyCredit payments on the cart, see [Switching in the shop checkout](#switching-in-the-shop-checkout). Then it freezes the cart, see [Cart freeze](#cart-freeze).
 4. **Create CT Payment**: Create the payment from the cart and attach it to the cart. `paymentMethodInfo` records the selected type, see [Stored payment method](#stored-payment-method).
@@ -112,6 +115,14 @@ The connector does not learn about a switch from a redirect: `urlSuccess` goes s
 
 The connector validates the final type again for the cart before the authorization, see [Authorize Payment](./AuthorizePayment.md#sync-the-final-payment-type). A shopper who gets a switch offer can pick pay by invoice after the credit check, even if the cart fails one of its rules. The connector then rejects the authorization. With `BILL_PAYMENT_ENABLED=0`, the flag is `false`. easyCredit then offers no switch, and installment payments behave as in earlier versions.
 <br />
+
+## Redirect links
+
+The shopper's browser is sent to `urlSuccess` by easyCredit, and to `urlCancellation` and `urlDenial` by the connector's cancel webhook. The webhook link is signed, so it only redirects to the link of its payment, see [Cancel Payment](./CancelPayment.md). Which links a payment may carry is set by the request.
+
+With `REDIRECT_ALLOWED_HOSTS` set (comma-separated host names, for example `shop.example.com,www.shop.example.com`), every link of Create Payment and [Create Express Payment](./CreateExpressPayment.md) must be an absolute `http` or `https` URL on one of these hosts, without user name or password, whitespace, control characters or backslashes. Otherwise the request returns `400 InvalidField` before the cart is read. The connector stores and signs the link in its parsed form, for example `https://shop.example.com/` for `https://SHOP.example.com`.
+
+Without `REDIRECT_ALLOWED_HOSTS`, Create Payment passes the links on as before, including relative links, and Create Express Payment applies the same format checks without the host check. Anyone with a valid session can then create a payment whose cancel link sends the shopper to any site, so set `REDIRECT_ALLOWED_HOSTS` in production.
 
 ## Transaction custom fields
 
@@ -229,6 +240,7 @@ If the cart fails validation, the API returns a `400 Bad Request` error. The che
 
 | Code | Reason |
 | --- | --- |
+| `InvalidField` | `REDIRECT_ALLOWED_HOSTS` is set and a link does not meet it, see [Redirect links](#redirect-links). Returned before the cart is read. |
 | `InvalidBillingAddress`, `InvalidShippingAddress` | The cart has no billing or shipping address. |
 | `AddressesUnmatched` | Billing and shipping address differ (`additionalStreetInfo` included, see [Get Payment Method](./GetPaymentMethod.md)), or the country is not `DE`. |
 | `InvalidAddress` | The billing address is not complete or not valid: `firstName`, `lastName`, `streetName` or `city` is blank, or `postalCode` does not have 5 digits. The API reports this only if both addresses exist, in addition to the codes above. |

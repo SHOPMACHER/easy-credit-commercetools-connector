@@ -32,6 +32,11 @@ jest.mock('../../src/services/payment.service', () => ({
   handleRefundPayment: jest.fn(),
 }));
 
+// The regular routes pass the session's cart, so the service cleans up only that cart.
+jest.mock('../../src/libs/fastify/context/context', () => ({
+  getCartIdFromContext: jest.fn(() => 'session-cart'),
+}));
+
 const mockAuthorize = jest.fn(async () => {});
 // Filled when the routes are registered, so clearing the mocks between tests keeps it.
 const authorizedScopes: string[][] = [];
@@ -107,7 +112,7 @@ describe('paymentsRoute', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual(mockResponse);
-      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId, undefined);
+      expect(handlePaymentMethod).toHaveBeenCalledWith(cartId, undefined, { sessionCartId: 'session-cart' });
     });
 
     it('should pass the requested payment type to the handler', async () => {
@@ -128,7 +133,7 @@ describe('paymentsRoute', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(handlePaymentMethod).toHaveBeenCalledWith('12345', 'BILL_PAYMENT');
+      expect(handlePaymentMethod).toHaveBeenCalledWith('12345', 'BILL_PAYMENT', { sessionCartId: 'session-cart' });
     });
 
     it('should reject an unknown payment type', async () => {
@@ -232,7 +237,24 @@ describe('paymentsRoute', () => {
         mockRequest.redirectLinks,
         mockRequest.customerRelationship,
         paymentType,
+        'session-cart',
       );
+    });
+
+    it('should reject a request without customerRelationship', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/payments`,
+        body: {
+          cartId: '12345',
+          redirectLinks: { urlSuccess: 'https://s.com', urlCancellation: 'https://c.com', urlDenial: 'https://d.com' },
+        },
+        headers: { 'x-session-id': sessionId, 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().errors).toEqual([expect.objectContaining({ code: 'RequiredField' })]);
+      expect(handleCreatePayment).not.toHaveBeenCalled();
     });
   });
 

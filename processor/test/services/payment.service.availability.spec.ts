@@ -15,6 +15,9 @@ import { paymentsRoute } from '../../src/routes/payment.route';
 import { errorHandler } from '../../src/libs/fastify/error-handler';
 
 // Runs the real service, webshop service, validators and config; only the external APIs are mocked.
+// What a shop sends in the regular create body; the connector passes it on unchanged.
+const shopRelationship = { customerStatus: 'NEW_CUSTOMER' as const, customerSince: '2024-01-01', numberOfOrders: 0 };
+
 jest.mock('../../src/commercetools/cart.commercetools');
 jest.mock('../../src/commercetools/payment.commercetools');
 jest.mock('../../src/client/easycredit.client');
@@ -491,7 +494,7 @@ describe('payment type availability', () => {
       const result = await handlePaymentMethod('cart123');
       expect(result.paymentTypes.BILL_PAYMENT.available).toBe(true);
 
-      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(
         expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT', paymentSwitchPossible: true }),
@@ -509,7 +512,7 @@ describe('payment type availability', () => {
     it('should create a BILL_PAYMENT for a cart that only bill payment could pay', async () => {
       mockCreateFlow(mockCart(100));
 
-      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship, BILL);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'BILL_PAYMENT' }));
       expect(updateCart).toHaveBeenNthCalledWith(1, expect.anything(), [{ action: 'freezeCart' }]);
@@ -546,7 +549,7 @@ describe('payment type availability', () => {
           jest.mocked(getCartById).mockResolvedValue({ ...mockCart(amount), cartState });
 
           await expect(
-            getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+            getErrorCodes(handleCreatePayment('cart123', redirectLinks, shopRelationship, BILL)),
           ).resolves.toEqual([{ code, httpErrorStatus: 400 }]);
           expect(updateCart).not.toHaveBeenCalled();
           expect(createPayment).not.toHaveBeenCalled();
@@ -580,7 +583,7 @@ describe('payment type availability', () => {
       jest.mocked(getCartById).mockResolvedValue(cart);
 
       await expect(
-        getErrorCodes(handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL)),
+        getErrorCodes(handleCreatePayment('cart123', redirectLinks, shopRelationship, BILL)),
       ).resolves.toEqual([{ code, httpErrorStatus: 400 }]);
       expect(updateCart).not.toHaveBeenCalled();
       expect(createPayment).not.toHaveBeenCalled();
@@ -593,7 +596,7 @@ describe('payment type availability', () => {
       mockCreateFlow(mockCart(500));
 
       try {
-        await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+        await handleCreatePayment('cart123', redirectLinks, shopRelationship);
       } finally {
         process.env.BILL_PAYMENT_ENABLED = original;
       }
@@ -620,7 +623,7 @@ describe('payment type availability', () => {
               urlCancellation: 'https://example.com',
               urlDenial: 'https://example.com',
             },
-            {} as ECTransactionCustomerRelationship,
+            shopRelationship,
           ),
         ),
       ).resolves.toEqual([{ code: 'InvalidAmount', httpErrorStatus: 400 }]);
@@ -633,8 +636,7 @@ describe('payment type availability', () => {
   describe('bill payment exclusion for non-physical items', () => {
     const originalEnv = { ...process.env };
 
-    const createBillPayment = () =>
-      handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship, BILL);
+    const createBillPayment = () => handleCreatePayment('cart123', redirectLinks, shopRelationship, BILL);
 
     beforeEach(() => {
       process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher, gift-card';
@@ -774,7 +776,7 @@ describe('payment type availability', () => {
     it('should keep installment creation working for a cart with a voucher', async () => {
       mockCreateFlow(mockCart(500, { lineItems: [voucherItem] }));
 
-      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
     });
@@ -826,7 +828,7 @@ describe('payment type availability', () => {
       jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('insufficient_scope'));
       mockCreateFlow(mockCart(500, { lineItems: [voucherItem] }));
 
-      await handleCreatePayment('cart123', redirectLinks, {} as ECTransactionCustomerRelationship);
+      await handleCreatePayment('cart123', redirectLinks, shopRelationship);
 
       expect(createECPaymentMock).toHaveBeenCalledWith(expect.objectContaining({ paymentType: 'INSTALLMENT_PAYMENT' }));
       expect(getProductTypesByKeys).not.toHaveBeenCalled();

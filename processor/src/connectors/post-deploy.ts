@@ -4,13 +4,17 @@ import { updateCustomObject } from '../commercetools/customObject.commercetools'
 import {
   EASYCREDIT_CONNECTOR_KEY,
   EASYCREDIT_CONNECTOR_URL,
+  getPaymentCustomTypeKey,
   getTransactionCustomTypeKey,
 } from '../utils/constant.utils';
-import { createOrUpdateTransactionCustomType } from '../commercetools/customFields.commercetools';
+import {
+  createOrUpdatePaymentCustomType,
+  createOrUpdateTransactionCustomType,
+} from '../commercetools/customFields.commercetools';
 
 const CONNECT_APPLICATION_URL_KEY = 'CONNECT_SERVICE_URL';
 
-async function postDeploy(_properties: Map<string, unknown>) {
+export async function postDeploy(_properties: Map<string, unknown>) {
   const applicationUrl = _properties.get(CONNECT_APPLICATION_URL_KEY);
 
   assertString(applicationUrl, CONNECT_APPLICATION_URL_KEY);
@@ -23,9 +27,10 @@ async function postDeploy(_properties: Map<string, unknown>) {
 
   const transactionCustomTypeKey = getTransactionCustomTypeKey();
   await createOrUpdateTransactionCustomType(transactionCustomTypeKey);
+  await createOrUpdatePaymentCustomType(getPaymentCustomTypeKey());
 }
 
-async function runPostDeployScripts() {
+export async function runPostDeployScripts() {
   try {
     const properties = new Map(Object.entries(process.env));
     await postDeploy(properties);
@@ -37,4 +42,6 @@ async function runPostDeployScripts() {
   }
 }
 
-runPostDeployScripts();
+if (require.main === module) {
+  runPostDeployScripts();
+}
