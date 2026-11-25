@@ -570,6 +570,15 @@ describe('webshop.service', () => {
         );
       });
 
+      it('should not warn about the merchant limits of a disabled payment type', async () => {
+        mockConfig('0', '300', 'webShopId123', '1', { billPaymentMaxAmount: '40' });
+
+        const { BILL_PAYMENT } = await getPaymentTypesAvailability(500);
+
+        expect(BILL_PAYMENT).toEqual({ enabled: false, available: false, minAmount: 50, maxAmount: 5000 });
+        expect(log.warn).not.toHaveBeenCalled();
+      });
+
       it('should use the easyCredit limits if the merchant limits are invalid', async () => {
         mockLimits({ billPaymentMinAmount: '1000', billPaymentMaxAmount: '100' });
 

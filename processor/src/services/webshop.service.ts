@@ -224,12 +224,9 @@ const toAvailability = (
     return { enabled, available: false };
   }
 
-  const limits = getEffectiveLimits(
-    paymentType,
-    ecMin,
-    ecMax,
-    getPaymentTypeConfig(easyCredit, paymentType).amountLimits,
-  );
+  // A disabled type is never offered, so its merchant limits are neither applied nor warned about.
+  const merchantLimits = enabled ? getPaymentTypeConfig(easyCredit, paymentType).amountLimits : {};
+  const limits = getEffectiveLimits(paymentType, ecMin, ecMax, merchantLimits);
 
   return {
     enabled,

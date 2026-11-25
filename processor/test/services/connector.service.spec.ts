@@ -1,4 +1,9 @@
-import { healthCheck, isWidgetEnabled, WIDGET_PAYMENT_TYPES_TIMEOUT_MS } from '../../src/services/connector.service';
+import {
+  healthCheck,
+  isWidgetEnabled,
+  logConfigurationWarnings,
+  WIDGET_PAYMENT_TYPES_TIMEOUT_MS,
+} from '../../src/services/connector.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -185,6 +190,43 @@ describe('Health Check and Widget Functions', () => {
         webShopId: 'mock-webshop-id',
         paymentTypes: [],
       });
+    });
+  });
+  describe('logConfigurationWarnings', () => {
+    const withEasyCredit = (easyCredit: Record<string, string>) =>
+      (readConfiguration as jest.Mock).mockReturnValueOnce({ easyCredit });
+
+    it('should not warn for a valid configuration', () => {
+      withEasyCredit({ billPaymentEnabled: '1', billPaymentMinAmount: '100', billPaymentMaxAmount: '1000' });
+
+      logConfigurationWarnings();
+
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it('should warn if both payment types are disabled', () => {
+      withEasyCredit({ installmentPaymentEnabled: '0', billPaymentEnabled: '0' });
+
+      logConfigurationWarnings();
+
+      expect(log.warn).toHaveBeenCalledWith(
+        'Installment and bill payment are both disabled, the connector offers no easyCredit payment method',
+      );
+    });
+
+    it('should warn once for each payment type with invalid amount limits', () => {
+      withEasyCredit({
+        installmentPaymentMinAmount: 'abc',
+        billPaymentMinAmount: '1000',
+        billPaymentMaxAmount: '100',
+      });
+
+      logConfigurationWarnings();
+
+      expect((log.warn as jest.Mock).mock.calls).toEqual([
+        ['Invalid INSTALLMENT_PAYMENT_MIN_AMOUNT or INSTALLMENT_PAYMENT_MAX_AMOUNT, using the easyCredit limits'],
+        ['Invalid BILL_PAYMENT_MIN_AMOUNT or BILL_PAYMENT_MAX_AMOUNT, using the easyCredit limits'],
+      ]);
     });
   });
 });

@@ -1,9 +1,24 @@
 import { log } from '../libs/logger';
-import { readConfiguration } from '../utils/config.utils';
+import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { ECTransactionPaymentType } from '../types/payment.types';
 import { WidgetEnabledResponseSchemaDTO } from '../dtos/operations/widgetEnabled.dto';
+
+// Settings that don't stop the connector but likely aren't what the merchant meant; logged once at startup.
+export const logConfigurationWarnings = (): void => {
+  const { easyCredit } = readConfiguration();
+
+  if (easyCredit.installmentPaymentEnabled === '0' && easyCredit.billPaymentEnabled === '0') {
+    log.warn('Installment and bill payment are both disabled, the connector offers no easyCredit payment method');
+  }
+
+  for (const paymentType of Object.values(ECTransactionPaymentType)) {
+    if (getPaymentTypeConfig(easyCredit, paymentType).invalidAmountLimits) {
+      log.warn(`Invalid ${paymentType}_MIN_AMOUNT or ${paymentType}_MAX_AMOUNT, using the easyCredit limits`);
+    }
+  }
+};
 
 export const healthCheck = async () => {
   try {

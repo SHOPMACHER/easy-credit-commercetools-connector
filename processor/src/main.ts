@@ -1,24 +1,9 @@
 import 'dotenv/config';
 
-import { getPaymentTypeConfig, readConfiguration } from './utils/config.utils';
-import { ECTransactionPaymentType } from './types/payment.types';
-
 import { setupFastify } from './server/server';
-import { log } from './libs/logger';
+import { logConfigurationWarnings } from './services/connector.service';
 
-// Read env variables
-const { easyCredit } = readConfiguration();
-const { installmentPaymentEnabled, billPaymentEnabled } = easyCredit;
-
-if (installmentPaymentEnabled === '0' && billPaymentEnabled === '0') {
-  log.warn('Installment and bill payment are both disabled, the connector offers no easyCredit payment method');
-}
-
-for (const paymentType of Object.values(ECTransactionPaymentType)) {
-  if (getPaymentTypeConfig(easyCredit, paymentType).invalidAmountLimits) {
-    log.warn(`Invalid ${paymentType}_MIN_AMOUNT or ${paymentType}_MAX_AMOUNT, using the easyCredit limits`);
-  }
-}
+logConfigurationWarnings();
 
 (async () => {
   const server = await setupFastify();
