@@ -190,13 +190,14 @@ const getEffectiveLimits = (
   ecMin: number,
   ecMax: number,
   merchant: MerchantAmountLimits,
+  warnOnConflict: boolean,
 ): AmountLimits => {
   const minAmount = Math.max(merchant.minAmount ?? ecMin, ecMin);
   const maxAmount = Math.min(merchant.maxAmount ?? ecMax, ecMax);
 
   if (minAmount > maxAmount) {
     const key = `${paymentType}:${ecMin}-${ecMax}:${merchant.minAmount}-${merchant.maxAmount}`;
-    if (!warnedLimitConflicts.has(key)) {
+    if (warnOnConflict && !warnedLimitConflicts.has(key)) {
       warnedLimitConflicts.add(key);
       log.warn(`The ${paymentType} merchant limits do not overlap the easyCredit limits, using the easyCredit limits`, {
         merchantLimits: merchant,
@@ -224,9 +225,9 @@ const toAvailability = (
     return { enabled, available: false };
   }
 
-  // A disabled type is never offered, so its merchant limits are neither applied nor warned about.
-  const merchantLimits = enabled ? getPaymentTypeConfig(easyCredit, paymentType).amountLimits : {};
-  const limits = getEffectiveLimits(paymentType, ecMin, ecMax, merchantLimits);
+  // A disabled type is never offered, so a conflict in its limits isn't worth a warning.
+  const { amountLimits } = getPaymentTypeConfig(easyCredit, paymentType);
+  const limits = getEffectiveLimits(paymentType, ecMin, ecMax, amountLimits, enabled);
 
   return {
     enabled,

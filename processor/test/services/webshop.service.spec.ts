@@ -570,6 +570,20 @@ describe('webshop.service', () => {
         );
       });
 
+      it('should narrow the limits of a disabled payment type', async () => {
+        mockConfig('0', '300', 'webShopId123', '1', { billPaymentMinAmount: '100' });
+
+        const { BILL_PAYMENT } = await getPaymentTypesAvailability(500);
+
+        expect(BILL_PAYMENT).toEqual({
+          enabled: false,
+          available: false,
+          minAmount: 100,
+          maxAmount: 5000,
+          merchantLimited: true,
+        });
+      });
+
       it('should not warn about the merchant limits of a disabled payment type', async () => {
         mockConfig('0', '300', 'webShopId123', '1', { billPaymentMaxAmount: '40' });
 
