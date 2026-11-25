@@ -22,9 +22,9 @@ This API completes an express checkout started with [Create Express Payment](./C
 ## Workflow
 
 1. Check the payment against the session cart (conditions 2 and 3). `OPEN`, `DECLINED`, `EXPIRED` or a transaction easyCredit no longer finds abandon the attempt, see [Error responses](#error-responses).
-2. Read address and contact from the easyCredit transaction and check them: complete address in `DE`, and an invoice address entered on the easyCredit page must have the same location as the shipping address.
-3. Write the address as billing and shipping address of the cart, and the email for guests.
-4. Set the shipping method: the method already on the cart (usually the default one set by [Create Express Payment](./CreateExpressPayment.md#shipping-costs)) if it matches the address, otherwise the default method that matches the cart. A cart the shop froze with `HardFreeze` keeps a matching method as it is, as commercetools rejects setting it.
+2. Read address and contact from the easyCredit transaction and check them: complete address in `DE`, and an invoice address entered on the easyCredit page must be the same as the shipping address, name included. The cart gets one address as billing and shipping address, as Create Payment requires. A missing name on either side falls back to the customer name.
+3. Choose the shipping method for the easyCredit country, before anything is written: the method already on the cart (usually the default one set by [Create Express Payment](./CreateExpressPayment.md#shipping-costs)) if it matches, otherwise the default matching method. Without a matching method, or on a cart the shop froze with `HardFreeze` whose method would have to change, the attempt ends and the cart gets no customer data.
+4. Write the address as billing and shipping address, the email for guests and the shipping method in one cart update. A cart frozen with `HardFreeze` accepts the address and the email but not `setShippingMethod` (checked against commercetools on 2026-11-25), so it keeps its matching method. commercetools rejecting this update with `400` ends the attempt. A method the connector swapped in is recorded on the payment, see [Stored express flag](./CreateExpressPayment.md#stored-express-flag).
 5. Sync the payment type the shopper chose on the easyCredit page, as in [Get Payment](./GetPayment.md).
 6. Validate the cart for that payment type as in [Create Payment](./CreatePayment.md): addresses, private customer, currency, limits and [excluded cart items](./GetPaymentMethod.md#excluded-cart-items).
 7. Read the CT payment again. If a concurrent call (for example [Cancel Payment](./CancelPayment.md)) moved the `Authorization` transaction away from `Initial` in the meantime, stop with `400 TransactionNotPreauthorized` and write nothing.
@@ -46,7 +46,8 @@ sequenceDiagram
         C->>CT: transaction Failure, unfreeze cart
         C-->>S: 400
     else
-        C->>CT: set addresses (+ guest email), set shipping method
+        C->>CT: match shipping methods for the easyCredit country
+        C->>CT: set addresses (+ guest email) and shipping method
         C->>CT: sync payment type, validate cart
         opt cart total differs from easyCredit order value
             C->>EC: PATCH transaction (orderValue, items)
@@ -81,7 +82,7 @@ If they differ, the connector:
 3. replaces the CT `Authorization` transaction, as commercetools cannot change a transaction amount: the old one is set to `Failure`, a new `Initial` one with the new amount, the same `interactionId` and the same custom fields is added, and `amountPlanned` follows. The connector always works with the transaction that is not `Failure`.
 4. stores `easyCreditInterest` and `easyCreditTotalValue` from the response on the new transaction.
 
-easyCredit errors in steps 1 and 2 abandon the attempt. A commercetools error in step 3 (for example `409` from a second return call that replaced the transaction first) keeps it: a retry finds easyCredit already updated and only replaces the transaction.
+A rejected PATCH or a decision that is not `POSITIVE` abandons the attempt. A PATCH without an answer (`502` / `504 TransactionUpdateFailed`) keeps it, as easyCredit may have changed the amount: a retry reads the new `orderValue` and only replaces the CT transaction. A commercetools error in step 3 (for example `409` from a second return call that replaced the transaction first) keeps it: a retry finds easyCredit already updated and only replaces the transaction.
 
 The limits are validated for the new total before the PATCH. The later authorization needs no amount: easyCredit authorizes the updated `orderValue`.
 
@@ -144,13 +145,14 @@ X-Session-Id: <session_id>
 | `TransactionExpired` | easyCredit reports `EXPIRED`, or no longer finds the transaction (`404`, `410`, `400 CONSTRAINT_VIOLATION` on `decision`) |
 | `DecisionNotPositive` | The decision, or the decision after the PATCH, is not `POSITIVE` |
 | `InvalidShippingAddress` | easyCredit returned no shipping address |
-| `AddressesUnmatched`, `InvalidAddress` | The address is not in `DE` or incomplete, or the invoice address differs from the shipping address |
-| `NoShippingMethod` | No shipping method matches the address |
-| `ShippingMethodNotChangeable` | The shop froze the cart with `HardFreeze` and its shipping method does not match the address |
+| `AddressesUnmatched`, `InvalidAddress` | The address is not in `DE` or incomplete, or the invoice address differs from the shipping address (name included) |
+| `NoShippingMethod` | No shipping method matches the address. The cart gets no customer data |
+| `ShippingMethodNotChangeable` | The shop froze the cart with `HardFreeze` and its shipping method does not match the address. The cart gets no customer data |
+| commercetools error with `400` | commercetools rejected the update with the customer data and the shipping method |
 | `ShippingModeNotSupported` | The cart uses multiple shipping addresses |
 | `InvalidAmount`, `BillPaymentExcludedItems`, `CorporateCustomerNotAllowed`, `InvalidCurrency` | The cart no longer meets the rules of the payment type, see [Create Payment](./CreatePayment.md#error-response-400) |
 | `AmountIncreaseNotPossible` | The total rose after the decision and easyCredit rejected the PATCH |
-| easyCredit error, `TransactionUpdateFailed` | easyCredit rejected the PATCH of a lower total, or did not answer it (`502` / `504`) |
+| easyCredit error | easyCredit rejected the PATCH of a lower total |
 
 **Attempt left open:** nothing is failed and the call can be repeated.
 
@@ -161,3 +163,4 @@ X-Session-Id: <session_id>
 | `TransactionNotPreauthorized` | The `Authorization` transaction is no longer `Initial`, or easyCredit reports `AUTHORIZED` |
 | `PaymentTypeNotAvailable`, `EasyCreditUnavailable` | The payment type cannot be offered right now |
 | commercetools or easyCredit error with `409` or `5xx` | Transient failure while reading or updating, including a `409` while replacing the CT transaction after the PATCH |
+| `TransactionUpdateFailed` (`502` / `504`) | easyCredit did not answer the PATCH. A retry reads whether easyCredit applied it |

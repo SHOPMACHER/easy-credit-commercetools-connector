@@ -51,7 +51,7 @@ commercetools cannot freeze a cart without shipping address. A cart without one 
 
 With the default `SoftFreeze`, addresses, email and the shipping method can still be set on the frozen cart (checked against commercetools on 2026-11-03). Express Return sets the shipping method for the easyCredit address, and the authorization syncs a total that changed after the return, see [Authorize Payment](./AuthorizePayment.md#express-payments).
 
-The CT payment records in `easyCreditExpressPlaceholderAddress` whether the connector added the placeholder. When the attempt ends without an order, the connector puts the cart back as it was before the express click: it unfreezes the cart and removes the placeholder in the same update. This happens on cancel and denial, on `DECLINED`, `EXPIRED` and failed checks during the authorization, and when the create request itself fails. A shipping method set on the placeholder is removed too, because commercetools does not unset a shipping address while a shipping method is set. Without an address before the express click, the shopper can only have set it on the placeholder.
+The CT payment records in `easyCreditExpressPlaceholderAddress` whether the connector added the placeholder, and in `easyCreditExpressShippingMethod` which shipping method it set. When the attempt ends without an order, the connector puts the cart back as it was before the express click: it unfreezes the cart and removes the placeholder and its shipping method in the same update. This happens on cancel and denial, on `DECLINED`, `EXPIRED` and failed checks during the authorization, and when the create request itself fails. A shipping method set on the placeholder is removed too, because commercetools does not unset a shipping address while a shipping method is set. Without an address before the express click, the shopper can only have set it on the placeholder.
 
 The cart keeps its shipping address if it no longer holds only the country (the express return or the shop replaced the placeholder), or if the shop had set it before the express click.
 <br />
@@ -60,11 +60,11 @@ The cart keeps its shipping address if it no longer holds only the country (the 
 
 easyCredit finances the order value including shipping costs, and it rejects any later increase of a transaction (`PATCH` with a higher `orderValue`, checked in the sandbox on 2026-11-15). The amount sent here must therefore already include the shipping costs, as in TeamBank's Magento plugin (`prepareExpressCheckout`).
 
-A cart without shipping method gets the default method that matches the cart in the same update that freezes it: for the placeholder `{ "country": "DE" }`, or for the shipping address the cart already has. A method the shopper already chose is kept. Without a matching method the cart is frozen without one, and [Express Return](./ExpressReturn.md) abandons the attempt if no method matches the easyCredit address either.
+A cart without shipping method gets the default method that matches the cart in the same update that freezes it: for the placeholder `{ "country": "DE" }`, or for the shipping address the cart already has. A method the shopper already chose is kept. A cart the shop froze before the express click keeps its freeze: with `SoftFreeze` it gets the method in its own update, and with `HardFreeze`, which rejects `setShippingMethod`, a cart without a method is refused with `400 ShippingMethodMissing` before anything changes. Otherwise the return would always add shipping costs that easyCredit cannot accept. Without a matching method the cart is frozen without one, and [Express Return](./ExpressReturn.md) abandons the attempt if no method matches the easyCredit address either.
 
 Express Return keeps this method if it still matches the easyCredit address. If the total still rises after the return (another method, an address in another shipping zone), easyCredit rejects the update and the attempt ends with `400 AmountIncreaseNotPossible`, see [Express Return](./ExpressReturn.md#shipping-costs-and-amount-sync).
 
-The method set on the placeholder is removed with the placeholder when the attempt ends without an order. On a cart that had a shipping address before the express click, the method stays.
+When the attempt ends without an order, the method the connector set is removed, also on a cart that had a shipping address before the express click. A method the shopper chose since (for example on the confirm page) stays, as does a method Express Return kept. A method Express Return swapped in counts as set by the connector.
 
 ### Abandoned attempt
 
@@ -112,12 +112,13 @@ Orders of a guest are not counted by email, because anyone can enter another sho
 
 ## Stored express flag
 
-The CT payment gets the custom type configured in `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) with these Boolean fields:
+The CT payment gets the custom type configured in `PAYMENT_CUSTOM_TYPE_KEY` (default `easy-credit-payment`) with these fields:
 
 | Field | Content |
 | --- | --- |
-| `easyCreditExpress` | Always `true`. |
-| `easyCreditExpressPlaceholderAddress` | `true` if the connector added the placeholder address, see [Placeholder address](#placeholder-address). |
+| `easyCreditExpress` | Boolean, always `true`. |
+| `easyCreditExpressPlaceholderAddress` | Boolean, `true` if the connector added the placeholder address, see [Placeholder address](#placeholder-address). |
+| `easyCreditExpressShippingMethod` | String, id of the shipping method the connector set at init or at the return, see [Shipping costs](#shipping-costs). Not set when the cart kept its own method. |
 
 The post-deploy script creates the type, or adds missing fields to an existing type with this key, so the type can be shared with other connectors. The existing type must include `payment` in its `resourceTypeIds`, otherwise the deployment fails.
 

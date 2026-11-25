@@ -5,6 +5,7 @@ import {
   EASYCREDIT_CONNECTOR_URL,
   EASYCREDIT_EXPRESS_FIELD,
   EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD,
+  EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD,
   EASYCREDIT_INTEREST_FIELD,
   EASYCREDIT_PAYMENT_METHOD,
   EASYCREDIT_PAYMENT_TYPE_LABELS,
@@ -180,7 +181,11 @@ export const mapCTCartToECPayment = async (
 export const mapCTCartToCTPayment = (
   cart: Cart,
   paymentType: ECTransactionPaymentType = ECTransactionPaymentType.ECTransactionInstallmentPayment,
-  { express = false, placeholderAddress = false }: ExpressOptions & { placeholderAddress?: boolean } = {},
+  {
+    express = false,
+    placeholderAddress = false,
+    shippingMethodId,
+  }: ExpressOptions & { placeholderAddress?: boolean; shippingMethodId?: string } = {},
 ): PaymentDraft => ({
   amountPlanned: {
     currencyCode: cart.totalPrice.currencyCode,
@@ -194,7 +199,11 @@ export const mapCTCartToCTPayment = (
   ...(express && {
     custom: {
       type: { typeId: 'type', key: getPaymentCustomTypeKey() },
-      fields: { [EASYCREDIT_EXPRESS_FIELD]: true, [EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]: placeholderAddress },
+      fields: {
+        [EASYCREDIT_EXPRESS_FIELD]: true,
+        [EASYCREDIT_EXPRESS_PLACEHOLDER_FIELD]: placeholderAddress,
+        ...(shippingMethodId && { [EASYCREDIT_EXPRESS_SHIPPING_METHOD_FIELD]: shippingMethodId }),
+      },
     },
   }),
 });

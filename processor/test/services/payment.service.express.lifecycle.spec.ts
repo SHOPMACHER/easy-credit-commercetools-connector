@@ -53,7 +53,7 @@ const address = {
 const EXPRESS_WITH_PLACEHOLDER = { easyCreditExpress: true, easyCreditExpressPlaceholderAddress: true };
 
 const buildPayment = (
-  fields: Record<string, boolean> | null = EXPRESS_WITH_PLACEHOLDER,
+  fields: Record<string, boolean | string> | null = EXPRESS_WITH_PLACEHOLDER,
   state = 'Initial',
   method = 'easycredit',
 ) => ({
@@ -186,6 +186,26 @@ describe('express payment lifecycle', () => {
       await handleCancelPayment(PAYMENT_ID);
 
       expect(updateCart).toHaveBeenCalledWith(cart, [{ action: 'unfreezeCart' }]);
+    });
+
+    it.each([
+      [
+        'remove the shipping method the connector set',
+        'standard',
+        [{ action: 'unfreezeCart' }, { action: 'setShippingMethod' }],
+      ],
+      ['keep a shipping method the shopper chose since', 'express', [{ action: 'unfreezeCart' }]],
+    ])('should %s once the address replaced the placeholder', async (_case, cartMethodId, actions) => {
+      givenPayment(buildPayment({ ...EXPRESS_WITH_PLACEHOLDER, easyCreditExpressShippingMethod: 'standard' }));
+      const cart = buildCart({
+        shippingAddress: address,
+        shippingInfo: { shippingMethod: { typeId: 'shipping-method', id: cartMethodId } },
+      });
+      givenCart(cart);
+
+      await handleCancelPayment(PAYMENT_ID);
+
+      expect(updateCart).toHaveBeenCalledWith(cart, actions);
     });
 
     it('should keep a country-only address the shop set itself', async () => {

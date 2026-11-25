@@ -94,7 +94,10 @@ const BILL = ECTransactionPaymentType.ECTransactionBillPayment;
 const INSTALLMENT = ECTransactionPaymentType.ECTransactionInstallmentPayment;
 
 // Applies the cart actions the service sends, so later steps see the updated cart.
-const applyCartActions = async (current: Cart, actions: { action: string; address?: unknown }[]) =>
+const applyCartActions = async (
+  current: Cart,
+  actions: { action: string; address?: unknown; shippingMethod?: { id: string } }[],
+) =>
   actions.reduce<Record<string, unknown>>(
     (cart, action) => {
       switch (action.action) {
@@ -104,6 +107,13 @@ const applyCartActions = async (current: Cart, actions: { action: string; addres
           return { ...cart, cartState: 'Active' };
         case 'setShippingAddress':
           return { ...cart, shippingAddress: action.address };
+        case 'setShippingMethod':
+          return {
+            ...cart,
+            shippingInfo: action.shippingMethod
+              ? { shippingMethod: { typeId: 'shipping-method', id: action.shippingMethod.id } }
+              : undefined,
+          };
         default:
           return cart;
       }
@@ -471,6 +481,91 @@ describe('express payment creation', () => {
         ]);
       });
 
+      it('should record the method it set on the payment, so a cleanup removes only that one', async () => {
+        mockCreateFlow(expressCart(500));
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(createPayment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom: expect.objectContaining({
+              fields: {
+                easyCreditExpress: true,
+                easyCreditExpressPlaceholderAddress: true,
+                easyCreditExpressShippingMethod: 'standard',
+              },
+            }),
+          }),
+        );
+      });
+
+      it('should remove the method it set when easyCredit rejects the init', async () => {
+        mockCreateFlow(expressCart(500, { shippingAddress: address }));
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+        createECPaymentMock.mockImplementation(async () => {
+          throw new Errorx({ code: 'BadRequest', message: 'rejected', httpErrorStatus: 400 });
+        });
+
+        await expect(handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT)).rejects.toThrow(
+          'rejected',
+        );
+        expect(updateCart).toHaveBeenLastCalledWith(expect.anything(), [
+          { action: 'unfreezeCart' },
+          { action: 'setShippingMethod' },
+          { action: 'removePayment', payment: { typeId: 'payment', id: 'payment123' } },
+        ]);
+      });
+
+      it('should set the method on a cart the shop froze with SoftFreeze, without freezing it again', async () => {
+        mockCreateFlow(
+          expressCart(500, { cartState: 'Frozen', freezeStrategy: 'SoftFreeze', shippingAddress: address }),
+        );
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(updateCart).toHaveBeenCalledWith(expect.anything(), [
+          { action: 'setShippingMethod', shippingMethod: { typeId: 'shipping-method', id: 'standard' } },
+        ]);
+        expect(updateCart).not.toHaveBeenCalledWith(
+          expect.anything(),
+          expect.arrayContaining([{ action: 'freezeCart' }]),
+        );
+      });
+
+      it('should refuse a cart the shop froze with HardFreeze without a method, before anything changes', async () => {
+        mockCreateFlow(
+          expressCart(500, { cartState: 'Frozen', freezeStrategy: 'HardFreeze', shippingAddress: address }),
+        );
+        jest.mocked(getMatchingShippingMethods).mockResolvedValue(methods);
+
+        await expect(
+          getErrorCodes(handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT)),
+        ).resolves.toEqual([{ code: 'ShippingMethodMissing', httpErrorStatus: 400 }]);
+        expect(updateCart).not.toHaveBeenCalled();
+        expect(createPayment).not.toHaveBeenCalled();
+      });
+
+      it('should accept a cart the shop froze with HardFreeze when it has a method', async () => {
+        mockCreateFlow(
+          expressCart(500, {
+            cartState: 'Frozen',
+            freezeStrategy: 'HardFreeze',
+            shippingAddress: address,
+            shippingInfo: { shippingMethod: { typeId: 'shipping-method', id: 'express' } },
+          }),
+        );
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(updateCart).not.toHaveBeenCalledWith(
+          expect.anything(),
+          expect.arrayContaining([expect.objectContaining({ action: 'setShippingMethod' })]),
+        );
+        expect(createECPaymentMock).toHaveBeenCalled();
+      });
+
       it('should leave the cart untouched when the methods cannot be read', async () => {
         mockCreateFlow(expressCart(500));
         jest
@@ -520,7 +615,7 @@ describe('express payment creation', () => {
 
     describe('with an earlier express attempt on the cart', () => {
       const placeholder = { country: 'DE' };
-      const earlierAttempt = (fields: Record<string, boolean>) => ({
+      const earlierAttempt = (fields: Record<string, boolean | string>) => ({
         id: 'earlier-payment',
         version: 1,
         paymentMethodInfo: { paymentInterface: 'easycredit', method: 'easycredit' },
@@ -596,6 +691,35 @@ describe('express payment creation', () => {
           { action: 'setShippingAddress' },
           { action: 'removePayment', payment: { typeId: 'payment', id: 'payment123' } },
         ]);
+      });
+
+      it('should take over the shipping method the earlier attempt set', async () => {
+        mockCreateFlow({
+          ...cartWithEarlierAttempt(),
+          shippingInfo: { shippingMethod: { typeId: 'shipping-method', id: 'standard' } },
+        } as Cart);
+        jest.mocked(getPaymentById).mockResolvedValue(
+          earlierAttempt({
+            easyCreditExpress: true,
+            easyCreditExpressPlaceholderAddress: true,
+            easyCreditExpressShippingMethod: 'standard',
+          }) as never,
+        );
+
+        await handleCreateExpressPayment('session-cart', redirectLinks, INSTALLMENT);
+
+        expect(getMatchingShippingMethods).not.toHaveBeenCalled();
+        expect(createPayment).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom: expect.objectContaining({
+              fields: {
+                easyCreditExpress: true,
+                easyCreditExpressPlaceholderAddress: true,
+                easyCreditExpressShippingMethod: 'standard',
+              },
+            }),
+          }),
+        );
       });
 
       it('should not take over an address the earlier attempt did not add', async () => {
