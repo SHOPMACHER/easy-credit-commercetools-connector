@@ -1,4 +1,9 @@
-import { WidgetEnabledResponseSchema, WidgetEnabledResponseSchemaDTO } from './../dtos/operations/widgetEnabled.dto';
+import {
+  WidgetEnabledQuerySchema,
+  WidgetEnabledQuerySchemaDTO,
+  WidgetEnabledResponseSchema,
+  WidgetEnabledResponseSchemaDTO,
+} from './../dtos/operations/widgetEnabled.dto';
 import { HealthCheckResponseSchema, HealthCheckResponseSchemaDTO } from '../dtos/operations/status.dto';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { healthCheck, isWidgetEnabled } from '../services/connector.service';
@@ -22,17 +27,18 @@ export const operationsRoute = async (fastify: FastifyInstance) => {
   );
 
   // Public: shoppers without a cart have no checkout session.
-  fastify.get<{ Reply: WidgetEnabledResponseSchemaDTO }>(
+  fastify.get<{ Querystring: WidgetEnabledQuerySchemaDTO; Reply: WidgetEnabledResponseSchemaDTO }>(
     '/widget-enabled',
     {
       schema: {
+        querystring: WidgetEnabledQuerySchema,
         response: {
           200: WidgetEnabledResponseSchema,
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      reply.code(200).send(await isWidgetEnabled());
+    async (request, reply) => {
+      reply.code(200).send(await isWidgetEnabled(request.query));
     },
   );
 };

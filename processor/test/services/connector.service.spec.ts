@@ -1,7 +1,7 @@
 import { healthCheck, isWidgetEnabled, WIDGET_PAYMENT_TYPES_TIMEOUT_MS } from '../../src/services/connector.service';
 import { log } from '../../src/libs/logger';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { readConfiguration } from '../../src/utils/config.utils';
 import { getPaymentTypesAvailability } from '../../src/services/webshop.service';
 import { Errorx } from '@commercetools/connect-payments-sdk';
@@ -31,6 +31,7 @@ jest.mock('../../src/utils/config.utils', () => ({
   readConfiguration: jest.fn().mockReturnValue({
     easyCredit: {
       widgetEnabled: '1',
+      widgetVisibility: 'PDP_AND_CART',
       webShopId: 'mock-webshop-id',
     },
   }),
@@ -144,6 +145,61 @@ describe('Health Check and Widget Functions', () => {
 
       expect((await isWidgetEnabled()).paymentTypes).toEqual([]);
       expect(getPaymentTypesAvailability).not.toHaveBeenCalled();
+    });
+
+    describe('placement', () => {
+      const mockConfig = (widgetEnabled: string, widgetVisibility: string) =>
+        (readConfiguration as jest.Mock).mockReturnValue({
+          easyCredit: { widgetEnabled, widgetVisibility, webShopId: 'mock-webshop-id' },
+        });
+
+      afterEach(() => {
+        mockConfig('1', 'PDP_AND_CART');
+      });
+
+      it.each([
+        ['PDP_AND_CART', { placement: 'PDP' as const }, true],
+        ['PDP_AND_CART', { placement: 'CART' as const }, true],
+        ['PDP', { placement: 'PDP' as const }, true],
+        ['PDP', { placement: 'CART' as const }, false],
+        ['CART', { placement: 'PDP' as const }, false],
+        ['CART', { placement: 'CART' as const }, true],
+        ['PDP_AND_CART', {}, true],
+        ['PDP', {}, true],
+        ['CART', {}, true],
+      ])('should apply WIDGET_VISIBILITY=%s to %j (isEnabled %s)', async (visibility, query, expected) => {
+        mockConfig('1', visibility);
+
+        expect((await isWidgetEnabled(query)).isEnabled).toBe(expected);
+      });
+
+      it.each(['PDP_AND_CART', 'PDP', 'CART'])(
+        'should hide the widget everywhere if WIDGET_ENABLED=0 (WIDGET_VISIBILITY=%s)',
+        async (visibility) => {
+          mockConfig('0', visibility);
+
+          for (const query of [{ placement: 'PDP' as const }, { placement: 'CART' as const }, {}]) {
+            expect((await isWidgetEnabled(query)).isEnabled).toBe(false);
+          }
+        },
+      );
+
+      it('should not ask easyCredit for a hidden placement', async () => {
+        mockConfig('1', 'PDP');
+
+        expect(await isWidgetEnabled({ placement: 'CART' })).toEqual({
+          isEnabled: false,
+          webShopId: 'mock-webshop-id',
+          paymentTypes: [],
+        });
+        expect(getPaymentTypesAvailability).not.toHaveBeenCalled();
+      });
+
+      it('should advertise the payment types for a visible placement', async () => {
+        mockConfig('1', 'CART');
+
+        expect((await isWidgetEnabled({ placement: 'CART' })).paymentTypes).toEqual(['INSTALLMENT_PAYMENT']);
+      });
     });
 
     it('should return widget enabled status (false) and webShopId', async () => {

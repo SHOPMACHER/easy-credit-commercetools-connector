@@ -3,6 +3,8 @@ import { readConfiguration } from '../utils/config.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { ECTransactionPaymentType } from '../types/payment.types';
+import { WidgetVisibility } from '../types/index.types';
+import { WidgetEnabledQuerySchemaDTO } from '../dtos/operations/widgetEnabled.dto';
 
 export const healthCheck = async () => {
   try {
@@ -18,12 +20,16 @@ export const healthCheck = async () => {
   }
 };
 
-export const isWidgetEnabled = async () => {
+export const isWidgetEnabled = async (query: WidgetEnabledQuerySchemaDTO = {}) => {
   const config = readConfiguration();
 
   log.debug('get Widget config');
 
-  const isEnabled = config.easyCredit.widgetEnabled === '1';
+  // No placement: the label or an older enabler, so only WIDGET_ENABLED counts.
+  const { placement } = query;
+  const visibility = config.easyCredit.widgetVisibility as WidgetVisibility;
+  const isVisible = placement === undefined || visibility === 'PDP_AND_CART' || visibility === placement;
+  const isEnabled = config.easyCredit.widgetEnabled === '1' && isVisible;
 
   return {
     isEnabled,

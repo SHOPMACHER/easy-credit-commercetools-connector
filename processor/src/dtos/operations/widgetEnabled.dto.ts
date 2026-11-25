@@ -8,3 +8,12 @@ export const WidgetEnabledResponseSchema = Type.Object({
 });
 
 export type WidgetEnabledResponseSchemaDTO = Static<typeof WidgetEnabledResponseSchema>;
+
+export const WidgetPlacementSchema = Type.Union([Type.Literal('PDP'), Type.Literal('CART')]);
+
+// The widget always sends placement. The label sends none.
+export const WidgetEnabledQuerySchema = Type.Object({
+  placement: Type.Optional(WidgetPlacementSchema),
+});
+
+export type WidgetEnabledQuerySchemaDTO = Static<typeof WidgetEnabledQuerySchema>;
