@@ -144,7 +144,7 @@ If the shopper then cancels in the tab of the first attempt, the cancel webhook 
 
 It checks the cart of the session with the same rules as Create Express Payment and returns the same response and errors as [Get Payment Method](./GetPaymentMethod.md), plus `400 InvalidSession`, `400 ExpressShippingModeNotSupported` and `503 ExpressNotConfigured`. Hide the express buttons on any error. Call it once per payment type, as the checkout component does with Get Payment Method. `paymentType` defaults to `INSTALLMENT_PAYMENT`.
 
-The [express button component](./WebComponents.md#express-button-component) of the enabler does this for the cart placement. On the product page it uses the payment types of `GET /operations/widget-enabled` instead.
+The [express button component](./WebComponents.md#express-button-component) of the enabler does this for the cart placement. On the product page it uses the payment types of `GET /operations/widget-enabled?productTypeId=<uuid>` instead. They already leave out the types that exclude the product type.
 <br />
 
 ## Example URL Call

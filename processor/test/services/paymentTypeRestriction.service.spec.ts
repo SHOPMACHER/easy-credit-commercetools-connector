@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import { Cart } from '@commercetools/connect-payments-sdk';
 import {
   getPaymentTypeExclusion,
+  getPaymentTypesExcludingProductType,
+  getPaymentTypesWithProductTypeExclusions,
   resetPaymentTypeRestrictionCache,
 } from '../../src/services/paymentTypeRestriction.service';
 import { getProductTypesByKeys } from '../../src/commercetools/productType.commercetools';
@@ -204,5 +206,87 @@ describe('getPaymentTypeExclusion', () => {
       expect(getProductTypesByKeys).toHaveBeenCalledWith(['voucher', 'gift-card']);
       expect(getProductTypesByKeys).toHaveBeenCalledWith(['gift-card']);
     });
+  });
+});
+
+describe('getPaymentTypesExcludingProductType', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useRealTimers();
+    resetPaymentTypeRestrictionCache();
+    process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES = 'voucher,gift-card';
+    delete process.env.INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES;
+    process.env.WEBSHOP_CACHE_TTL = '300';
+    jest
+      .mocked(getProductTypesByKeys)
+      .mockResolvedValue(productTypes({ id: 'pt-voucher', key: 'voucher' }, { id: 'pt-gift', key: 'gift-card' }));
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    jest.useRealTimers();
+  });
+
+  it('returns the types that exclude the product type', async () => {
+    expect(await getPaymentTypesExcludingProductType('pt-voucher')).toEqual([BILL]);
+  });
+
+  it('returns nothing for a product type no type excludes', async () => {
+    expect(await getPaymentTypesExcludingProductType('pt-shoe')).toEqual([]);
+  });
+
+  it('makes no lookup when no exclusions are configured', async () => {
+    delete process.env.BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES;
+    expect(await getPaymentTypesExcludingProductType('pt-voucher')).toEqual([]);
+    expect(getProductTypesByKeys).not.toHaveBeenCalled();
+  });
+
+  it('shares one lookup between concurrent calls', async () => {
+    await Promise.all([getPaymentTypesExcludingProductType('a'), getPaymentTypesExcludingProductType('b')]);
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed and holds a failure for the retry window', async () => {
+    jest.useFakeTimers();
+    jest.mocked(getProductTypesByKeys).mockRejectedValue(new Error('ct down'));
+    expect(await getPaymentTypesExcludingProductType('pt-shoe')).toEqual([BILL]);
+    expect(await getPaymentTypesExcludingProductType('pt-shoe')).toEqual([BILL]);
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(30_001);
+    jest.mocked(getProductTypesByKeys).mockResolvedValue(productTypes({ id: 'pt-voucher', key: 'voucher' }));
+    expect(await getPaymentTypesExcludingProductType('pt-shoe')).toEqual([]);
+  });
+
+  it('starts a new lookup after the retry window when one never settles', async () => {
+    jest.useFakeTimers();
+    jest.mocked(getProductTypesByKeys).mockReturnValueOnce(new Promise(() => {}));
+    void getPaymentTypesExcludingProductType('pt-shoe');
+    await Promise.resolve();
+    void getPaymentTypesExcludingProductType('pt-shoe');
+    await Promise.resolve();
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(30_001);
+    expect(await getPaymentTypesExcludingProductType('pt-shoe')).toEqual([]);
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(2);
+  });
+
+  it('holds a result with unknown keys for the retry window', async () => {
+    jest.mocked(getProductTypesByKeys).mockResolvedValue(productTypes({ id: 'pt-voucher', key: 'voucher' }));
+    await getPaymentTypesExcludingProductType('pt-shoe');
+    await getPaymentTypesExcludingProductType('pt-shoe');
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the checkout lookup uncached for unknown keys', async () => {
+    jest.mocked(getProductTypesByKeys).mockResolvedValue(productTypes({ id: 'pt-voucher', key: 'voucher' }));
+    await getPaymentTypesExcludingProductType('pt-shoe');
+    await getPaymentTypeExclusion(buildCart({ lineItems: [lineItem('pt-shoe')] }), BILL);
+    expect(getProductTypesByKeys).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists the types with configured exclusions', () => {
+    expect(getPaymentTypesWithProductTypeExclusions()).toEqual([BILL]);
   });
 });

@@ -1,4 +1,5 @@
 import { findElement, importEasyCreditScript } from '../utils/app.utils';
+import { AmountLimitsByType, filterByAmountLimits } from '../utils/amount-limits.utils';
 import { isPaymentType, toWebComponentPaymentType } from '../utils/payment-type.utils';
 import {
   PaymentType,
@@ -7,8 +8,6 @@ import {
   WidgetComponentBuilder,
   WidgetComponentOptions,
 } from '../types/main';
-
-type AmountLimits = { minAmount: number; maxAmount: number };
 
 export class ECWidgetComponentBuilder implements WidgetComponentBuilder {
   constructor(private readonly baseOptions: WebComponentOptions) {}
@@ -41,8 +40,12 @@ export class ECWidgetComponent implements WidgetComponent {
 
       // An empty list means checkout offers no easyCredit payment type right now. Older processors send no list.
       const paymentTypes = widgetConfig.paymentTypes
-        ?.filter(isPaymentType)
-        .filter((paymentType) => this.isWithinAmountLimits(widgetConfig.amountLimits?.[paymentType]));
+        ? filterByAmountLimits(
+            widgetConfig.paymentTypes.filter(isPaymentType),
+            this.widgetComponentOptions.amount,
+            widgetConfig.amountLimits,
+          )
+        : undefined;
       const offersNothing = paymentTypes?.length === 0;
 
       if (widgetConfig.isEnabled === true && !offersNothing) {
@@ -60,19 +63,11 @@ export class ECWidgetComponent implements WidgetComponent {
     }
   }
 
-  // Only the limits the merchant narrowed are sent; easyCredit's widget applies its own limits.
-  private isWithinAmountLimits(limits?: AmountLimits): boolean {
-    // Plain JS storefronts may pass a numeric string. An amount that can't be checked fails closed.
-    const amount = Number(this.widgetComponentOptions.amount);
-
-    return !limits || (Number.isFinite(amount) && amount >= limits.minAmount && amount <= limits.maxAmount);
-  }
-
   public async fetchConfig(): Promise<{
     isEnabled: boolean;
     webShopId: string;
     paymentTypes?: unknown[];
-    amountLimits?: Partial<Record<PaymentType, AmountLimits>>;
+    amountLimits?: AmountLimitsByType;
   }> {
     const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, {
       method: 'GET',

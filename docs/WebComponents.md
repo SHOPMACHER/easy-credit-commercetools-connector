@@ -89,6 +89,7 @@ This guide tells you how to add the web components of the connector to your shop
   - `BILL_PAYMENT` is in the list only when all of these are true: `BILL_PAYMENT_ENABLED=1`, easyCredit reports `availability` and `billPaymentActive`, and the webshop data is fresh. It fails closed (see [Terms](./CommercetoolsFrontendIntegration.md#terms)). Stale or default data never advertises it.
 - The widget renders these types as `payment-types` (for example `payment-types="INSTALLMENT,BILL"`). With both types, the easyCredit widget reads "Finanzieren ab … / Monat oder heute bestellen, in 30 Tagen zahlen". The widget of easyCredit applies the easyCredit amount limits.
 - `amountLimits` is only sent for a payment type whose [merchant amount limits](./GetPaymentMethod.md#merchant-amount-limits) narrow the easyCredit limits, for example `{ "BILL_PAYMENT": { "minAmount": 100, "maxAmount": 5000 } }`. The enabler leaves that type out of `payment-types` if the `amount` of the widget is outside these limits or is not a number. It checks the amount only on mount, so mount the widget again for a new total, as described above. If no type is left, the widget is not rendered. Deploy the processor and the enabler from the same build. An older enabler ignores `amountLimits` and can advertise a type that the checkout then rejects with `InvalidAmount`.
+- `GET /operations/widget-enabled?productTypeId=<uuid>` is for the [express button on the product page](#which-payment-types-the-button-shows). A value that is not a UUID gets `400`. The widget does not send it. The response shape does not change.
 - An empty `paymentTypes` means that the checkout offers no easyCredit payment type. The widget is then not rendered. This happens in these cases: neither type is active for the webshop; easyCredit reports the webshop as unavailable (the checkout answers 503 `EasyCreditUnavailable`); neither `WIDGET_ENABLED` nor `EXPRESS_BUTTON_ENABLED` is `1` (the connector then does not call easyCredit).
 - If there is an error, or the lookup takes longer than 1.5 s, `paymentTypes` is empty and the widget is not rendered. A slow lookup continues and fills the cache (`WEBSHOP_CACHE_TTL`). The next widget then gets the full list. The first widget after a deploy or a cache expiry can therefore be missing.
 - Older processors do not send `paymentTypes`. The widget then renders without the attribute, and the easyCredit component defaults to installment.
@@ -276,6 +277,7 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
   ```js
     // Assumes: Enabler is loaded, see Step 1. Your shop provides these values:
     // sessionId: the checkout session ID. amount: the amount in EUR major units, for example 599.9.
+    // This snippet is for the cart. For the product page, see Product page below.
     // Declare the counter once, outside the code that mounts: let latestMount = 0;
     const run = ++latestMount; // A later run for the same container overtakes this one.
     const enabler = new Enabler({
@@ -285,7 +287,7 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 
     const expressBuilder = await enabler.createExpressButtonBuilder();
     const expressButton = expressBuilder.build({
-      placement: 'CART', // 'PDP' or 'CART'. PDP needs prepareCart, see below.
+      placement: 'CART', // 'PDP' or 'CART'. PDP needs prepareCart and productTypeId, see below.
       amount: amount,
       redirectLinks: {
         urlSuccess: window.location.origin + '/express/return',
@@ -309,17 +311,20 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 | Option | Required | Description |
 | --- | --- | --- |
 | `placement` | yes | `PDP` or `CART`. It selects the payment type check and the visibility setting. |
-| `amount` | yes | The amount in EUR major units. If it is not a finite number, the button is not rendered. |
+| `amount` | yes | The amount in EUR major units. If it is not a finite number, the button is not rendered. On the PDP it is the gross price of one unit, because the quantity is always 1. |
+| `productTypeId` | no | PDP only: the ID of the commercetools product type of the product, for example `product.productType.id`. It must be the UUID, not the product type key: any other value makes the processor answer `400`, and the button is not rendered (the component logs the status in the console). The processor drops the payment types that exclude this product type. Without it, the button also shows payment types that the product excludes. The click then fails with `BillPaymentExcludedItems` or `InstallmentPaymentExcludedItems`, and the only sign beforehand is one `console.warn`. Always pass it on the PDP. It is ignored on the cart. |
 | `redirectLinks` | yes | `urlSuccess`, `urlCancellation` and `urlDenial`. They follow the rules in [Create Express Payment](./CreateExpressPayment.md). |
 | `prepareCart` | on `PDP` | A function that empties the cart, puts only this product in it and returns the checkout session ID of that cart. Required on the PDP: without it, `mount()` renders nothing, resolves to `false` and logs an error to the console. Optional on the cart. See [Product page](#product-page). |
 | `onLoading` | no | Called when the shopper clicks the button, before any request. |
-| `onError` | yes | Called with the error body of the processor, with `{ statusCode }` if the error body is not JSON (for example a gateway `502` or `504`), or with an `Error`. |
+| `onError` | yes | Called with an `ExpressButtonError`, see [Errors](#errors). |
 | `onSuccess` | yes | Called with the response of `POST /payments/express`. Send the shopper to `redirectUrl`. |
 
 #### Which payment types the button shows
 
 - Both placements read `GET /operations/widget-enabled`. The button shows only if `expressButtonEnabled` is `true`, `expressButtonVisibility` is the placement or `PDP_AND_CART`, and the response has a `webShopId`. An older processor does not send the express fields, so the button stays hidden.
-- `PDP`: the button shows the `paymentTypes` of `widget-enabled`. It does not check the cart. The easyCredit web component applies the amount limits.
+- `PDP`: the button shows the `paymentTypes` of `widget-enabled`. It does not check the cart. It drops a type if the amount is outside the [merchant amount limits](./GetPaymentMethod.md#merchant-amount-limits) of that type (`amountLimits`). The easyCredit web component applies its own limits.
+- `PDP` with `productTypeId`: the component sends it as `GET /operations/widget-enabled?productTypeId=<uuid>`. The processor looks up the product type only if the express button is enabled and `EXPRESS_BUTTON_VISIBILITY` is `PDP` or `PDP_AND_CART`. It drops each payment type that excludes the product type, as the checkout does (`BILL_PAYMENT_EXCLUDED_PRODUCT_TYPES`, `INSTALLMENT_PAYMENT_EXCLUDED_PRODUCT_TYPES`). An installment-only button stays, and the button is not rendered when no type is left. If the lookup fails or takes too long, the processor hides the payment types that have configured exclusions. A failed lookup is not repeated for 30 seconds.
+- `POST /payments/express` checks the cart again. So a wrong filter can only show a button that fails on click. A processor that does not know `productTypeId` ignores it, and the click then fails with an error such as `BillPaymentExcludedItems`. Deploy the processor and the enabler from the same build.
 - `CART`: the button keeps a payment type only if `GET /payments/express/payment-method` answers `200` for the cart of the session. See [Check the payment types](./CreateExpressPayment.md#check-the-payment-types).
 - If no payment type is left, the button is not rendered.
 
@@ -327,21 +332,63 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 
 - `mount()` resolves to `true` when it rendered a button and to `false` when it did not. It does not reject. If it resolves to `false`, it removed any earlier button from the container (unless a later mount took over, see below). Hide the container on `false` and show it again on `true`.
 - The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. The component looks up the container before its first request and renders the button into that element.
-- A second `mount()` in the same container replaces the button. Call it again for each new amount. If two mounts overlap, only the one that started last changes the container. The earlier one resolves to `false` without touching the container. Use only the result of the last mount to show or hide the container.
+- A second `mount()` in the same container replaces the button. On the PDP, use [`setAmount`](#set-the-amount-on-the-product-page) for a new amount. On the cart, call `mount()` again for each new amount. If two mounts overlap, only the one that started last changes the container. The earlier one resolves to `false` without touching the container. Use only the result of the last mount to show or hide the container.
 - Do not mount the button inside a `<form>`. The web component also fires a deprecated `submit` event that bubbles.
 - A click while an earlier click is still running is ignored.
 - On click, the component calls `prepareCart` (always on the PDP, on the cart if set). Then it sends `POST /payments/express` with the chosen payment type and `redirectLinks`, and calls `onSuccess` or `onError`.
 - Only the payment type goes to the connector. The number of installments that the shopper chose in the easyCredit modal is not forwarded.
-- After the shopper accepts, the easyCredit modal stays open. If the page has not navigated away after 10 seconds, easyCredit shows its own alert that easyCredit payment is not possible at the moment and closes the modal. So `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. After `onError`, the shopper also sees this alert from easyCredit.
+- After the shopper accepts, the easyCredit modal stays open. If the page has not navigated away after 10 seconds, easyCredit shows its own alert that easyCredit payment is not possible at the moment and closes the modal. So `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds.
+- The alert of easyCredit is the global `window.alert`, and its timer cannot be cancelled. So the component wraps `window.alert` page-wide. The wrapper swallows only the exact easyCredit text and passes every other alert on. It stays for 11 seconds after the latest accept and then restores the original, unless another script has replaced `window.alert` meanwhile. This is a workaround until easyCredit offers a way to cancel the alert.
+- After an error, the shopper sees only the message of your `onError` handler. The component replaces the button with a new one, which closes the easyCredit modal at once. The shopper can click again.
+
+#### Errors
+
+`onError` always gets an `ExpressButtonError`. It is never an `Error` object. A shop that checks `instanceof Error` must read `errors` instead.
+
+```ts
+type ExpressButtonError = {
+  statusCode?: number;
+  errors: { code: string; message: string }[];
+  cause?: unknown; // The raw error, for logging only. Do not show it.
+};
+```
+
+| Case | `statusCode` | `errors` |
+| --- | --- | --- |
+| The processor answers with an error body that has an `errors` array | the HTTP status | the `errors` of the processor, for example `PaymentTypeNotAvailable` |
+| The error body is not JSON or has no `errors` (for example a gateway `502` or `504`) | the HTTP status | one entry with the code `UnexpectedResponse` |
+| A network error, an error in `prepareCart`, an unknown payment type, or a successful response whose body is not valid JSON | none | one entry with the code `ExpressInitFailed` |
+
+For the last two cases, `message` is fixed and German: "Die Zahlung mit easyCredit konnte nicht gestartet werden. Bitte versuchen Sie es erneut oder wählen Sie eine andere Zahlungsart." The processor messages are not for shoppers, so show your own text for the codes you know and this message otherwise.
+
+#### Set the amount on the product page
+
+- `setAmount(amount)` changes the amount of a mounted PDP button without a new `mount()`. Call it when the shopper selects another variant. It returns a `Promise<boolean>`: `true` if a button is shown, `false` if not.
+- On the cart, it rejects with an error. Mount the cart button again instead, because its payment types come from a check of the cart.
+- It applies the merchant amount limits again and replaces the button with a new one for the new amount. An open easyCredit modal closes, because the modal computes its total only once. If no type is left or the amount is not a finite number, it removes the button and resolves `false`. A later finite amount renders the button again.
+- Before `mount()` has finished, it stores the amount. The mount reads it when it renders.
+- If the last mount got no usable configuration, `setAmount` loads it again with one `GET /operations/widget-enabled`. This happens when the express button is off, the visibility does not include the PDP, the request failed, or the amount was not a finite number at mount.
+- If easyCredit did not answer in time at mount, the processor sends no payment types. The button then stays hidden until the next `mount()`.
+- It does nothing if a later mount has taken over the container.
+- It does not change `amount` in your options.
+- A new product (for example after a navigation in a single-page app) needs a new `build()` and `mount()`, because the product type and `prepareCart` change too.
+
+  ```js
+    // On variant change: pass the gross price of one unit.
+    const shown = await expressButton.setAmount(newAmount);
+    document.querySelector('#easycredit-express').hidden = !shown;
+  ```
 
 #### Product page
 
-- On the PDP, `prepareCart` is required. `POST /payments/express` charges the whole cart of the session, but the button shows the price of this product. So `prepareCart` must empty the cart and put only this product in it, quantity 1. This is a requirement of easyCredit (TeamBank). It returns the checkout session ID of this cart. The component sends the express request with this session ID.
+- On the PDP, `prepareCart` is required, and pass `productTypeId`. `POST /payments/express` charges the whole cart of the session, but the button shows the price of this product. So `prepareCart` must empty the cart and put only this product in it, quantity 1. This is a requirement of easyCredit (TeamBank). It returns the checkout session ID of this cart. The component sends the express request with this session ID.
 - The function runs on every click, also when the shopper clicks again after `onError`. It must be idempotent: after each run, the cart holds exactly this product, quantity 1.
-- An error in the function goes to `onError`.
+- `prepareCart` runs when the shopper clicks, not when you build the button. So read the selected variant inside the function, because the shopper can change it after `build()`.
+- An error in the function goes to `onError` with the code `ExpressInitFailed`.
 
   ```js
     placement: 'PDP',
+    productTypeId: productTypeId, // The UUID of the product type, for example product.productType.id
     prepareCart: async () => {
       // Your shop code: remove all line items, then add only this product with quantity 1.
       await replaceCartWithProduct(productId);

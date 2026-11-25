@@ -165,6 +165,14 @@ export type WidgetComponentOptions = {
 
 export type ExpressButtonPlacement = 'PDP' | 'CART';
 
+export type ExpressButtonError = {
+  statusCode?: number;
+  // Processor messages are technical, not for shoppers; only UnexpectedResponse and ExpressInitFailed carry shopper text.
+  errors: { code: string; message: string }[];
+  // Raw error for logging, never for display.
+  cause?: unknown;
+};
+
 // The options both placements share.
 export type ExpressButtonBaseOptions = {
   // EUR
@@ -175,21 +183,24 @@ export type ExpressButtonBaseOptions = {
     urlDenial: string;
   };
   onLoading?: () => void;
-  onError: (error: unknown) => void;
+  onError: (error: ExpressButtonError) => void;
   onSuccess: (response: CreatePaymentResponse) => void;
 };
 
 // prepareCart returns the checkout session id of the prepared cart. The PDP requires it: the express payment charges
 // the whole cart of the session. Without it, a PDP mount renders nothing.
+// productTypeId (PDP only) lets the processor drop payment types the product type excludes.
 export type ExpressButtonComponentOptions = ExpressButtonBaseOptions &
   (
-    | { placement: 'PDP'; prepareCart: () => Promise<string> }
+    | { placement: 'PDP'; prepareCart: () => Promise<string>; productTypeId?: string }
     | { placement: 'CART'; prepareCart?: () => Promise<string> }
   );
 
 export interface ExpressButtonComponent {
   // Resolves true when a button was rendered, so the shop can hide the container without a second lookup.
   mount(selector: string): Promise<boolean>;
+  // PDP only: updates the amount of the mounted button without a remount. Resolves true when a button is shown.
+  setAmount(amount: number): Promise<boolean>;
 }
 
 export interface ExpressButtonComponentBuilder {
