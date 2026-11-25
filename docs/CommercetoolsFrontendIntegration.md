@@ -804,7 +804,7 @@ Before you change the cart, check its easyCredit payments. If any of them, regul
 
 > **Recommended pattern**
 >
-> Read the cart with its payments, refuse a cart with an easyCredit attempt in progress, then send one cart update with `unfreezeCart` (only for a frozen cart), a `removeLineItem` for each line item and one `addLineItem`. Then return the checkout session of this cart. The update of a frozen cart is not tested against commercetools. If commercetools refuses it, send `unfreezeCart` in its own update first.
+> Read the cart with its payments, refuse a cart with an easyCredit attempt in progress, then send one cart update with `unfreezeCart` (only for a frozen cart), a `removeLineItem` for each line item, a `removeCustomLineItem` for each custom line item and one `addLineItem`. Custom line items count in the cart total, so a cart that keeps one charges more than the product. Then return the checkout session of this cart. The update of a frozen cart is not tested against commercetools. If commercetools refuses it, send `unfreezeCart` in its own update first.
 
 ```ts
 // BFF. File prepareExpressCart.ts. Action "cart/prepareExpressCart": the cart holds only this product. Returns { sessionId }.
@@ -830,6 +830,9 @@ export function buildExpressCartActions(cart: Cart, sku: string): CartUpdateActi
   return [
     ...(cart.cartState === 'Frozen' ? [{ action: 'unfreezeCart' } as CartUpdateAction] : []),
     ...cart.lineItems.map((lineItem): CartUpdateAction => ({ action: 'removeLineItem', lineItemId: lineItem.id })),
+    ...cart.customLineItems.map(
+      (customLineItem): CartUpdateAction => ({ action: 'removeCustomLineItem', customLineItemId: customLineItem.id }),
+    ),
     { action: 'addLineItem', sku, quantity: 1 },
   ];
 }
