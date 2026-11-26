@@ -403,6 +403,27 @@ describe('ECExpressButtonComponent', () => {
     });
   });
 
+  describe('fullWidth', () => {
+    it('does not set full-width by default', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+
+      await createComponent().mount('#express');
+
+      expect(renderedButton()?.hasAttribute('full-width')).toBe(false);
+    });
+
+    it('sets full-width on mount and on the element setAmount renders', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ fullWidth: true, productTypeId: 'pt-1' });
+
+      await c.mount('#express');
+      expect(renderedButton()?.getAttribute('full-width')).toBe('true');
+
+      await c.setAmount(149.5);
+      expect(renderedButton()?.getAttribute('full-width')).toBe('true');
+    });
+  });
+
   describe('setAmount', () => {
     const billMax100 = () =>
       jsonResponse(200, widgetEnabled({ amountLimits: { BILL_PAYMENT: { minAmount: 0, maxAmount: 100 } } }));
@@ -827,7 +848,7 @@ describe('ECExpressButtonComponent', () => {
       mockFetch((url) =>
         url.endsWith('/payments/express') ? nonJsonResponse(502) : jsonResponse(200, widgetEnabled()),
       );
-      const component = createComponent({ onError, amount: 50, productTypeId: 'pt-1' });
+      const component = createComponent({ onError, amount: 50, productTypeId: 'pt-1', fullWidth: true });
       await component.mount('#express');
       const clicked = renderedButton();
 
@@ -841,6 +862,7 @@ describe('ECExpressButtonComponent', () => {
       for (const name of ['webshop-id', 'amount', 'payment-types']) {
         expect(buttonInOnError!.getAttribute(name)).toBe(clicked?.getAttribute(name));
       }
+      expect(buttonInOnError!.getAttribute('full-width')).toBe('true');
     });
 
     it('calls a throwing onError once and does not reject unhandled', async () => {

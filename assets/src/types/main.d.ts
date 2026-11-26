@@ -182,6 +182,8 @@ export type ExpressButtonBaseOptions = {
     urlCancellation: string;
     urlDenial: string;
   };
+  // true: the button fills the width of its container. Default: easyCredit's fixed width, centered.
+  fullWidth?: boolean;
   onLoading?: () => void;
   onError: (error: ExpressButtonError) => void;
   onSuccess: (response: CreatePaymentResponse) => void;

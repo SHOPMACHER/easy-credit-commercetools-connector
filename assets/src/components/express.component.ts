@@ -269,6 +269,8 @@ export class ECExpressButtonComponent implements ExpressButtonComponent {
     button.setAttribute('webshop-id', this.config.webShopId);
     button.setAttribute('amount', String(this.amount));
     button.setAttribute('payment-types', paymentTypes.map(toWebComponentPaymentType).join(','));
+    // Set here, because mount, setAmount and a failed start all render a new element.
+    if (this.options.fullWidth) button.setAttribute('full-width', 'true');
     // The event is composed and bubbles, but listening on the element keeps it scoped to this button.
     // The component also fires a deprecated "submit" with the same detail, which must not post twice.
     button.addEventListener('easycredit-submit', (event) => {

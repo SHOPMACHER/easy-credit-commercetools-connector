@@ -766,6 +766,8 @@ export async function mountExpressButton(placement: Placement, amount: number, p
       const origin = window.location.origin;
       const common: ExpressButtonBaseOptions = {
         amount,
+        // Optional: fill the width of the container, for example to match the add-to-cart button.
+        fullWidth: true,
         // The shop routes these URLs itself. The names are examples. Express links must be absolute.
         redirectLinks: {
           urlSuccess: `${origin}/checkout?step=review&express=1`,
