@@ -67,12 +67,9 @@ This guide tells you how to add the web components of the connector to your shop
         amount: totalValue,
       });
 
-      // Mount the new widget
-      widgetComponent
-        .mount('#easycredit-widget') // The place to display the component
-        .catch((error) => {
-          console.error('failed to mount', error);
-        });
+      // The place to display the component: a selector or the element. Resolves after the widget has rendered.
+      const shown = await widgetComponent.mount('#easycredit-widget');
+      document.querySelector('#easycredit-widget').hidden = !shown; // Hide without a widget
     }
 
     mountWidget();
@@ -80,7 +77,9 @@ This guide tells you how to add the web components of the connector to your shop
 
 - The component sends API calls to the connector to find out if the widget can be shown. If it can be shown, it looks like this image: ![easyCredit Widget](./assets/easycredit-widget.png)
 - `GET /operations/widget-enabled` needs no checkout session. The widget therefore also works on product pages for shoppers who have no cart.
-- On the cart page, the total changes. Clear the container and mount the widget again for each new total, and stop the earlier call so that it cannot mount an old amount. The widget can take several seconds to show, so show a placeholder until it has rendered. For an example, see [Widget on the product and cart page](./CommercetoolsFrontendIntegration.md#widget-on-the-product-and-cart-page).
+- `mount()` resolves to `true` when the widget has rendered and to `false` when no widget shows. It does not reject. For installment, it also waits until the widget shows the plan, which easyCredit loads after the first render. The new widget stays hidden until then, without `display: none`, because easyCredit picks its layout from the width it measures. After 5 seconds without a render, `mount()` resolves `true` and the widget shows when the easyCredit script arrives. If the easyCredit script that the enabler added fails to load, `mount()` removes the widget and resolves `false`. If your page added the script itself, a failed load ends as the 5 second case.
+- On the cart page, the total changes. Mount the widget again for each new total. A new mount replaces the widget of the earlier mount when the new widget has rendered. It removes only `easycredit-widget` elements, so other content of the container stays. If two mounts of the same container overlap, only the one that started last changes the container. The earlier one resolves with the result of the latest mount, so you can apply every result to the container. For an amount of 0 or less, `mount()` renders nothing, sends no request and resolves `false`.
+- The widget can take several seconds to show, so show a placeholder until `mount()` resolves. For an example, see [Widget on the product and cart page](./CommercetoolsFrontendIntegration.md#widget-on-the-product-and-cart-page).
 
 #### Pay by invoice in the widget
 
@@ -93,7 +92,7 @@ This guide tells you how to add the web components of the connector to your shop
 - An empty `paymentTypes` means that the checkout offers no easyCredit payment type. The widget is then not rendered. This happens in these cases: neither type is active for the webshop; easyCredit reports the webshop as unavailable (the checkout answers 503 `EasyCreditUnavailable`); neither `WIDGET_ENABLED` nor `EXPRESS_BUTTON_ENABLED` is `1` (the connector then does not call easyCredit).
 - If there is an error, or the lookup takes longer than 1.5 s, `paymentTypes` is empty and the widget is not rendered. A slow lookup continues and fills the cache (`WEBSHOP_CACHE_TTL`). The next widget then gets the full list. The first widget after a deploy or a cache expiry can therefore be missing.
 - Older processors do not send `paymentTypes`. The widget then renders without the attribute, and the easyCredit component defaults to installment.
-- The widget sets the attribute when it is mounted. The easyCredit component ignores later changes to `payment-types`. After the invoice setting changes, clear the container and call `mount` again.
+- The widget sets the attribute when it is mounted. The easyCredit component ignores later changes to `payment-types`. After the invoice setting changes, call `mount` again.
 
 ### Checkout component
 
@@ -278,8 +277,6 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
     // Assumes: Enabler is loaded, see Step 1. Your shop provides these values:
     // sessionId: the checkout session ID. amount: the amount in EUR major units, for example 599.9.
     // This snippet is for the cart. For the product page, see Product page below.
-    // Declare the counter once, outside the code that mounts: let latestMount = 0;
-    const run = ++latestMount; // A later run for the same container overtakes this one.
     const enabler = new Enabler({
       processorUrl: '<PROCESSOR_URL>', // Connector's processor URL
       sessionId: sessionId, // The checkout session ID. On the PDP, `sessionId` can be empty: `prepareCart` supplies the session of the prepared cart, see below.
@@ -299,11 +296,9 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
       onSuccess: (response) => window.location.replace(response.redirectUrl),
     });
 
-    const rendered = await expressButton.mount('#easycredit-express'); // The place to display the component
-    // Use only the result of the latest run. An overtaken mount resolves false.
-    if (run === latestMount) {
-      document.querySelector('#easycredit-express').hidden = !rendered; // Hide without a button, show with one
-    }
+    // The place to display the component: a selector or the element. Resolves after the button has rendered.
+    const rendered = await expressButton.mount('#easycredit-express');
+    document.querySelector('#easycredit-express').hidden = !rendered; // Hide without a button, show with one
   ```
 
 #### Options
@@ -311,10 +306,11 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 | Option | Required | Description |
 | --- | --- | --- |
 | `placement` | yes | `PDP` or `CART`. It selects the payment type check and the visibility setting. |
-| `amount` | yes | The amount in EUR major units. If it is not a finite number, the button is not rendered. On the PDP it is the gross price of one unit, because the quantity is always 1. |
+| `amount` | yes | The amount in EUR major units. If it is not a finite number, or is 0 or less, the button is not rendered and no request is sent. On the PDP it is the gross price of one unit, because the quantity is always 1. |
 | `productTypeId` | no | PDP only: the ID of the commercetools product type of the product, for example `product.productType.id`. It must be the UUID, not the product type key: any other value makes the processor answer `400`, and the button is not rendered (the component logs the status in the console). The processor drops the payment types that exclude this product type. Without it, the button also shows payment types that the product excludes. The click then fails with `BillPaymentExcludedItems` or `InstallmentPaymentExcludedItems`, and the only sign beforehand is one `console.warn`. Always pass it on the PDP. It is ignored on the cart. |
 | `redirectLinks` | yes | `urlSuccess`, `urlCancellation` and `urlDenial`. They follow the rules in [Create Express Payment](./CreateExpressPayment.md). |
 | `prepareCart` | on `PDP` | A function that empties the cart, puts only this product in it and returns the checkout session ID of that cart. Required on the PDP: without it, `mount()` renders nothing, resolves to `false` and logs an error to the console. Optional on the cart. See [Product page](#product-page). |
+| `fullWidth` | no | If `true`, the button fills the width of its container. Default: the fixed width of easyCredit, centered. The component sets `full-width` on every element it renders, also after `setAmount()` and after a failed start. Do not set the attribute yourself: the next element does not have it. |
 | `onLoading` | no | Called when the shopper clicks the button, before any request. |
 | `onError` | yes | Called with an `ExpressButtonError`, see [Errors](#errors). |
 | `onSuccess` | yes | Called with the response of `POST /payments/express`. Send the shopper to `redirectUrl`. |
@@ -330,16 +326,17 @@ The example uses TypeScript. If you use plain JavaScript, omit `as const`.
 
 #### Mount and click behavior
 
-- `mount()` resolves to `true` when it rendered a button and to `false` when it did not. It does not reject. If it resolves to `false`, it removed any earlier button from the container (unless a later mount took over, see below). Hide the container on `false` and show it again on `true`.
-- The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. The component looks up the container before its first request and renders the button into that element.
-- A second `mount()` in the same container replaces the button. On the PDP, use [`setAmount`](#set-the-amount-on-the-product-page) for a new amount. On the cart, call `mount()` again for each new amount. If two mounts overlap, only the one that started last changes the container. The earlier one resolves to `false` without touching the container. Use only the result of the last mount to show or hide the container.
+- `mount()` resolves to `true` when the button has rendered and to `false` when no button shows. It does not reject. If it resolves to `false`, it removed any earlier button from the container (unless a later mount took over, see below). Hide the container on `false` and show it again on `true`. Show your placeholder until `mount()` resolves.
+- The new button stays hidden until it has rendered, and an earlier button stays until then, so the page does not jump. After 5 seconds without a render, `mount()` resolves `true`, and the button shows when the easyCredit script arrives. If the easyCredit script that the enabler added fails to load, `mount()` removes the button and resolves `false`.
+- The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. `mount()` accepts a selector or the element. The component looks up the container before its first request and renders the button into that element.
+- A second `mount()` in the same container replaces the button. On the PDP, use [`setAmount`](#set-the-amount-on-the-product-page) for a new amount. On the cart, call `mount()` again for each new amount. If two mounts overlap, only the one that started last changes the container. The earlier one does not touch the container and resolves with the result of the latest mount, so you can apply every result to show or hide the container.
 - Do not mount the button inside a `<form>`. The web component also fires a deprecated `submit` event that bubbles.
 - A click while an earlier click is still running is ignored.
 - On click, the component calls `prepareCart` (always on the PDP, on the cart if set). Then it sends `POST /payments/express` with the chosen payment type and `redirectLinks`, and calls `onSuccess` or `onError`.
 - Only the payment type goes to the connector. The number of installments that the shopper chose in the easyCredit modal is not forwarded.
 - After the shopper accepts, the easyCredit modal stays open. If the page has not navigated away after 10 seconds, easyCredit shows its own alert that easyCredit payment is not possible at the moment and closes the modal. So `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds.
 - The alert of easyCredit is the global `window.alert`, and its timer cannot be cancelled. So the component wraps `window.alert` page-wide. The wrapper swallows only the exact easyCredit text and passes every other alert on. It stays for 11 seconds after the latest accept and then restores the original, unless another script has replaced `window.alert` meanwhile. This is a workaround until easyCredit offers a way to cancel the alert.
-- After an error, the shopper sees only the message of your `onError` handler. The component replaces the button with a new one, which closes the easyCredit modal at once. The shopper can click again.
+- After an error, the shopper sees only the message of your `onError` handler. The component replaces the button with a new one at once, without waiting for the render, because the new element closes the easyCredit modal. A button for a new amount that is still waiting to render is dropped. The shopper can click again.
 
 #### Errors
 
@@ -365,11 +362,11 @@ For the last two cases, `message` is fixed and German: "Die Zahlung mit easyCred
 
 - `setAmount(amount)` changes the amount of a mounted PDP button without a new `mount()`. Call it when the shopper selects another variant. It returns a `Promise<boolean>`: `true` if a button is shown, `false` if not.
 - On the cart, it rejects with an error. Mount the cart button again instead, because its payment types come from a check of the cart.
-- It applies the merchant amount limits again and replaces the button with a new one for the new amount. An open easyCredit modal closes, because the modal computes its total only once. If no type is left or the amount is not a finite number, it removes the button and resolves `false`. A later finite amount renders the button again.
-- Before `mount()` has finished, it stores the amount. The mount reads it when it renders.
+- It applies the merchant amount limits again and replaces the button with a new one for the new amount. The old button stays until the new one has rendered, and the promise resolves then. An open easyCredit modal closes, because the modal computes its total only once. If no type is left, or the amount is not a finite number or is 0 or less, it removes the button and resolves `false`. A later valid amount renders the button again. If you call it again before the new button has rendered, only the latest amount shows, and every call resolves with the result of the latest one. Until the new button has rendered, the old one stays clickable with the old amount. Once the easyCredit script has loaded, this takes milliseconds.
+- Before `mount()` has finished, it waits for the mount. If the amount changed meanwhile, it then shows the button for the latest amount.
 - If the last mount got no usable configuration, `setAmount` loads it again with one `GET /operations/widget-enabled`. This happens when the express button is off, the visibility does not include the PDP, the request failed, or the amount was not a finite number at mount.
 - If easyCredit did not answer in time at mount, the processor sends no payment types. The button then stays hidden until the next `mount()`.
-- It does nothing if a later mount has taken over the container.
+- If a later mount has taken over the container, it changes nothing and resolves with the result of that mount.
 - It does not change `amount` in your options.
 - A new product (for example after a navigation in a single-page app) needs a new `build()` and `mount()`, because the product type and `prepareCart` change too.
 

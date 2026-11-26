@@ -2,14 +2,20 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ECExpressButtonComponent, ECExpressButtonComponentBuilder } from '../../src/components/express.component';
 import { ExpressButtonBaseOptions, ExpressButtonComponentOptions, ExpressButtonPlacement } from '../../src/types/main';
-import { importEasyCreditScript } from '../../src/utils/app.utils';
+import { importEasyCreditScript, waitForEasyCreditElement } from '../../src/utils/app.utils';
 import { suppressEasyCreditAlert } from '../../src/utils/easycredit-alert.utils';
+import { holdRender as holdButtonRender } from '../render.helpers';
 
 // Keep the real findElement: the submit event is dispatched on the rendered element.
-jest.mock('../../src/utils/app.utils', () => ({
-  ...(jest.requireActual('../../src/utils/app.utils') as object),
-  importEasyCreditScript: jest.fn(),
-}));
+jest.mock('../../src/utils/app.utils', () => {
+  const actual = jest.requireActual('../../src/utils/app.utils') as typeof import('../../src/utils/app.utils');
+
+  return {
+    ...actual,
+    importEasyCreditScript: jest.fn(),
+    waitForEasyCreditElement: jest.fn(actual.waitForEasyCreditElement),
+  };
+});
 
 jest.mock('../../src/utils/easycredit-alert.utils', () => ({ suppressEasyCreditAlert: jest.fn() }));
 
@@ -345,7 +351,8 @@ describe('ECExpressButtonComponent', () => {
       pending[1](jsonResponse(200, widgetEnabled()));
       await expect(mountB).resolves.toBe(true);
       pending[0](jsonResponse(200, widgetEnabled()));
-      await expect(mountA).resolves.toBe(false);
+      // The overtaken mount resolves with the result of the latest one, so a shop can apply every result.
+      await expect(mountA).resolves.toBe(true);
 
       const buttons = document.querySelectorAll('#express easycredit-express-button');
       expect(buttons).toHaveLength(1);
@@ -400,6 +407,317 @@ describe('ECExpressButtonComponent', () => {
       await expect(createComponent({ placement: 'CART' }).mount('#express')).resolves.toBe(false);
 
       expect(renderedButton()).toBeNull();
+    });
+  });
+
+  describe('rendering', () => {
+    const buttons = () => Array.from(document.querySelectorAll<HTMLElement>('#express easycredit-express-button'));
+    const shownButtons = () => buttons().filter((button) => button.style.display !== 'none');
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    const holdRender = () => holdButtonRender('easycredit-express-button');
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('keeps the button hidden and the mount pending until the button has rendered', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const release = holdRender();
+      let settled = false;
+
+      const mounting = createComponent({ productTypeId: 'pt-1' })
+        .mount('#express')
+        .then((shown) => {
+          settled = true;
+
+          return shown;
+        });
+      await tick();
+
+      expect(settled).toBe(false);
+      expect(buttons()).toHaveLength(1);
+      expect(shownButtons()).toHaveLength(0);
+
+      release();
+
+      await expect(mounting).resolves.toBe(true);
+      expect(shownButtons()).toHaveLength(1);
+    });
+
+    it('keeps the old button until the button of a remount has rendered', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      await createComponent({ placement: 'CART', amount: 100 }).mount('#express');
+      const release = holdRender();
+
+      const remount = createComponent({ placement: 'CART', amount: 250 }).mount('#express');
+      await tick();
+
+      expect(shownButtons().map((button) => button.getAttribute('amount'))).toEqual(['100']);
+
+      release();
+
+      await expect(remount).resolves.toBe(true);
+      expect(buttons().map((button) => button.getAttribute('amount'))).toEqual(['250']);
+    });
+
+    it('keeps the old button until the button for a new amount has rendered', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      await c.mount('#express');
+      const release = holdRender();
+
+      const updating = c.setAmount(149.5);
+      await tick();
+
+      expect(shownButtons().map((button) => button.getAttribute('amount'))).toEqual(['299.9']);
+
+      release();
+
+      await expect(updating).resolves.toBe(true);
+      expect(buttons().map((button) => button.getAttribute('amount'))).toEqual(['149.5']);
+    });
+
+    it('shows the latest amount when setAmount runs while the mount waits for the render', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      const release = holdRender();
+      const mounting = c.mount('#express');
+      await tick();
+
+      const updating = c.setAmount(149.5);
+      release();
+
+      await expect(mounting).resolves.toBe(true);
+      await expect(updating).resolves.toBe(true);
+      expect(buttons().map((button) => button.getAttribute('amount'))).toEqual(['149.5']);
+      expect(shownButtons()).toHaveLength(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets only the latest of two quick setAmount calls show its button', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      await c.mount('#express');
+      const release = holdRender();
+
+      const first = c.setAmount(149.5);
+      const second = c.setAmount(199.5);
+      await tick();
+      release();
+
+      await expect(first).resolves.toBe(true);
+      await expect(second).resolves.toBe(true);
+      expect(buttons().map((button) => button.getAttribute('amount'))).toEqual(['199.5']);
+    });
+
+    it('replaces the button at once after a failed start, also while a new amount waits for the render', async () => {
+      const onError = jest.fn();
+      const errorBody = { statusCode: 400, errors: [{ code: 'InvalidAmount', message: 'x' }] };
+      mockFetch((url) =>
+        url.endsWith('/payments/express') ? jsonResponse(400, errorBody) : jsonResponse(200, widgetEnabled()),
+      );
+      const c = createComponent({ onError, productTypeId: 'pt-1' });
+      await c.mount('#express');
+      const clicked = renderedButton();
+      const release = holdRender();
+      const updating = c.setAmount(149.5);
+      await tick();
+
+      clicked?.dispatchEvent(new CustomEvent('easycredit-submit', { detail: { paymentType: 'BILL' } }));
+      await tick();
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      // The failed start shows a new element at once; the waiting one for the new amount is dropped after its wait.
+      expect(shownButtons()).toHaveLength(1);
+      const replacement = shownButtons()[0];
+      expect(replacement).not.toBe(clicked);
+
+      release();
+      await expect(updating).resolves.toBe(true);
+      expect(buttons()).toEqual([replacement]);
+    });
+
+    it('resolves every setAmount during the mount wait with the final state when no type is left', async () => {
+      mockFetch(() =>
+        jsonResponse(
+          200,
+          widgetEnabled({
+            amountLimits: {
+              INSTALLMENT_PAYMENT: { minAmount: 0, maxAmount: 1000 },
+              BILL_PAYMENT: { minAmount: 0, maxAmount: 1000 },
+            },
+          }),
+        ),
+      );
+      const c = createComponent({ productTypeId: 'pt-1' });
+      const release = holdRender();
+      const mounting = c.mount('#express');
+      await tick();
+
+      const first = c.setAmount(149.5);
+      const second = c.setAmount(5000);
+      release();
+
+      await mounting;
+      await expect(first).resolves.toBe(false);
+      await expect(second).resolves.toBe(false);
+      expect(buttons()).toHaveLength(0);
+    });
+
+    it('resolves every setAmount during the mount wait only when the latest button is visible', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      const release = holdRender();
+      const mounting = c.mount('#express');
+      await tick();
+
+      const first = c.setAmount(149.5);
+      const second = c.setAmount(199.5);
+      release();
+
+      await mounting;
+      await expect(second).resolves.toBe(true);
+      expect(shownButtons().map((button) => button.getAttribute('amount'))).toEqual(['199.5']);
+      await expect(first).resolves.toBe(true);
+      expect(buttons()).toHaveLength(1);
+    });
+
+    it('resolves a mount that another component overtakes during the render wait with the latest result', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const release = holdRender();
+      const overtaken = createComponent({ productTypeId: 'pt-1', amount: 100 }).mount('#express');
+      await tick();
+
+      await expect(createComponent({ productTypeId: 'pt-1', amount: 200 }).mount('#express')).resolves.toBe(true);
+      release();
+
+      await expect(overtaken).resolves.toBe(true);
+      expect(buttons().map((button) => button.getAttribute('amount'))).toEqual(['200']);
+    });
+
+    it('resolves both mounts when the same instance mounts into a second container', async () => {
+      document.body.insertAdjacentHTML('beforeend', '<div id="express-b"></div>');
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      const release = holdRender();
+      const first = c.mount('#express');
+      await tick();
+
+      const second = c.mount('#express-b');
+      release();
+
+      await expect(first).resolves.toBe(false);
+      await expect(second).resolves.toBe(true);
+      expect(buttons()).toHaveLength(0);
+      expect(document.querySelectorAll('#express-b easycredit-express-button')).toHaveLength(1);
+    });
+
+    it('resolves a waiting setAmount false when setAmount(0) removes the button', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      await c.mount('#express');
+      const release = holdRender();
+      const waiting = c.setAmount(149.5);
+      await tick();
+
+      await expect(c.setAmount(0)).resolves.toBe(false);
+      release();
+
+      await expect(waiting).resolves.toBe(false);
+      expect(buttons()).toHaveLength(0);
+    });
+
+    it('resolves an overtaken setAmount with the result of the latest one', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      await c.mount('#express');
+      const release = holdRender();
+      const first = c.setAmount(149.5);
+      await tick();
+      let failLatest: () => void = () => {};
+      (waitForEasyCreditElement as jest.Mock).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            failLatest = () => resolve('failed');
+          }),
+      );
+      const second = c.setAmount(199.5);
+
+      // The first one finishes while the latest still waits: it must not report the old button.
+      release();
+      await tick();
+      failLatest();
+
+      await expect(second).resolves.toBe(false);
+      await expect(first).resolves.toBe(false);
+      expect(buttons()).toHaveLength(0);
+    });
+
+    it('removes the button and resolves false if the easyCredit script fails to load', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      (waitForEasyCreditElement as jest.Mock).mockImplementationOnce(async () => 'failed');
+
+      await expect(createComponent({ productTypeId: 'pt-1' }).mount('#express')).resolves.toBe(false);
+
+      expect(buttons()).toHaveLength(0);
+    });
+
+    it('shows the button and resolves true after the render timeout', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      (waitForEasyCreditElement as jest.Mock).mockImplementationOnce(async () => 'timeout');
+
+      await expect(createComponent({ productTypeId: 'pt-1' }).mount('#express')).resolves.toBe(true);
+
+      expect(shownButtons()).toHaveLength(1);
+    });
+
+    it('accepts the container element instead of a selector', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+
+      await expect(
+        createComponent({ productTypeId: 'pt-1' }).mount(document.getElementById('express') as Element),
+      ).resolves.toBe(true);
+
+      expect(buttons()).toHaveLength(1);
+    });
+
+    it.each([0, -1])('renders nothing and sends no request for the amount %s', async (amount) => {
+      await expect(createComponent({ amount, productTypeId: 'pt-1' }).mount('#express')).resolves.toBe(false);
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(buttons()).toHaveLength(0);
+    });
+
+    it('removes the button when setAmount gets 0', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ productTypeId: 'pt-1' });
+      await c.mount('#express');
+
+      await expect(c.setAmount(0)).resolves.toBe(false);
+
+      expect(buttons()).toHaveLength(0);
+    });
+  });
+
+  describe('fullWidth', () => {
+    it('does not set full-width by default', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+
+      await createComponent().mount('#express');
+
+      expect(renderedButton()?.hasAttribute('full-width')).toBe(false);
+    });
+
+    it('sets full-width on mount and on the element setAmount renders', async () => {
+      mockFetch(() => jsonResponse(200, widgetEnabled()));
+      const c = createComponent({ fullWidth: true, productTypeId: 'pt-1' });
+
+      await c.mount('#express');
+      expect(renderedButton()?.getAttribute('full-width')).toBe('true');
+
+      await c.setAmount(149.5);
+      expect(renderedButton()?.getAttribute('full-width')).toBe('true');
     });
   });
 
@@ -526,8 +844,9 @@ describe('ECExpressButtonComponent', () => {
       await b.mount('#express');
       const bButton = renderedButton();
 
-      expect(await a.setAmount(NaN)).toBe(false);
-      expect(await a.setAmount(10)).toBe(false);
+      // The result of the latest mount of the container, which a stale instance does not change.
+      expect(await a.setAmount(NaN)).toBe(true);
+      expect(await a.setAmount(10)).toBe(true);
 
       expect(renderedButton()).toBe(bButton);
       expect(bButton?.getAttribute('amount')).toBe('200');
@@ -547,7 +866,7 @@ describe('ECExpressButtonComponent', () => {
       pending[0](
         jsonResponse(200, widgetEnabled({ amountLimits: { BILL_PAYMENT: { minAmount: 0, maxAmount: 100 } } })),
       );
-      await expect(first).resolves.toBe(false);
+      await expect(first).resolves.toBe(true);
 
       // The stale mount's limits would drop BILL.
       expect(await c.setAmount(200)).toBe(true);
@@ -827,7 +1146,7 @@ describe('ECExpressButtonComponent', () => {
       mockFetch((url) =>
         url.endsWith('/payments/express') ? nonJsonResponse(502) : jsonResponse(200, widgetEnabled()),
       );
-      const component = createComponent({ onError, amount: 50, productTypeId: 'pt-1' });
+      const component = createComponent({ onError, amount: 50, productTypeId: 'pt-1', fullWidth: true });
       await component.mount('#express');
       const clicked = renderedButton();
 
@@ -841,6 +1160,7 @@ describe('ECExpressButtonComponent', () => {
       for (const name of ['webshop-id', 'amount', 'payment-types']) {
         expect(buttonInOnError!.getAttribute(name)).toBe(clicked?.getAttribute(name));
       }
+      expect(buttonInOnError!.getAttribute('full-width')).toBe('true');
     });
 
     it('calls a throwing onError once and does not reject unhandled', async () => {
