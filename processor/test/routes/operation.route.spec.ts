@@ -1,6 +1,7 @@
 import { setupFastify } from '../../src/server/server';
-import { describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { paymentSDK } from '../../src/payment-sdk';
+import { isWidgetEnabled } from '../../src/services/connector.service';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 
 jest.mock('../../src/payment-sdk.ts', () => ({
@@ -29,6 +30,13 @@ jest.mock('../../src/services/webshop.service', () => ({
     BILL_PAYMENT: { enabled: true, available: true },
   })),
 }));
+
+jest.mock('../../src/services/connector.service', () => {
+  const actual = jest.requireActual<typeof import('../../src/services/connector.service')>(
+    '../../src/services/connector.service',
+  );
+  return { ...actual, isWidgetEnabled: jest.fn(actual.isWidgetEnabled) };
+});
 
 describe('test operationRoute', () => {
   it('should call healthCheck handler', async () => {
@@ -77,6 +85,39 @@ describe('test operationRoute', () => {
       paymentTypes: process.env.WIDGET_ENABLED === '1' ? ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] : [],
       expressButtonEnabled: false,
       expressButtonVisibility: 'PDP_AND_CART',
+    });
+  });
+
+  describe('widget-enabled productTypeId', () => {
+    const getWidgetEnabled = async (query: string) => {
+      const server = await setupFastify();
+      return server.inject({ method: 'GET', url: `/operations/widget-enabled${query}` });
+    };
+    const productTypeId = '3f2b8c1e-9d4a-4e6b-8a52-7c1d0e9f4a10';
+
+    beforeEach(() => {
+      jest.mocked(isWidgetEnabled).mockClear();
+    });
+
+    it('passes a UUID productTypeId on', async () => {
+      const response = await getWidgetEnabled(`?productTypeId=${productTypeId}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(isWidgetEnabled).toHaveBeenCalledWith(productTypeId);
+    });
+
+    it.each(['voucher', 'undefined'])('rejects productTypeId=%s with 400', async (value) => {
+      const response = await getWidgetEnabled(`?productTypeId=${value}`);
+
+      expect(response.statusCode).toBe(400);
+      expect(isWidgetEnabled).not.toHaveBeenCalled();
+    });
+
+    it('calls isWidgetEnabled with undefined without a query', async () => {
+      const response = await getWidgetEnabled('');
+
+      expect(response.statusCode).toBe(200);
+      expect(isWidgetEnabled).toHaveBeenCalledWith(undefined);
     });
   });
 });

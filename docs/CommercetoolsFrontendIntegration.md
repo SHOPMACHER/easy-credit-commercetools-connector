@@ -418,7 +418,7 @@ The snippets mount the components into these elements. Render them in your pages
 
 The checkout component and the summary component send the checkout session ID in the header `X-Session-Id`. The processor accepts only an active session that has a cart. If the session is missing, not valid or expired, the processor returns `401 invalid_token`.
 
-`GET /operations/widget-enabled` needs no session. It returns `isEnabled`, `webShopId`, `paymentTypes`, `expressButtonEnabled` and `expressButtonVisibility`. The widget and the label component use only this endpoint. On the product page, the express button also uses only this endpoint to mount. Its click needs a session, see [Express button component](./WebComponents.md#express-button-component).
+`GET /operations/widget-enabled` needs no session. It returns `isEnabled`, `webShopId`, `paymentTypes`, `expressButtonEnabled` and `expressButtonVisibility`. The widget and the label component use only this endpoint. On the product page, the express button also uses only this endpoint to mount. It adds `?productTypeId=` there. Its click needs a session, see [Express button component](./WebComponents.md#express-button-component).
 
 The BFF creates the session with the commercetools Session API: `POST https://session.<region>.commercetools.com/<projectKey>/sessions`. The body contains the cart ID (`cart.cartRef.id`). The key of a Checkout application (`metadata.applicationKey`) is optional, see [Checkout application](#checkout-application). The token needs the scope `manage_sessions`. The response contains the session `id` and `expiryAt`. See [Create Checkout Sessions](https://docs.commercetools.com/checkout/installing-checkout#create-checkout-sessions).
 
@@ -709,7 +709,7 @@ The two settings are independent of `WIDGET_ENABLED`. They control only the butt
 
 ### Show the express button
 
-`mount()` resolves to `true` if it rendered a button and to `false` if not. It does not reject. A mount that a newer mount on the same container overtakes also resolves to `false`. Thus use only the result of the latest mount, and set `hidden` in both directions. For all rules, see [Express button component](./WebComponents.md#express-button-component).
+`mount()` resolves to `true` if it rendered a button and to `false` if not. It does not reject. A mount that a newer mount on the same container overtakes also resolves to `false`. Thus use only the result of the latest mount, and set `hidden` in both directions. On the product page, call `setAmount()` when the shopper selects another variant instead of mounting again. For all rules, see [Express button component](./WebComponents.md#express-button-component).
 
 ```ts
 // Browser. File easycredit-express-button.ts: express button on the product page (PDP) or the cart page (CART).
@@ -718,17 +718,42 @@ import { createEnabler } from './easycredit-enabler';
 
 type Placement = 'PDP' | 'CART';
 
+// The product page passes the product type and a function that returns the selected variant.
+type PdpProduct = { productTypeId: string; getSku: () => string };
+
 // The latest run for each container.
 const latestRun = new Map<string, number>();
+// The mounted button of each container, for setAmount.
+const buttons = new Map<string, { setAmount(amount: number): Promise<boolean> }>();
 
-// Call this when the page loads, and again when the amount or the product changes.
-// amount: EUR major units, for example 599.9. sku: only on the product page, where it is required.
-export function mountExpressButton(placement: 'PDP', amount: number, sku: string): Promise<void>;
+function showContainer(containerId: string, shown: boolean): void {
+  const container = document.getElementById(containerId);
+  if (container) container.hidden = !shown;
+}
+
+// Product page: call this when the shopper selects another variant. No new mount is needed.
+// amount: gross price of one unit in EUR major units, for example 599.9.
+export async function updateExpressAmount(amount: number): Promise<void> {
+  const button = buttons.get('easycredit-express-pdp');
+  if (!button) return;
+  try {
+    showContainer('easycredit-express-pdp', await button.setAmount(amount));
+  } catch (error) {
+    console.error('Cannot update the express button', error);
+  }
+}
+
+// Call this when the page loads, and on the cart page again when the cart total changes.
+// On the product page, call it again only for a new product (for example after a navigation).
+// amount: EUR major units, for example 599.9. product: only on the product page, where it is required.
+export function mountExpressButton(placement: 'PDP', amount: number, product: PdpProduct): Promise<void>;
 export function mountExpressButton(placement: 'CART', amount: number): Promise<void>;
-export async function mountExpressButton(placement: Placement, amount: number, sku?: string): Promise<void> {
+export async function mountExpressButton(placement: Placement, amount: number, product?: PdpProduct): Promise<void> {
   const containerId = `easycredit-express-${placement.toLowerCase()}`;
   const run = (latestRun.get(containerId) ?? 0) + 1;
   latestRun.set(containerId, run);
+  // Never call setAmount on the button of the previous product.
+  buttons.delete(containerId);
 
   let rendered = false;
   try {
@@ -747,7 +772,20 @@ export async function mountExpressButton(placement: Placement, amount: number, s
           urlCancellation: `${origin}/cart?status=cancelled`,
           urlDenial: `${origin}/cart?status=denied`,
         },
-        onError: () => showError('The payment did not start. Please try again.'),
+        // Processor messages are not for shoppers: show shop text for the codes you know, in the language of the shop.
+        // Only UnexpectedResponse and ExpressInitFailed carry a message that is safe to show (the fixed German fallback).
+        onError: (error) => {
+          const { code, message } = error.errors[0] ?? { code: '', message: '' };
+          const known: Record<string, string> = {
+            // Your own texts
+            BillPaymentExcludedItems: 'Der Rechnungskauf ist für diesen Artikel nicht möglich.',
+            InstallmentPaymentExcludedItems: 'Die Ratenzahlung ist für diesen Artikel nicht möglich.',
+            InvalidAmount: 'Für diesen Betrag ist easyCredit nicht verfügbar.',
+            PaymentTypeNotAvailable: 'Diese Zahlungsart ist für Ihren Warenkorb nicht verfügbar.',
+          };
+          const safe = code === 'UnexpectedResponse' || code === 'ExpressInitFailed';
+          showError(known[code] ?? (safe ? message : 'Die Zahlung konnte nicht gestartet werden. Bitte versuchen Sie es erneut.'));
+        },
         onSuccess: (response) => window.location.replace(response.redirectUrl),
       };
       // The product page requires prepareCart: the express payment charges the whole cart of the session.
@@ -756,31 +794,42 @@ export async function mountExpressButton(placement: Placement, amount: number, s
           ? {
               ...common,
               placement,
+              productTypeId: product?.productTypeId, // The processor drops the payment types that exclude it
+              // Runs at click time, so it reads the variant that is selected now.
               prepareCart: async () =>
-                (await callAction<{ sessionId: string }>('cart/prepareExpressCart', { sku })).sessionId,
+                (await callAction<{ sessionId: string }>('cart/prepareExpressCart', { sku: product?.getSku() }))
+                  .sessionId,
             }
           : { ...common, placement };
-      rendered = await builder.build(options).mount(`#${containerId}`);
+      const button = builder.build(options);
+      buttons.set(containerId, button);
+      rendered = await button.mount(`#${containerId}`);
     }
   } catch (error) {
     console.error('Cannot mount the express button', error);
   }
 
   // Only the latest run shows or hides the container. An overtaken mount resolves to false.
-  const container = document.getElementById(containerId);
-  if (container && run === latestRun.get(containerId)) {
-    container.hidden = !rendered;
+  if (run === latestRun.get(containerId)) {
+    showContainer(containerId, rendered);
   }
 }
 ```
 
 The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. Do not put it inside a `<form>`.
 
-**Product page.** Pass the price of the selected variant and its SKU. Mount again when the shopper selects another variant. After `onError` on the product page, reload the cart in the page, because `prepareCart` can already have replaced it.
+**Product page.** Pass the gross price of one unit of the selected variant, the `productTypeId` of the product (`product.productType.id`) and a function that returns the selected SKU.
+
+- **Amount.** Use `price.discounted?.value ?? price.value`, in EUR major units. The quantity is always 1, so ignore the quantity field of the page. With net prices (`includedInPrice: false`), add the tax rate and assume DE, because the product page has no shipping country. The connector charges the cart total after `prepareCart`, so cart discounts can make it differ from this amount.
+- **Product type.** Always pass `productTypeId`, and pass the UUID (`product.productType.id`), not the product type key. Without it, the button shows payment types that the product excludes (for example a voucher). The click then fails with `BillPaymentExcludedItems` or `InstallmentPaymentExcludedItems`, and one `console.warn` is the only sign. A value that is not a UUID makes the processor answer `400`, and the button is not rendered. The product of commercetools Frontend does not carry the product type by default, see [Product type on the product page](#product-type-on-the-product-page).
+- **Prepare the cart.** `prepareCart` is required on the product page. Without it, `mount()` renders nothing and resolves to `false`, see [Prepare the cart on the product page](#prepare-the-cart-on-the-product-page).
+- **Variant change.** Call `setAmount()` with the new price, as `updateExpressAmount` does above. It renders a new button for the new price, so an open easyCredit modal closes. Do not call `mount()` again for a variant. Mount again, with a new `build()`, only for a new product, for example after a navigation in a single-page app.
+- **Click time.** `prepareCart` runs when the shopper clicks. It must read the selected variant at that time, as `getSku` does. Do not close over the SKU at build time, or the cart gets the variant that was selected at mount.
+- **After `onError`.** Reload the cart in the page, because `prepareCart` can already have replaced it. The component has replaced the button, so the shopper can click again.
 
 **Cart page.** Mount the button when the cart has loaded, and again when the cart total changes. Do not mount it for a total of 0. The button in the cart needs the session of the cart, because it checks the payment types with `GET /payments/express/payment-method`, see [Check the payment types](./CreateExpressPayment.md#check-the-payment-types).
 
-**Time limit.** After the shopper accepts in the easyCredit modal, easyCredit waits 10 seconds. If the page has not navigated away by then, easyCredit shows its own alert and closes the modal. Thus `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. Keep `prepareCart` to one cart read, one cart update and the session token. Do not read the cart again or load its shipping methods after the update: `prepareCart` only needs the cart ID and the session.
+**Time limit.** After the shopper accepts in the easyCredit modal, easyCredit waits 10 seconds. If the page has not navigated away by then, easyCredit shows its own alert and closes the modal. Thus `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. The component swallows this alert for 11 seconds after every accept, not only when a request fails, so the shopper never sees it. It does this with a wrapper around `window.alert`. This is a workaround until easyCredit offers a way to cancel the alert. Keep `prepareCart` to one cart read, one cart update and the session token. Do not read the cart again or load its shipping methods after the update: `prepareCart` only needs the cart ID and the session.
 
 **Redirect links:**
 
@@ -791,6 +840,22 @@ The container must exist when you call `mount()` and stay in the DOM until `moun
 | `urlDenial` | the cart, with `status=denied` | Shows a message. |
 
 The cancel webhook sets the payment to `Failure` and unfreezes the cart before it redirects, as for a regular payment.
+
+### Product type on the product page
+
+The button needs the ID of the commercetools product type, not its key. The product projection has it in `productType.id`, but the `Product` type of commercetools Frontend does not carry it. Add it in three places:
+
+1. The shared `Product` type: add `productTypeId?: string`.
+2. The backend `ProductMapper`, where it maps the product projection to `Product`:
+
+   ```ts
+   // BFF. File ProductMapper.ts, in the mapping from the product projection to Product.
+   productTypeId: commercetoolsProduct?.productType?.id,
+   ```
+
+3. Every frontend mapper that copies `Product` into a view model, for example `toUIProduct`. Otherwise the field is lost before it reaches the product page.
+
+Then pass `product.productTypeId` to `mountExpressButton`, see [Show the express button](#show-the-express-button). The quick view of a product uses the same mappers, so it gets the field as well.
 
 ### Prepare the cart on the product page
 
@@ -1059,7 +1124,7 @@ export function getCheckoutOptions(
       customerSince: customer.createdAt?.slice(0, 10), // format yyyy-MM-dd
       numberOfOrders: customer.numberOfOrders,
     },
-    onError: () => showError('The payment did not start. Please try again.'),
+    onError: () => showError('Die Zahlung konnte nicht gestartet werden. Bitte versuchen Sie es erneut.'),
     // Go to the easyCredit page.
     onSuccess: (response) => window.location.replace(response.redirectUrl),
   };

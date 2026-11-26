@@ -3,6 +3,10 @@ import { getPaymentTypeConfig, readConfiguration } from '../utils/config.utils';
 import { initEasyCreditClient } from '../client/easycredit.client';
 import { getPaymentTypesAvailability } from './webshop.service';
 import { ECTransactionPaymentType } from '../types/payment.types';
+import {
+  getPaymentTypesExcludingProductType,
+  getPaymentTypesWithProductTypeExclusions,
+} from './paymentTypeRestriction.service';
 import { WidgetEnabledResponseSchemaDTO } from '../dtos/operations/widgetEnabled.dto';
 
 // Settings that don't stop the connector but likely aren't what the merchant meant; logged once at startup.
@@ -36,19 +40,22 @@ export const healthCheck = async () => {
 
 type WidgetPaymentTypes = Pick<WidgetEnabledResponseSchemaDTO, 'paymentTypes' | 'amountLimits'>;
 
-export const isWidgetEnabled = async (): Promise<WidgetEnabledResponseSchemaDTO> => {
+export const isWidgetEnabled = async (productTypeId?: string): Promise<WidgetEnabledResponseSchemaDTO> => {
   const config = readConfiguration();
 
   log.debug('get Widget config');
 
   const isEnabled = config.easyCredit.widgetEnabled === '1';
   const expressButtonEnabled = config.easyCredit.expressButtonEnabled === '1';
+  const checksProductType =
+    Boolean(productTypeId) && expressButtonEnabled && config.easyCredit.expressButtonVisibility !== 'CART';
+  const productTypeToCheck = checksProductType ? productTypeId : undefined;
 
   return {
     isEnabled,
     webShopId: config.easyCredit.webShopId,
     // Neither the widget nor the express button is rendered when both are off, so there is no reason to ask easyCredit.
-    ...(isEnabled || expressButtonEnabled ? await getWidgetPaymentTypes() : { paymentTypes: [] }),
+    ...(isEnabled || expressButtonEnabled ? await getWidgetPaymentTypes(productTypeToCheck) : { paymentTypes: [] }),
     expressButtonEnabled,
     expressButtonVisibility: config.easyCredit.expressButtonVisibility,
   };
@@ -61,7 +68,8 @@ export const WIDGET_PAYMENT_TYPES_TIMEOUT_MS = 1500;
 // The widget advertises a payment type only when checkout offers it, with the same rules (both types fail closed).
 // An empty list means checkout offers nothing, so the assets render no widget.
 // easyCredit's limits are left to the widget, so only the limits the merchant narrowed are sent along.
-const getWidgetPaymentTypes = async (): Promise<WidgetPaymentTypes> => {
+// With a productTypeId (only passed for the PDP express button) the types that exclude that product type are dropped as well.
+const getWidgetPaymentTypes = async (productTypeId?: string): Promise<WidgetPaymentTypes> => {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), WIDGET_PAYMENT_TYPES_TIMEOUT_MS);
@@ -71,6 +79,11 @@ const getWidgetPaymentTypes = async (): Promise<WidgetPaymentTypes> => {
     const lookup = getPaymentTypesAvailability(0);
     // If the timeout wins, a later rejection of the lookup must not become an unhandled rejection.
     lookup.catch(() => undefined);
+
+    // Started here so it runs in parallel with the easyCredit lookup; the catch covers the lookup rejecting.
+    const excludingLookup = productTypeId
+      ? getPaymentTypesExcludingProductType(productTypeId).catch(() => undefined)
+      : undefined;
     const availability = await Promise.race([lookup, timeout]);
 
     if (availability === 'timeout') {
@@ -79,10 +92,17 @@ const getWidgetPaymentTypes = async (): Promise<WidgetPaymentTypes> => {
       return { paymentTypes: [] };
     }
 
+    // A product type lookup that is slow or failed counts as excluded for every type that has exclusions.
+    let excluded: ECTransactionPaymentType[] = [];
+    if (excludingLookup) {
+      const excludingResult = await Promise.race([excludingLookup, timeout]);
+      excluded =
+        excludingResult && excludingResult !== 'timeout' ? excludingResult : getPaymentTypesWithProductTypeExclusions();
+    }
     const paymentTypes = [
       ECTransactionPaymentType.ECTransactionInstallmentPayment,
       ECTransactionPaymentType.ECTransactionBillPayment,
-    ].filter((paymentType) => availability[paymentType].enabled);
+    ].filter((paymentType) => availability[paymentType].enabled && !excluded.includes(paymentType));
     const amountLimits: NonNullable<WidgetPaymentTypes['amountLimits']> = {};
 
     for (const paymentType of paymentTypes) {
