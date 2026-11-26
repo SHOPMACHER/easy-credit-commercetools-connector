@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { EXPRESS_BUTTON_VISIBILITIES } from '../../types/index.types';
 
 const AmountLimitsSchema = Type.Object({
   minAmount: Type.Number(),
@@ -17,6 +18,8 @@ export const WidgetEnabledResponseSchema = Type.Object({
       BILL_PAYMENT: Type.Optional(AmountLimitsSchema),
     }),
   ),
+  expressButtonEnabled: Type.Boolean(),
+  expressButtonVisibility: Type.Union(EXPRESS_BUTTON_VISIBILITIES.map((value) => Type.Literal(value))),
 });
 
 export type WidgetEnabledResponseSchemaDTO = Static<typeof WidgetEnabledResponseSchema>;

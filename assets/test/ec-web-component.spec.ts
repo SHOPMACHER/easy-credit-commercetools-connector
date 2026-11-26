@@ -1,9 +1,10 @@
 import { ECWebComponent } from '../src/ec-web-component';
 import { ECCheckoutComponentBuilder } from '../src/components/checkout.component';
 import { ECWidgetComponentBuilder } from '../src/components/widget.component';
-import { WebComponentOptions } from '../src/types/main';
+import { ExpressButtonComponentOptions, WebComponentOptions } from '../src/types/main';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { ECSummaryComponentBuilder } from '../src/components/summary.component.ts';
+import { ECExpressButtonComponentBuilder } from '../src/components/express.component';
 
 describe('ECWebComponent', () => {
   const mockOptions: WebComponentOptions = {
@@ -65,5 +66,28 @@ describe('ECWebComponent', () => {
     const baseOptions = await ecWebComponent.setupData;
 
     expect((widgetBuilder as ECWidgetComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
+  });
+
+  it('should create an ECExpressButtonComponentBuilder with the base options', async () => {
+    const expressBuilder = await ecWebComponent.createExpressButtonBuilder();
+    const baseOptions = await ecWebComponent.setupData;
+
+    expect(expressBuilder).toBeInstanceOf(ECExpressButtonComponentBuilder);
+    expect((expressBuilder as ECExpressButtonComponentBuilder)['baseOptions']).toEqual(baseOptions.baseOptions);
+  });
+
+  // Type-level only: `tsc` in `npm run build` checks this file, ts-jest does not.
+  it('requires prepareCart on the PDP and not on the cart', () => {
+    const base = {
+      amount: 1,
+      redirectLinks: { urlSuccess: '', urlCancellation: '', urlDenial: '' },
+      onError: () => {},
+      onSuccess: () => {},
+    };
+    // @ts-expect-error: prepareCart is required on the PDP
+    const pdp: ExpressButtonComponentOptions = { ...base, placement: 'PDP' };
+    const cart: ExpressButtonComponentOptions = { ...base, placement: 'CART' };
+
+    expect([pdp, cart]).toHaveLength(2);
   });
 });

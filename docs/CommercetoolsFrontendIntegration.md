@@ -13,6 +13,7 @@ If your shop uses connector 1.0.x, read the [upgrade notes](../CHANGELOG.md#upgr
 * [Load the enabler](#load-the-enabler)
 * [Show the payment methods](#show-the-payment-methods)
 * [Widget on the product and cart page](#widget-on-the-product-and-cart-page)
+* [Express checkout](#express-checkout)
 * [Create the payment and redirect](#create-the-payment-and-redirect)
 * [Return from easyCredit](#return-from-easycredit)
 * [Authorize and create the order](#authorize-and-create-the-order)
@@ -40,6 +41,7 @@ These names are placeholders for code of your shop:
 | `showError`, `showInfo` | Show a message to the shopper. |
 | `callAction` | Calls a Frontend action from the browser. It returns the parsed response body of the action. It throws an error if the action fails. The action names in this guide are `<namespace>/<action>`. |
 | `createOrderFromCart` | The existing order creation of your shop (browser side). |
+| `getShopCart`, `updateShopCart` | BFF side: read the cart of the shopper (or create a new cart) and update it, with the cart API of your extension. The BFF API client of this guide cannot update carts. Used only by [Express checkout](#express-checkout). |
 
 The Frontend SDK does not throw. Its `callAction` returns `{ isError: false, data }` or `{ isError: true, error }`, see [Frontend SDK](https://docs.commercetools.com/frontend-development/frontend-sdk). A `callAction` for this guide can wrap it:
 
@@ -47,8 +49,8 @@ The Frontend SDK does not throw. Its `callAction` returns `{ isError: false, dat
 // Browser. File easycredit-call-action.ts: callAction on the Frontend SDK. Import the SDK instance of your shop.
 import { sdk } from './sdk';
 
-export async function callAction<T>(actionName: string): Promise<T> {
-  const response = await sdk.callAction<T>({ actionName });
+export async function callAction<T>(actionName: string, payload?: unknown): Promise<T> {
+  const response = await sdk.callAction<T>({ actionName, payload });
   if (response.isError) {
     throw response.error;
   }
@@ -103,7 +105,11 @@ The browser calls the processor directly through the enabler. The processor allo
 | `GET /payments/payment-method/:cartId` | checkout component |
 | `POST /payments` | checkout component |
 | `GET /payments/:paymentId` | summary component |
-| `GET /operations/widget-enabled` | widget and label component (no session necessary) |
+| `GET /operations/widget-enabled` | widget, label and express button component (no session necessary) |
+| `GET /payments/express/payment-method` | express button component in the cart (`CART`), with the cart session |
+| `POST /payments/express` | express button component on click: on the product page with the session that `prepareCart` returns, in the cart with the cart session |
+
+The BFF also sends one call with `X-Session-Id`: `POST /payments/express/:paymentId/return`, see [Express return](#express-return).
 
 The BFF and the back office call the processor with a commercetools OAuth access token (`Authorization: Bearer <token>`):
 
@@ -130,6 +136,8 @@ The integration uses three commercetools API clients. Do not mix them up:
 ### Connector deployment
 
 Deploy the connector with commercetools Connect, see [Deploy and upgrade](../README.md#deploy-and-upgrade). You set the variables of the processor in the deployment. [connect.yaml](../connect.yaml) defines them. You must set at least `CTP_PROJECT_KEY`, `CTP_CLIENT_ID`, `CTP_CLIENT_SECRET`, `CTP_SCOPES`, `WEBSHOP_ID` and `API_PASSWORD`. `CTP_SESSION_URL` and `WIDGET_ENABLED` are also required, but they have defaults. Keep the defaults, unless your shop needs different values. For pay by invoice, also set `BILL_PAYMENT_ENABLED=1`. The [processor README](../processor/README.md#configure-processor-settings) lists all variables with example values, also the variables that control the payment methods. [Get Payment Method](./GetPaymentMethod.md#payment-type-availability) gives the full availability rules and limits.
+
+For express checkout, also set `EXPRESS_BUTTON_ENABLED=1`, and `EXPRESS_BUTTON_VISIBILITY` if the button shows only on the product page or only in the cart, see [Express checkout](#express-checkout). The post-deploy script creates the payment custom type for express payments (`PAYMENT_CUSTOM_TYPE_KEY`). Thus redeploy an existing deployment before the first express payment. Until then, the express endpoints answer `503 ExpressNotConfigured`, see [Stored express flag](./CreateExpressPayment.md#stored-express-flag). Express redirect links must be absolute `http` or `https` URLs. Set `REDIRECT_ALLOWED_HOSTS` to the hosts of your storefront, see [Redirect links](./CreatePayment.md#redirect-links).
 
 The deployment has two applications: `processor` (its URL is the processor URL) and `assets` (its URL is the asset URL). To find the application URLs, read the deployment with [Get Deployment](https://docs.commercetools.com/connect/deployments#get-deployment). Read the two URLs from `applications[*].url` of the response. The response has a `url` for the `processor` application and for the `assets` application. The post-deploy script also stores the processor URL in the custom object with the container `easycredit-connector` and the key `easycredit-connector-url`.
 
@@ -215,7 +223,7 @@ All BFF actions in this guide import these helpers:
 
 ```ts
 // BFF. File easycredit-bff.ts: configuration, token and payment helpers for all easyCredit actions.
-import type { Cart, Payment } from '@commercetools/platform-sdk';
+import type { Cart, Payment, TransactionState } from '@commercetools/platform-sdk';
 import type { ActionContext, Request, Response } from '@frontastic/extension-types';
 
 export type EasyCreditBffConfig = {
@@ -319,6 +327,21 @@ export function isInvoice(payment: Payment): boolean {
   // BILL_PAYMENT is invoice. All other values (for example easycredit) are installment.
   return payment.paymentMethodInfo.method === 'BILL_PAYMENT';
 }
+
+// The Authorization transaction that counts. An express amount sync replaces it: old one Failure, new one Initial.
+export function getAuthorizationState(payment: Payment | undefined): TransactionState | undefined {
+  const authorizations = (payment?.transactions ?? []).filter(({ type }) => type === 'Authorization');
+
+  return (authorizations.find(({ state }) => state !== 'Failure') ?? authorizations[0])?.state;
+}
+
+// A live express cart: the current attempt is an express payment that did not fail.
+// A cancelled or declined express attempt is Failure, so it does not lock the regular checkout.
+export function isLiveExpressPayment(payment: Payment | undefined): boolean {
+  const state = getAuthorizationState(payment);
+
+  return payment?.custom?.fields?.easyCreditExpress === true && state !== undefined && state !== 'Failure';
+}
 ```
 
 The expand `paymentInfo.payments[*]` returns the full commercetools payments of the cart.
@@ -332,13 +355,22 @@ The browser calls the BFF actions by the name `<namespace>/<action>`. Register t
 import type { ExtensionRegistry } from '@frontastic/extension-types';
 import { authorizeEasyCreditPayment } from './authorizeEasyCreditPayment';
 import { cancelEasyCreditPayment } from './cancelEasyCreditPayment';
+import { expressReturnEasyCreditPayment } from './expressReturnEasyCreditPayment';
 import { getEasyCreditPayment } from './getEasyCreditPayment';
 import { getEasyCreditSession } from './getEasyCreditSession';
 import { getEasyCreditSettings } from './getEasyCreditSettings';
+import { prepareExpressCart } from './prepareExpressCart';
 
 export default {
   actions: {
-    cart: { getEasyCreditSession, getEasyCreditPayment, authorizeEasyCreditPayment, cancelEasyCreditPayment },
+    cart: {
+      getEasyCreditSession,
+      getEasyCreditPayment,
+      authorizeEasyCreditPayment,
+      cancelEasyCreditPayment,
+      prepareExpressCart,
+      expressReturnEasyCreditPayment,
+    },
     project: { getEasyCreditSettings },
   },
 } as ExtensionRegistry;
@@ -374,6 +406,10 @@ The snippets mount the components into these elements. Render them in your pages
 
 <!-- Product page and cart page -->
 <div id="easycredit-widget"></div>
+
+<!-- Express button: product page and cart page. Not inside a <form>. -->
+<div id="easycredit-express-pdp"></div>
+<div id="easycredit-express-cart"></div>
 ```
 
 <br />
@@ -382,7 +418,7 @@ The snippets mount the components into these elements. Render them in your pages
 
 The checkout component and the summary component send the checkout session ID in the header `X-Session-Id`. The processor accepts only an active session that has a cart. If the session is missing, not valid or expired, the processor returns `401 invalid_token`.
 
-`GET /operations/widget-enabled` needs no session. It returns only `isEnabled`, `webShopId` and `paymentTypes`. The widget and the label component use only this endpoint.
+`GET /operations/widget-enabled` needs no session. It returns `isEnabled`, `webShopId`, `paymentTypes`, `expressButtonEnabled` and `expressButtonVisibility`. The widget and the label component use only this endpoint. On the product page, the express button also uses only this endpoint to mount. Its click needs a session, see [Express button component](./WebComponents.md#express-button-component).
 
 The BFF creates the session with the commercetools Session API: `POST https://session.<region>.commercetools.com/<projectKey>/sessions`. The body contains the cart ID (`cart.cartRef.id`). The key of a Checkout application (`metadata.applicationKey`) is optional, see [Checkout application](#checkout-application). The token needs the scope `manage_sessions`. The response contains the session `id` and `expiryAt`. See [Create Checkout Sessions](https://docs.commercetools.com/checkout/installing-checkout#create-checkout-sessions).
 
@@ -399,7 +435,7 @@ import {
   noCartResponse,
 } from './easycredit-bff';
 
-type StoredSession = { cartId: string; sessionId: string; expiresAt: number };
+export type StoredSession = { cartId: string; sessionId: string; expiresAt: number };
 
 async function createCheckoutSession(config: EasyCreditBffConfig, cartId: string): Promise<StoredSession> {
   const response = await fetch(`${config.sessionUrl}/${config.projectKey}/sessions`, {
@@ -420,17 +456,28 @@ async function createCheckoutSession(config: EasyCreditBffConfig, cartId: string
   return { cartId, sessionId: session.id, expiresAt: new Date(session.expiryAt).getTime() };
 }
 
+// The stored session of the cart, or a new session. The express actions also use it.
+export async function getCheckoutSession(
+  request: Request,
+  config: EasyCreditBffConfig,
+  cartId: string,
+): Promise<StoredSession> {
+  const session: StoredSession | undefined = request.sessionData?.easyCreditSession;
+  // Use a new session for a new cart, and one minute before the old session expires.
+  if (!session || session.cartId !== cartId || session.expiresAt - 60_000 < Date.now()) {
+    return createCheckoutSession(config, cartId);
+  }
+
+  return session;
+}
+
 export async function getEasyCreditSession(request: Request, actionContext: ActionContext): Promise<Response> {
   const cartId = getCartId(request);
   if (!cartId) {
     return noCartResponse(request);
   }
 
-  let session: StoredSession | undefined = request.sessionData?.easyCreditSession;
-  // Use a new session for a new cart, and one minute before the old session expires.
-  if (!session || session.cartId !== cartId || session.expiresAt - 60_000 < Date.now()) {
-    session = await createCheckoutSession(getEasyCreditBffConfig(actionContext), cartId);
-  }
+  const session = await getCheckoutSession(request, getEasyCreditBffConfig(actionContext), cartId);
 
   return {
     statusCode: 200,
@@ -638,6 +685,348 @@ export async function mountWidget(
 
 <br />
 
+## Express checkout
+
+With the express button, the shopper starts the easyCredit payment on the product page or in the cart. The shopper enters name and address on the easyCredit page, not in your checkout. The connector then writes them to the cart.
+
+Express checkout needs a connector release that includes it, see the [changelog](../CHANGELOG.md#unreleased). The types of the npm package `1.1.0` do not have the express button. Until a package release adds them, copy the express types from [main.d.ts](../assets/src/types/main.d.ts). An older enabler has no `createExpressButtonBuilder`, so the snippets call it with `?.()`.
+
+The flow:
+
+1. The shopper clicks the express button. On the product page, the button first calls `prepareCart`: the BFF puts only this product into the cart.
+2. The button sends `POST /payments/express`, and the shop redirects to easyCredit. See [Create Express Payment](./CreateExpressPayment.md).
+3. easyCredit sends the shopper to `urlSuccess`, the confirm page of your checkout. The BFF calls [Express Return](./ExpressReturn.md). The connector writes the easyCredit address and the shipping method to the cart and syncs the amount.
+4. The confirm page shows the review step with locked data. When the shopper places the order, authorize and create the order as in [Authorize and create the order](#authorize-and-create-the-order).
+
+### Express settings
+
+| Variable | Value |
+| --- | --- |
+| `EXPRESS_BUTTON_ENABLED` | `1` shows the button. Default `0`. |
+| `EXPRESS_BUTTON_VISIBILITY` | Where the button shows: `PDP_AND_CART` (default), `PDP` or `CART`. |
+
+The two settings are independent of `WIDGET_ENABLED`. They control only the button. The express endpoints do not check them. `GET /operations/widget-enabled` returns them as `expressButtonEnabled` and `expressButtonVisibility`, and the button reads them there. For the payment custom type and the redirect links, see [Connector deployment](#connector-deployment).
+
+### Show the express button
+
+`mount()` resolves to `true` if it rendered a button and to `false` if not. It does not reject. A mount that a newer mount on the same container overtakes also resolves to `false`. Thus use only the result of the latest mount, and set `hidden` in both directions. For all rules, see [Express button component](./WebComponents.md#express-button-component).
+
+```ts
+// Browser. File easycredit-express-button.ts: express button on the product page (PDP) or the cart page (CART).
+import type { ExpressButtonBaseOptions } from '@shopmacher/easy-credit-commercetools-component';
+import { createEnabler } from './easycredit-enabler';
+
+type Placement = 'PDP' | 'CART';
+
+// The latest run for each container.
+const latestRun = new Map<string, number>();
+
+// Call this when the page loads, and again when the amount or the product changes.
+// amount: EUR major units, for example 599.9. sku: only on the product page, where it is required.
+export function mountExpressButton(placement: 'PDP', amount: number, sku: string): Promise<void>;
+export function mountExpressButton(placement: 'CART', amount: number): Promise<void>;
+export async function mountExpressButton(placement: Placement, amount: number, sku?: string): Promise<void> {
+  const containerId = `easycredit-express-${placement.toLowerCase()}`;
+  const run = (latestRun.get(containerId) ?? 0) + 1;
+  latestRun.set(containerId, run);
+
+  let rendered = false;
+  try {
+    // The product page needs no session to show the button. prepareCart returns the session for the click.
+    const sessionId =
+      placement === 'CART' ? (await callAction<{ sessionId: string }>('cart/getEasyCreditSession')).sessionId : '';
+    const builder = await (await createEnabler(sessionId)).createExpressButtonBuilder?.();
+
+    if (builder && run === latestRun.get(containerId)) {
+      const origin = window.location.origin;
+      const common: ExpressButtonBaseOptions = {
+        amount,
+        // The shop routes these URLs itself. The names are examples. Express links must be absolute.
+        redirectLinks: {
+          urlSuccess: `${origin}/checkout?step=review&express=1`,
+          urlCancellation: `${origin}/cart?status=cancelled`,
+          urlDenial: `${origin}/cart?status=denied`,
+        },
+        onError: () => showError('The payment did not start. Please try again.'),
+        onSuccess: (response) => window.location.replace(response.redirectUrl),
+      };
+      // The product page requires prepareCart: the express payment charges the whole cart of the session.
+      const options =
+        placement === 'PDP'
+          ? {
+              ...common,
+              placement,
+              prepareCart: async () =>
+                (await callAction<{ sessionId: string }>('cart/prepareExpressCart', { sku })).sessionId,
+            }
+          : { ...common, placement };
+      rendered = await builder.build(options).mount(`#${containerId}`);
+    }
+  } catch (error) {
+    console.error('Cannot mount the express button', error);
+  }
+
+  // Only the latest run shows or hides the container. An overtaken mount resolves to false.
+  const container = document.getElementById(containerId);
+  if (container && run === latestRun.get(containerId)) {
+    container.hidden = !rendered;
+  }
+}
+```
+
+The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. Do not put it inside a `<form>`.
+
+**Product page.** Pass the price of the selected variant and its SKU. Mount again when the shopper selects another variant. After `onError` on the product page, reload the cart in the page, because `prepareCart` can already have replaced it.
+
+**Cart page.** Mount the button when the cart has loaded, and again when the cart total changes. Do not mount it for a total of 0. The button in the cart needs the session of the cart, because it checks the payment types with `GET /payments/express/payment-method`, see [Check the payment types](./CreateExpressPayment.md#check-the-payment-types).
+
+**Time limit.** After the shopper accepts in the easyCredit modal, easyCredit waits 10 seconds. If the page has not navigated away by then, easyCredit shows its own alert and closes the modal. Thus `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. Keep `prepareCart` to one cart read, one cart update and the session token. Do not read the cart again or load its shipping methods after the update: `prepareCart` only needs the cart ID and the session.
+
+**Redirect links:**
+
+| Link | Target | What the page does |
+| --- | --- | --- |
+| `urlSuccess` | the confirm page, with the marker `express=1` | Calls Express Return, then shows the review step, see [Express return](#express-return). |
+| `urlCancellation` | the cart, with `status=cancelled` | Shows a message, see [Messages in the cart](#messages-in-the-cart). |
+| `urlDenial` | the cart, with `status=denied` | Shows a message. |
+
+The cancel webhook sets the payment to `Failure` and unfreezes the cart before it redirects, as for a regular payment.
+
+### Prepare the cart on the product page
+
+`POST /payments/express` charges the whole cart of the session. On the product page, the button shows the price of one product. Thus `prepareCart` must empty the cart and put only this product into it, with quantity 1. This is a requirement of easyCredit (TeamBank). The function runs on each click, also after `onError`, so it must give the same result each time.
+
+Empty the cart with cart update actions. Do not drop the cart ID from the session (for example with a `resetCart` action). Many extensions load the active cart of the account for a logged-in shopper when the session has no cart ID. The old cart then comes back with all its items.
+
+An abandoned express attempt can leave the cart frozen, for example if the shopper closed the easyCredit page. A frozen cart refuses line item changes. Thus unfreeze the cart in the same update. commercetools applies the update actions in their order. The removed items do not come back after a cancel or a denial.
+
+Before you change the cart, check its easyCredit payments. If any of them, regular or express, has an `Authorization` transaction in `Pending` or `Success`, refuse with `400` and change nothing: such an attempt can already be, or still become, an order. Do not unfreeze this cart. The button then calls `onError`. `Initial` and `Failure` attempts do not block: [Create Express Payment](./CreateExpressPayment.md#second-express-click) discards them.
+
+> **Recommended pattern**
+>
+> Read the cart with its payments, refuse a cart with an easyCredit attempt in progress, then send one cart update with `unfreezeCart` (only for a frozen cart), a `removeLineItem` for each line item, a `removeCustomLineItem` for each custom line item and one `addLineItem`. Custom line items count in the cart total, so a cart that keeps one charges more than the product. Then return the checkout session of this cart. The update of a frozen cart is not tested against commercetools. If commercetools refuses it, send `unfreezeCart` in its own update first.
+
+```ts
+// BFF. File prepareExpressCart.ts. Action "cart/prepareExpressCart": the cart holds only this product. Returns { sessionId }.
+import type { Cart, CartUpdateAction } from '@commercetools/platform-sdk';
+import type { ActionContext, Request, Response } from '@frontastic/extension-types';
+import { getEasyCreditBffConfig, isEasyCreditPayment } from './easycredit-bff';
+import { getCheckoutSession } from './getEasyCreditSession';
+
+// A regular or express attempt that is Pending or Success can become an order. Its cart must not change.
+export function hasEasyCreditAttemptInProgress(cart: Cart): boolean {
+  return (cart.paymentInfo?.payments ?? []).some(
+    ({ obj }) =>
+      !!obj &&
+      isEasyCreditPayment(obj) &&
+      obj.transactions.some(
+        ({ type, state }) => type === 'Authorization' && (state === 'Pending' || state === 'Success'),
+      ),
+  );
+}
+
+// commercetools applies the actions in this order: unfreeze, empty the cart, add the product.
+export function buildExpressCartActions(cart: Cart, sku: string): CartUpdateAction[] {
+  return [
+    ...(cart.cartState === 'Frozen' ? [{ action: 'unfreezeCart' } as CartUpdateAction] : []),
+    ...cart.lineItems.map((lineItem): CartUpdateAction => ({ action: 'removeLineItem', lineItemId: lineItem.id })),
+    ...cart.customLineItems.map(
+      (customLineItem): CartUpdateAction => ({ action: 'removeCustomLineItem', customLineItemId: customLineItem.id }),
+    ),
+    { action: 'addLineItem', sku, quantity: 1 },
+  ];
+}
+
+export async function prepareExpressCart(request: Request, actionContext: ActionContext): Promise<Response> {
+  const { sku } = JSON.parse(request.body ?? '{}') as { sku?: string };
+  if (!sku) {
+    return { statusCode: 400, body: JSON.stringify({ message: 'No sku' }), sessionData: request.sessionData };
+  }
+
+  // The cart of the shopper, with paymentInfo.payments[*] expanded. For a logged-in shopper, the cart of the account.
+  const cart = await getShopCart(request, actionContext);
+  if (hasEasyCreditAttemptInProgress(cart)) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'easyCredit payment in progress' }),
+      sessionData: request.sessionData,
+    };
+  }
+
+  const updatedCart = await updateShopCart(actionContext, cart, buildExpressCartActions(cart, sku));
+  const session = await getCheckoutSession(request, getEasyCreditBffConfig(actionContext), updatedCart.id);
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ sessionId: session.sessionId }),
+    sessionData: { ...request.sessionData, cartId: updatedCart.id, easyCreditSession: session },
+  };
+}
+```
+
+`getShopCart` and `updateShopCart` use the cart API of your extension, see the placeholders at the start of this guide. `getShopCart` must expand `paymentInfo.payments[*]`, because the check needs the transactions. A cart update needs the scope `manage_orders`. The BFF API client of this guide does not have it.
+
+### Express return
+
+On the confirm page, call [Express Return](./ExpressReturn.md) before you show the summary. Express Return writes the easyCredit address and the shipping method to the cart and syncs the amount. The call can be repeated: a second call changes nothing. It uses the checkout session, not a bearer token.
+
+**Classify a failed call by the payment state, not by the error code.** The same code can mean "call again" or "the attempt ended": `TransactionNotPreauthorized` is in both tables of [Error responses](./ExpressReturn.md#error-responses). Thus read the payment again after each failed call, and use the state of its `Authorization` transaction:
+
+| `Authorization` state after the call | Result | Shop action |
+| --- | --- | --- |
+| `Failure` | `abandoned` | The connector ended the attempt and unfroze the cart. Send the shopper to the cart with `status=failed`. |
+| `Pending` or `Success` | `done` | The return is already complete. Show the review step. |
+| `Initial`, or the payment cannot be read | `pending` | The attempt is still open. Call again. |
+
+> **Recommended pattern**
+>
+> The BFF action calls Express Return with a timeout of 6 seconds. The browser calls the action at most 3 times. Some errors never change the payment state (for example `InvalidSession`), so the number of calls must have a limit.
+
+```ts
+// BFF. File expressReturnEasyCreditPayment.ts. Action "cart/expressReturnEasyCreditPayment": confirm page after urlSuccess.
+import type { ActionContext, Request, Response } from '@frontastic/extension-types';
+import {
+  findNewestEasyCreditPayment,
+  getAuthorizationState,
+  getBffToken,
+  getCartId,
+  getCartPayments,
+  getEasyCreditBffConfig,
+  noCartResponse,
+} from './easycredit-bff';
+import { getCheckoutSession } from './getEasyCreditSession';
+
+// Frontend stops external calls after 8 s.
+const EXPRESS_RETURN_TIMEOUT_MS = 6000;
+
+// code: the error code of the connector, only for the logs.
+export type ExpressReturnResult = { status: 'done' | 'pending' | 'abandoned'; code?: string };
+
+export async function expressReturnEasyCreditPayment(
+  request: Request,
+  actionContext: ActionContext,
+): Promise<Response> {
+  const cartId = getCartId(request);
+  if (!cartId) {
+    return noCartResponse(request);
+  }
+
+  const config = getEasyCreditBffConfig(actionContext);
+  const token = await getBffToken(config);
+  // Only an express payment. A reload of the confirm page with express=1 must not post a regular payment.
+  const payment = findNewestEasyCreditPayment(
+    (await getCartPayments(config, token, cartId)).filter((p) => p.custom?.fields?.easyCreditExpress === true),
+  );
+  const session = await getCheckoutSession(request, config, cartId);
+  const respond = (result: ExpressReturnResult): Response => ({
+    statusCode: 200,
+    body: JSON.stringify(result),
+    sessionData: { ...request.sessionData, easyCreditSession: session },
+  });
+
+  if (!payment) {
+    return respond({ status: 'abandoned' });
+  }
+
+  let code: string | undefined;
+  try {
+    const response = await fetch(`${config.processorUrl}/payments/express/${payment.id}/return`, {
+      method: 'POST',
+      headers: { 'X-Session-Id': session.sessionId },
+      signal: AbortSignal.timeout(EXPRESS_RETURN_TIMEOUT_MS),
+    });
+    if (response.ok) {
+      return respond({ status: 'done' });
+    }
+
+    const body = (await response.json().catch(() => ({}))) as { errors?: Array<{ code?: string }> };
+    code = body.errors?.[0]?.code;
+  } catch {
+    // Timeout or network error: the payment state decides below.
+  }
+
+  // The error code cannot tell "call again" from "abandoned". Read the payment again.
+  const current = (await getCartPayments(config, token, cartId)).find(({ id }) => id === payment.id);
+  const state = getAuthorizationState(current);
+
+  if (state === 'Failure') {
+    return respond({ status: 'abandoned', code });
+  }
+
+  return respond({ status: state === 'Pending' || state === 'Success' ? 'done' : 'pending', code });
+}
+```
+
+```ts
+// Browser. File easycredit-express-return.ts. Call this on every checkout load while the cart is a live express cart,
+// and when the confirm page opens with express=1.
+// Copy the type ExpressReturnResult into your storefront if it cannot import it from the extension.
+import type { ExpressReturnResult } from './expressReturnEasyCreditPayment';
+
+const MAX_ATTEMPTS = 3;
+
+export async function completeExpressReturn(): Promise<'done' | 'abandoned' | 'failed'> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const { status } = await callAction<ExpressReturnResult>('cart/expressReturnEasyCreditPayment');
+      if (status !== 'pending') {
+        return status;
+      }
+    } catch {
+      // An error of the action, for example the 8 s limit of Frontend, counts as pending.
+    }
+  }
+
+  return 'failed';
+}
+```
+
+The action names, payloads and response shapes in these snippets are examples. The demo store uses `cart/prepareExpressCart` (`{ variant: { sku, count } }`, answers `{ token }`) and `cart/expressReturnECPayment` (answers `{ status, code? }`). Like the snippet above, its express return only uses a payment with `easyCreditExpress` `true`, and answers `abandoned` without one.
+
+What the checkout does with the result:
+
+- **`done`:** load the cart again, because it now has the easyCredit address and the shipping method. Remove `express=1` from the URL. Then lock the checkout and show the review step, see [Confirm page](#confirm-page).
+- **`abandoned`:** with `express=1`, send the shopper to the cart with `status=failed`. Without it, load the cart again and run the regular checkout. The connector already ended the attempt.
+- **`failed`:** with `express=1`, the attempt is still open. Show an error with a button that calls `completeExpressReturn` again, and a link to the cart. Do not enable the button that places the order. Without `express=1`, run the regular checkout without the lock. Its [Create Payment](./CreatePayment.md) ends a stale attempt or answers `PaymentInProgress`, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt).
+
+Show a placeholder in the checkout while `completeExpressReturn` runs. Do not show the checkout steps or the easyCredit summary while it runs, because the address, the shipping method and the amount are not final yet. The demo store hides the steps (and with them the easyCredit summary in the payment preview) while the return runs, and keeps the order summary with the cart totals visible. Its button that places the order stays disabled while the return runs or the error for `failed` shows.
+
+### Confirm page
+
+A cart is a live express cart if its current easyCredit payment has the custom field `easyCreditExpress` `true` and an `Authorization` transaction that is not `Failure`. `isLiveExpressPayment` in the [shared BFF helpers](#shared-bff-helpers) checks this on the commercetools payment. The browser can get the result in two ways:
+
+- as `isExpress` from `cart/getEasyCreditPayment`, as in this guide, see [Labels and summary](#labels-and-summary).
+- from the payments of the cart in the browser. The demo store does this: its cart mapping keeps the raw commercetools payment in `payment.debug`, and the storefront checks the same rule there.
+
+Call [Express return](#express-return) each time the checkout loads while the cart is a live express cart, not only with `express=1`. The call can be repeated: a returned attempt answers `done` again, and an attempt easyCredit reports as `OPEN`, `DECLINED` or `EXPIRED` is ended by the connector and answers `abandoned`. Lock the checkout only after the call answered `done` on this page load. A shipping address on the cart does not prove the return: the shopper can type one in the regular address step.
+
+If the shopper clicks the express button and then goes back, closes the tab or leaves the easyCredit page, the result depends on the easyCredit status. An `OPEN`, `DECLINED` or `EXPIRED` attempt answers `abandoned`, and the regular checkout runs without the lock. Locking it would leave the shopper unable to buy. A tab closed on the easyCredit decision page leaves a `PREAUTHORIZED` attempt, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt). The return then writes the easyCredit address and answers `done`, and the checkout locks with that address. The order can be placed as after a regular return. If it keeps answering `pending`, the regular checkout runs without the lock, and its [Create Payment](./CreatePayment.md) ends the stale attempt or answers `PaymentInProgress`, see [Abandoned attempt](./CreateExpressPayment.md#abandoned-attempt).
+
+While the checkout is locked:
+
+- Open the review step, also if the URL asks for a different step.
+- Do not let the shopper edit the address, the shipping method or the payment method.
+- Hide the form for discount codes.
+
+The reasons: easyCredit cannot change the address of a transaction, see [Changes after the return](./ExpressReturn.md#changes-after-the-return). easyCredit accepts no higher amount, see [Shipping costs and amount sync](./ExpressReturn.md#shipping-costs-and-amount-sync). A different shipping method or a removed discount code can raise the total. The shopper selected the payment type on the easyCredit page.
+
+A cancelled or declined express attempt stays on the cart as `Failure`. It is not live, so it does not lock the regular checkout. The shopper can then use the regular checkout or the express button again.
+
+Then show the summary as in [Labels and summary](#labels-and-summary). When the shopper places the order, [authorize and create the order](#authorize-and-create-the-order). `findNewestEasyCreditPayment` finds the express payment. The authorization checks the address again and syncs a total that changed after the return, see [Authorize Payment](./AuthorizePayment.md#express-payments).
+
+### Messages in the cart
+
+The cart page reads `status` from the URL and shows a message:
+
+| `status` | Source | Message (example) |
+| --- | --- | --- |
+| `cancelled` | `urlCancellation` | You cancelled the payment. Please select a payment method. |
+| `denied` | `urlDenial` | easyCredit did not accept the payment. Please select a different payment method. |
+| `failed` | Express Return result `abandoned` | The easyCredit payment could not be completed. Please try again. |
+
+
+<br />
+
 ## Create the payment and redirect
 
 Each easyCredit checkout form has its own submit button. The shopper selects a payment type in the form of that type and clicks its button. The checkout component of that type then sends `POST /payments`. Each component handles only the submit of its own form. On success, `onSuccess` gets the `redirectUrl` of the easyCredit page.
@@ -768,6 +1157,8 @@ easyCredit sends the shopper back to one of the three `redirectLinks`:
 - **`urlSuccess`:** the shopper completed the easyCredit form. The payment is not authorized yet. Show the review step with the summary, see [Labels and summary](#labels-and-summary). Then [authorize and create the order](#authorize-and-create-the-order).
 - **`urlCancellation` and `urlDenial`:** the connector sends these through the cancel webhook. The cancel webhook sets the payment to `Failure` and unfreezes the cart. Then it redirects the shopper to your URL. If the cancel fails, or easyCredit already authorized the payment, the redirect target is different, see [Request from the browser](./CancelPayment.md#request-from-the-browser).
 
+For an express checkout, `urlSuccess` opens the confirm page, and the cancel and denial links lead to the cart. See [Express checkout](#express-checkout).
+
 The connector does not add a status to your URLs. To show a message, put your own marker into the URLs, for example `?status=cancelled` and `?status=denied`. Your shop routes the `step` parameter to the correct checkout step.
 
 > **Recommended pattern**
@@ -794,6 +1185,8 @@ export function showEasyCreditReturnMessage(): void {
 ## Authorize and create the order
 
 The shop authorizes the payment when the shopper places the order. Create the order only after the authorization succeeds.
+
+For an express checkout, call [Express Return](#express-return) first. Without it, authorize answers `400 ExpressAddressMissing`, see [Authorize Payment](./AuthorizePayment.md#express-payments).
 
 **Which payment to authorize.** Authorize the newest easyCredit payment of the cart: the one with the latest `createdAt`. A cart can also contain older attempts with a `Failure` transaction. Use `findNewestEasyCreditPayment` before the order exists (authorize, summary, cancel). Use `findUsedEasyCreditPayment` from [Find the used payment](#find-the-used-payment) after the authorization (capture, refund, order display).
 
@@ -1049,6 +1442,7 @@ import {
   getCartPayments,
   getEasyCreditBffConfig,
   isInvoice,
+  isLiveExpressPayment,
   noCartResponse,
 } from './easycredit-bff';
 
@@ -1061,8 +1455,13 @@ export async function getEasyCreditPayment(request: Request, actionContext: Acti
   const config = getEasyCreditBffConfig(actionContext);
   const payment = findNewestEasyCreditPayment(await getCartPayments(config, await getBffToken(config), cartId));
 
+  // isExpress makes the checkout call Express Return. Only its answer done locks the confirm page, see "Confirm page".
   const body = payment
-    ? { paymentId: payment.id, paymentType: isInvoice(payment) ? 'BILL_PAYMENT' : 'INSTALLMENT_PAYMENT' }
+    ? {
+        paymentId: payment.id,
+        paymentType: isInvoice(payment) ? 'BILL_PAYMENT' : 'INSTALLMENT_PAYMENT',
+        isExpress: isLiveExpressPayment(payment),
+      }
     : {};
 
   return { statusCode: 200, body: JSON.stringify(body), sessionData: request.sessionData };

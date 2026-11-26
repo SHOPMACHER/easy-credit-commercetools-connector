@@ -75,6 +75,8 @@ describe('test operationRoute', () => {
       isEnabled: process.env.WIDGET_ENABLED === '1',
       webShopId: process.env.WEBSHOP_ID,
       paymentTypes: process.env.WIDGET_ENABLED === '1' ? ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] : [],
+      expressButtonEnabled: false,
+      expressButtonVisibility: 'PDP_AND_CART',
     });
   });
 });

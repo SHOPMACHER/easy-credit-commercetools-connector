@@ -20,6 +20,8 @@ You set these values in commercetools Connect when you deploy the connector. To 
 | WEBSHOP_ID | The easyCredit WebShop ID from your portal. The connector needs it to get authorization for calls to the easyCredit APIs. |
 | API_PASSWORD | The easyCredit API password from your portal. The connector needs it to get authorization for calls to the easyCredit APIs. |
 | WIDGET_ENABLED | 0 or 1 (default 1). If this is 0, the widget and the label component do not show. The checkout component and the summary component do not read this value. |
+| EXPRESS_BUTTON_ENABLED | 0 or 1 (default 0). If this is 1, the express button shows. It is independent of `WIDGET_ENABLED`. It controls the button only: the express endpoints do not check it. See [Express button component](../docs/WebComponents.md#express-button-component). |
+| EXPRESS_BUTTON_VISIBILITY | `PDP_AND_CART` (default), `PDP` or `CART`. It selects where the express button shows. It has an effect only if `EXPRESS_BUTTON_ENABLED` is 1. The connector checks both express settings each time it reads its configuration, as it does for `BILL_PAYMENT_ENABLED`. An invalid value of either one makes every request of the connector fail its configuration check, also the regular checkout. |
 | CTP_CLIENT_ID | CommerceTools Composable Commerce client ID. |
 | CTP_CLIENT_SECRET | CommerceTools Composable Commerce client secret. |
 | CTP_PROJECT_KEY | CommerceTools Composable Commerce project key. |

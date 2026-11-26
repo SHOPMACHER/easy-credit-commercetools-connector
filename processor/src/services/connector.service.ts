@@ -42,12 +42,15 @@ export const isWidgetEnabled = async (): Promise<WidgetEnabledResponseSchemaDTO>
   log.debug('get Widget config');
 
   const isEnabled = config.easyCredit.widgetEnabled === '1';
+  const expressButtonEnabled = config.easyCredit.expressButtonEnabled === '1';
 
   return {
     isEnabled,
     webShopId: config.easyCredit.webShopId,
-    // A disabled widget is not rendered, so there is no reason to ask easyCredit.
-    ...(isEnabled ? await getWidgetPaymentTypes() : { paymentTypes: [] }),
+    // Neither the widget nor the express button is rendered when both are off, so there is no reason to ask easyCredit.
+    ...(isEnabled || expressButtonEnabled ? await getWidgetPaymentTypes() : { paymentTypes: [] }),
+    expressButtonEnabled,
+    expressButtonVisibility: config.easyCredit.expressButtonVisibility,
   };
 };
 

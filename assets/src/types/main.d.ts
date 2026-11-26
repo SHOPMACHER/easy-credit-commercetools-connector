@@ -41,6 +41,25 @@
  *          });
  *          widgetElement.mount('#widget-component')
  *    });
+ *
+ *    webComponent.createExpressButtonBuilder()
+ *      .then(builder => {
+ *          const expressElement = builder.build({
+ *            placement: "PDP",
+ *            amount: 100,
+ *            redirectLinks: {
+ *                urlSuccess: "https://google.com",
+ *                urlCancellation: "https://google.com",
+ *                urlDenial: "https://google.com"
+ *            },
+ *            prepareCart: async () => sessionId,
+ *            onLoading: () => {},
+ *            onError: (error) => {},
+ *            onSuccess: (response) => { window.location.href = response.redirectUrl; },
+ *          });
+ *          expressElement.mount('#express-component')
+ *            .then(rendered => {})
+ *    });
  */
 export interface WebComponent {
   createCheckoutBuilder: () => Promise<CheckoutComponentBuilder>;
@@ -50,6 +69,9 @@ export interface WebComponent {
   createWidgetBuilder: () => Promise<WidgetComponentBuilder>;
 
   createLabelBuilder: () => Promise<LabelComponentBuilder>;
+
+  // Optional so that implementations written for earlier versions still compile; the supplied enabler has it.
+  createExpressButtonBuilder?: () => Promise<ExpressButtonComponentBuilder>;
 }
 
 export interface CheckoutComponent {
@@ -140,6 +162,39 @@ export type LabelComponentOptions = {
 export type WidgetComponentOptions = {
   amount: number;
 };
+
+export type ExpressButtonPlacement = 'PDP' | 'CART';
+
+// The options both placements share.
+export type ExpressButtonBaseOptions = {
+  // EUR
+  amount: number;
+  redirectLinks: {
+    urlSuccess: string;
+    urlCancellation: string;
+    urlDenial: string;
+  };
+  onLoading?: () => void;
+  onError: (error: unknown) => void;
+  onSuccess: (response: CreatePaymentResponse) => void;
+};
+
+// prepareCart returns the checkout session id of the prepared cart. The PDP requires it: the express payment charges
+// the whole cart of the session. Without it, a PDP mount renders nothing.
+export type ExpressButtonComponentOptions = ExpressButtonBaseOptions &
+  (
+    | { placement: 'PDP'; prepareCart: () => Promise<string> }
+    | { placement: 'CART'; prepareCart?: () => Promise<string> }
+  );
+
+export interface ExpressButtonComponent {
+  // Resolves true when a button was rendered, so the shop can hide the container without a second lookup.
+  mount(selector: string): Promise<boolean>;
+}
+
+export interface ExpressButtonComponentBuilder {
+  build(options: ExpressButtonComponentOptions): ExpressButtonComponent;
+}
 
 import { ECWebComponent } from './ec-web-component';
 
