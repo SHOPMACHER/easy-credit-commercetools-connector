@@ -38,7 +38,7 @@ export const operationsRoute = async (fastify: FastifyInstance) => {
       },
     },
     async (request, reply) => {
-      reply.code(200).send(await isWidgetEnabled(request.query.productTypeId));
+      reply.code(200).send(await isWidgetEnabled(request.query));
     },
   );
 };

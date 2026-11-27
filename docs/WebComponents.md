@@ -49,7 +49,7 @@ This guide tells you how to add the web components of the connector to your shop
 
 - It is made from the [easyCredit Widget component](https://netzkollektiv.com/docs/easycredit-components/?path=/docs/marketing-widget--docs).
 - The code is in [widget.component.ts](../assets/src/components/widget.component.ts).
-- Shops mostly use the widget on the product page (PDP). To show it, set `WEBSHOP_ID` correctly and set `WIDGET_ENABLED` to `1`.
+- Shops mostly use the widget on the product page (PDP). To show it, set `WEBSHOP_ID` correctly and set `WIDGET_ENABLED` to `1`. To show it only on the PDP or only in the cart, set `WIDGET_VISIBILITY`, see [Placement](#placement).
 - Then add this snippet to your shop:
 
   ```js
@@ -80,6 +80,39 @@ This guide tells you how to add the web components of the connector to your shop
 - `mount()` resolves to `true` when the widget has rendered and to `false` when no widget shows. It does not reject. For installment, it also waits until the widget shows the plan, which easyCredit loads after the first render. The new widget stays hidden until then, without `display: none`, because easyCredit picks its layout from the width it measures. After 5 seconds without a render, `mount()` resolves `true` and the widget shows when the easyCredit script arrives. If the easyCredit script that the enabler added fails to load, `mount()` removes the widget and resolves `false`. If your page added the script itself, a failed load ends as the 5 second case.
 - On the cart page, the total changes. Mount the widget again for each new total. A new mount replaces the widget of the earlier mount when the new widget has rendered. It removes only `easycredit-widget` elements, so other content of the container stays. If two mounts of the same container overlap, only the one that started last changes the container. The earlier one resolves with the result of the latest mount, so you can apply every result to the container. For an amount of 0 or less, `mount()` renders nothing, sends no request and resolves `false`.
 - The widget can take several seconds to show, so show a placeholder until `mount()` resolves. For an example, see [Widget on the product and cart page](./CommercetoolsFrontendIntegration.md#widget-on-the-product-and-cart-page).
+
+#### Placement
+
+`WIDGET_VISIBILITY` controls where the widget shows: `PDP_AND_CART` (default), `PDP` or `CART`. The connector reads it only if `WIDGET_ENABLED` is `1`. With `WIDGET_ENABLED=0`, the widget does not show anywhere.
+
+The widget must know if it is on a product page (PDP) or in the cart. There are two ways:
+
+- **The shop passes `placement`.** This is optional and the safest way:
+
+  ```js
+    widgetBuilder.build({ amount: totalValue, placement: 'PDP' }); // or 'CART'
+  ```
+
+- **The widget guesses from the page path.** If the shop does not pass `placement`, the widget reads the path of the current page (`location.pathname`) and sends the result as `placement`. The path itself never leaves the browser. The widget uses these rules:
+  - The path is exactly `/cart` or `/checkout` (a trailing `/` is allowed): cart.
+  - Every other path: PDP. This includes `/p/<sku>` and `/`.
+  - The match is exact and case-sensitive. `/de/cart`, `/Cart` and `/warenkorb` count as PDP.
+
+The guess fits the routes of the commercetools Frontend template. It has an effect only if `WIDGET_VISIBILITY` is `PDP` or `CART`. With the default `PDP_AND_CART`, the widget shows on all pages, as before.
+
+**Wrong guess.** If your cart has another path, for example `/warenkorb` or a locale prefix like `/de/cart`, the widget treats your cart page as a PDP. Then:
+
+- With `WIDGET_VISIBILITY=PDP`, the widget **shows in your cart**.
+- With `WIDGET_VISIBILITY=CART`, the widget **does not show in your cart**.
+
+In this case, pass `placement` on the product page and on the cart page. There is no setting for other cart paths.
+
+Other details:
+
+- `placement` accepts only `PDP` and `CART`. The widget ignores other values, for example `'cart'`, and guesses from the path.
+- A placement that `WIDGET_VISIBILITY` hides gets `isEnabled: false` and an empty `paymentTypes`. The connector then does not call easyCredit.
+- The label component ignores `WIDGET_VISIBILITY`. It reads only `WIDGET_ENABLED`.
+- The widget and the label call `GET /operations/widget-enabled` without custom headers, so the browser sends no CORS preflight for these calls. The widget sends only `?placement=PDP` or `?placement=CART`, and the label sends no query.
 
 #### Pay by invoice in the widget
 

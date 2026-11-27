@@ -9,6 +9,9 @@ import {
   WidgetComponentOptions,
 } from '../types/main';
 
+// Routes of the commercetools Frontend template.
+const CART_PATHS = ['/cart', '/checkout'];
+
 // Mount count per container: only the latest mount of a container may change its widget.
 const latestMount = new WeakMap<Element, number>();
 
@@ -21,7 +24,6 @@ export class ECWidgetComponentBuilder implements WidgetComponentBuilder {
   build(widgetComponentOptions: WidgetComponentOptions): ECWidgetComponent {
     return new ECWidgetComponent({
       processorUrl: this.baseOptions.processorUrl,
-      sessionId: this.baseOptions.sessionId,
       widgetComponentOptions,
     });
   }
@@ -32,11 +34,8 @@ export class ECWidgetComponent implements WidgetComponent {
 
   private readonly processorUrl: string;
 
-  private readonly sessionId: string;
-
-  constructor(opts: { processorUrl: string; sessionId: string; widgetComponentOptions: WidgetComponentOptions }) {
+  constructor(opts: { processorUrl: string; widgetComponentOptions: WidgetComponentOptions }) {
     this.processorUrl = opts.processorUrl;
-    this.sessionId = opts.sessionId;
     this.widgetComponentOptions = opts.widgetComponentOptions;
   }
 
@@ -127,12 +126,21 @@ export class ECWidgetComponent implements WidgetComponent {
     paymentTypes?: unknown[];
     amountLimits?: AmountLimitsByType;
   }> {
-    const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, {
+    const res = await fetch(`${this.processorUrl}/operations/widget-enabled?placement=${this.getPlacement()}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.sessionId },
     });
 
     return await res.json();
+  }
+
+  // Without placement, the widget guesses from the page path. Shops with other cart routes pass placement.
+  private getPlacement(): 'PDP' | 'CART' {
+    const { placement } = this.widgetComponentOptions;
+    if (placement === 'PDP' || placement === 'CART') {
+      return placement;
+    }
+    const path = window.location.pathname.replace(/(.)\/$/, '$1');
+    return CART_PATHS.includes(path) ? 'CART' : 'PDP';
   }
 
   // paymentTypes comes from the processor: the types checkout offers. Older processors don't send it, and the

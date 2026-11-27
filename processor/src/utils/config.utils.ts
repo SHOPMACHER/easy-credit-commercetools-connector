@@ -1,4 +1,4 @@
-import { ConnectorEnvVars, ExpressButtonVisibility } from '../types/index.types';
+import { ConnectorEnvVars, ExpressButtonVisibility, WidgetVisibility } from '../types/index.types';
 import { ECTransactionPaymentType } from '../types/payment.types';
 import envValidators from '../validators/env.validators';
 import { getValidateMessages } from '../validators/helpers.validators';
@@ -34,6 +34,7 @@ export const readConfiguration = () => {
     },
     easyCredit: {
       widgetEnabled: process.env.WIDGET_ENABLED as string,
+      widgetVisibility: withDefault(process.env.WIDGET_VISIBILITY, 'PDP_AND_CART') as WidgetVisibility,
       expressButtonEnabled: withDefault(process.env.EXPRESS_BUTTON_ENABLED, '0'),
       expressButtonVisibility: withDefault(
         process.env.EXPRESS_BUTTON_VISIBILITY,

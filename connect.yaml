@@ -48,9 +48,13 @@ deployAs:
           required: false
           default: "0"
         - key: WIDGET_ENABLED
-          description: Toggle display the EasyCredit Widget (0 or 1)
+          description: Main switch for the easyCredit widget and label component (0 or 1). If this is 0, neither shows anywhere and WIDGET_VISIBILITY is ignored.
           required: true
           default: "1"
+        - key: WIDGET_VISIBILITY
+          description: Where the widget shows if WIDGET_ENABLED is 1 - PDP_AND_CART (default), PDP or CART. The shop can pass placement to the widget; without it, the paths /cart and /checkout count as cart and every other path as product page. Shops with other cart routes must pass placement. See https://github.com/SHOPMACHER/easy-credit-commercetools-connector/blob/main/docs/WebComponents.md#placement
+          required: false
+          default: PDP_AND_CART
         - key: EXPRESS_BUTTON_ENABLED
           description: Show the easyCredit express button (0 or 1). Controls the express button only and is independent of WIDGET_ENABLED. Default 0.
           required: false
