@@ -89,7 +89,7 @@ export async function callAction<T>(actionName: string, payload?: unknown): Prom
 
 ```mermaid
 flowchart LR
-  B["Browser<br/>enabler and web components"] -- "X-Session-Id" --> P["Connector processor"]
+  B["Browser<br/>enabler and web components"] -- "X-Session-Id (checkout, summary, express)" --> P["Connector processor"]
   B -- "Frontend actions" --> F["Frontend extension (BFF)"]
   F -- "Bearer token" --> P
   F -- "Checkout session" --> S["commercetools Session API"]
@@ -98,7 +98,7 @@ flowchart LR
   E -- "authorize callback,<br/>booking notification" --> P
 ```
 
-The browser calls the processor directly through the enabler. The processor allows requests from all origins (CORS), so you do not have to configure an origin. These calls use the checkout session ID in the header `X-Session-Id`:
+The browser calls the processor directly through the enabler. The processor allows requests from all origins (CORS), so you do not have to configure an origin. The calls in this table send the checkout session ID in the header `X-Session-Id`, except the widget and label component. These two call `GET /operations/widget-enabled` without custom headers, so the browser sends no CORS preflight:
 
 | Call | Used by |
 | --- | --- |
@@ -135,7 +135,7 @@ The integration uses three commercetools API clients. Do not mix them up:
 
 ### Connector deployment
 
-Deploy the connector with commercetools Connect, see [Deploy and upgrade](../README.md#deploy-and-upgrade). You set the variables of the processor in the deployment. [connect.yaml](../connect.yaml) defines them. You must set at least `CTP_PROJECT_KEY`, `CTP_CLIENT_ID`, `CTP_CLIENT_SECRET`, `CTP_SCOPES`, `WEBSHOP_ID` and `API_PASSWORD`. `CTP_SESSION_URL` and `WIDGET_ENABLED` are also required, but they have defaults. Keep the defaults, unless your shop needs different values. For pay by invoice, also set `BILL_PAYMENT_ENABLED=1`. The [processor README](../processor/README.md#configure-processor-settings) lists all variables with example values, also the variables that control the payment methods. [Get Payment Method](./GetPaymentMethod.md#payment-type-availability) gives the full availability rules and limits.
+Deploy the connector with commercetools Connect, see [Deploy and upgrade](../README.md#deploy-and-upgrade). You set the variables of the processor in the deployment. [connect.yaml](../connect.yaml) defines them. You must set at least `CTP_PROJECT_KEY`, `CTP_CLIENT_ID`, `CTP_CLIENT_SECRET`, `CTP_SCOPES`, `WEBSHOP_ID` and `API_PASSWORD`. `CTP_SESSION_URL` and `WIDGET_ENABLED` are also required, but they have defaults. Keep the defaults, unless your shop needs different values. For pay by invoice, also set `BILL_PAYMENT_ENABLED=1`. To show the widget only on the product page or only in the cart, set `WIDGET_VISIBILITY` to `PDP` or `CART`, see [Widget on the product and cart page](#widget-on-the-product-and-cart-page). The [processor README](../processor/README.md#configure-processor-settings) lists all variables with example values, also the variables that control the payment methods. [Get Payment Method](./GetPaymentMethod.md#payment-type-availability) gives the full availability rules and limits.
 
 For express checkout, also set `EXPRESS_BUTTON_ENABLED=1`, and `EXPRESS_BUTTON_VISIBILITY` if the button shows only on the product page or only in the cart, see [Express checkout](#express-checkout). The post-deploy script creates the payment custom type for express payments (`PAYMENT_CUSTOM_TYPE_KEY`). Thus redeploy an existing deployment before the first express payment. Until then, the express endpoints answer `503 ExpressNotConfigured`, see [Stored express flag](./CreateExpressPayment.md#stored-express-flag). Express redirect links must be absolute `http` or `https` URLs. Set `REDIRECT_ALLOWED_HOSTS` to the hosts of your storefront, see [Redirect links](./CreatePayment.md#redirect-links).
 
@@ -637,9 +637,11 @@ Run `showEasyCreditPaymentMethods` again when one of these values changes:
 
 The widget shows the easyCredit offer for an amount. It needs `WIDGET_ENABLED=1` in the connector. The label component also needs this value. The checkout component does not.
 
+`WIDGET_VISIBILITY` decides if the widget shows on the product page, in the cart, or on both (default). The widget finds the page from the `placement` option or, without it, from the page path. Pass `placement` on both pages, as in the calls below. Without it, the widget guesses: the template routes `/cart`, `/checkout` and `/p/<sku>` work, other routes can show the widget in the wrong place. See [Placement](./WebComponents.md#placement).
+
 The widget reads `GET /operations/widget-enabled`. This endpoint needs no session. For the payment types that the widget shows, see [Pay by invoice in the widget](./WebComponents.md#pay-by-invoice-in-the-widget).
 
-The enabler options require a `sessionId` string. For a widget without a session, use an empty string. The widget sends this value in `X-Session-Id`, and `GET /operations/widget-enabled` ignores the header. Use this enabler only for the widget. The checkout and summary components need a valid session.
+The enabler options require a `sessionId` string. For a widget without a session, use an empty string. The widget does not send it. Use this enabler only for the widget. The checkout and summary components need a valid session.
 
 ```ts
 // Browser. File easycredit-widget.ts: product page or cart page. The price is a commercetools Money value.
@@ -650,6 +652,7 @@ import { createEnabler } from './easycredit-enabler';
 export async function mountWidget(
   price: { centAmount: number; fractionDigits: number },
   signal?: AbortSignal,
+  placement?: 'PDP' | 'CART', // Optional. Without it, the widget guesses from the page path.
 ): Promise<boolean> {
   // The widget needs no session. Use this enabler only for the widget.
   const enabler = await createEnabler('');
@@ -662,7 +665,9 @@ export async function mountWidget(
 
   // easyCredit reads the amount only when the widget renders, so mount again after a price change.
   // mount() replaces the widget of an earlier mount and resolves after the new widget has rendered.
-  const shown = await widgetBuilder.build({ amount: price.centAmount / 10 ** price.fractionDigits }).mount(container);
+  const shown = await widgetBuilder
+    .build({ amount: price.centAmount / 10 ** price.fractionDigits, placement })
+    .mount(container);
   container.hidden = !shown;
 
   return shown;
@@ -671,9 +676,17 @@ export async function mountWidget(
 
 `amount` is in EUR major units, for example `599.9`.
 
+**Product page.** Mount the widget with the price of the selected variant (`Variant` and `Cart` of the commercetools Frontend types):
+
+```ts
+// Browser. Product page.
+const controller = new AbortController();
+await mountWidget(variant.discountedPrice ?? variant.price, controller.signal, 'PDP');
+```
+
 **Placeholder.** The widget shows only after the enabler, the easyCredit web components and `GET /operations/widget-enabled` have loaded. On the first page view, this can take several seconds, and the place of the widget stays empty. Show a placeholder, for example a skeleton with the height of the widget, until `mountWidget` resolves. Then remove the placeholder. `mount()` resolves when the widget has rendered, or when no widget shows, so the placeholder does not stay on the page. After 5 seconds without a render, it resolves `true`, and the widget shows when the easyCredit script arrives.
 
-**Cart page.** Call `mountWidget` when the cart has loaded, and again when the cart total changes. Before each call, abort the signal of the previous call. Some shops report a total of 0 while the cart loads. For an amount of 0 or less, `mount()` renders nothing, sends no request and resolves `false`. Do not treat that value as an empty cart.
+**Cart page.** Call `mountWidget(cart.sum, signal, 'CART')` when the cart has loaded, and again when the cart total changes. Use `'CART'` also where the cart summary shows on the checkout page. Before each call, abort the signal of the previous call. Some shops report a total of 0 while the cart loads. For an amount of 0 or less, `mount()` renders nothing, sends no request and resolves `false`. Do not treat that value as an empty cart.
 
 <br />
 

@@ -7,7 +7,7 @@ import {
   getPaymentTypesExcludingProductType,
   getPaymentTypesWithProductTypeExclusions,
 } from './paymentTypeRestriction.service';
-import { WidgetEnabledResponseSchemaDTO } from '../dtos/operations/widgetEnabled.dto';
+import { WidgetEnabledQuerySchemaDTO, WidgetEnabledResponseSchemaDTO } from '../dtos/operations/widgetEnabled.dto';
 
 // Settings that don't stop the connector but likely aren't what the merchant meant; logged once at startup.
 export const logConfigurationWarnings = (): void => {
@@ -40,12 +40,18 @@ export const healthCheck = async () => {
 
 type WidgetPaymentTypes = Pick<WidgetEnabledResponseSchemaDTO, 'paymentTypes' | 'amountLimits'>;
 
-export const isWidgetEnabled = async (productTypeId?: string): Promise<WidgetEnabledResponseSchemaDTO> => {
+export const isWidgetEnabled = async (
+  query: WidgetEnabledQuerySchemaDTO = {},
+): Promise<WidgetEnabledResponseSchemaDTO> => {
   const config = readConfiguration();
 
   log.debug('get Widget config');
 
-  const isEnabled = config.easyCredit.widgetEnabled === '1';
+  // No placement: the label or an older enabler, so only WIDGET_ENABLED counts.
+  const { placement, productTypeId } = query;
+  const visibility = config.easyCredit.widgetVisibility;
+  const isVisible = placement === undefined || visibility === 'PDP_AND_CART' || visibility === placement;
+  const isEnabled = config.easyCredit.widgetEnabled === '1' && isVisible;
   const expressButtonEnabled = config.easyCredit.expressButtonEnabled === '1';
   const checksProductType =
     Boolean(productTypeId) && expressButtonEnabled && config.easyCredit.expressButtonVisibility !== 'CART';
@@ -54,8 +60,11 @@ export const isWidgetEnabled = async (productTypeId?: string): Promise<WidgetEna
   return {
     isEnabled,
     webShopId: config.easyCredit.webShopId,
-    // Neither the widget nor the express button is rendered when both are off, so there is no reason to ask easyCredit.
-    ...(isEnabled || expressButtonEnabled ? await getWidgetPaymentTypes(productTypeToCheck) : { paymentTypes: [] }),
+    // Only the widget sends placement, so a hidden widget there needs no lookup. Neither the widget nor the
+    // express button is rendered when both are off, so there is no reason to ask easyCredit.
+    ...(isEnabled || (expressButtonEnabled && placement === undefined)
+      ? await getWidgetPaymentTypes(productTypeToCheck)
+      : { paymentTypes: [] }),
     expressButtonEnabled,
     expressButtonVisibility: config.easyCredit.expressButtonVisibility,
   };

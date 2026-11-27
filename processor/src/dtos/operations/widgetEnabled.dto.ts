@@ -6,13 +6,6 @@ const AmountLimitsSchema = Type.Object({
   maxAmount: Type.Number(),
 });
 
-// The PDP asks about the product it shows; commercetools ids are UUIDs, so anything else is a storefront bug.
-export const WidgetEnabledQuerySchema = Type.Object({
-  productTypeId: Type.Optional(Type.String({ format: 'uuid' })),
-});
-
-export type WidgetEnabledQuerySchemaDTO = Static<typeof WidgetEnabledQuerySchema>;
-
 export const WidgetEnabledResponseSchema = Type.Object({
   isEnabled: Type.Boolean(),
   webShopId: Type.String(),
@@ -30,3 +23,14 @@ export const WidgetEnabledResponseSchema = Type.Object({
 });
 
 export type WidgetEnabledResponseSchemaDTO = Static<typeof WidgetEnabledResponseSchema>;
+
+export const WidgetPlacementSchema = Type.Union([Type.Literal('PDP'), Type.Literal('CART')]);
+
+export const WidgetEnabledQuerySchema = Type.Object({
+  // The widget always sends placement. The label and the express button send none.
+  placement: Type.Optional(WidgetPlacementSchema),
+  // The PDP asks about the product it shows; commercetools ids are UUIDs, so anything else is a storefront bug.
+  productTypeId: Type.Optional(Type.String({ format: 'uuid' })),
+});
+
+export type WidgetEnabledQuerySchemaDTO = Static<typeof WidgetEnabledQuerySchema>;

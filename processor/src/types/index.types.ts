@@ -12,6 +12,7 @@ export type ConnectorEnvVars = {
   };
   easyCredit: {
     widgetEnabled: string;
+    widgetVisibility: WidgetVisibility;
     expressButtonEnabled: string;
     expressButtonVisibility: ExpressButtonVisibility;
     webShopId: string;
@@ -31,6 +32,8 @@ export type ConnectorEnvVars = {
     billPaymentMaxAmount?: string;
   };
 };
+
+export type WidgetVisibility = 'PDP_AND_CART' | 'PDP' | 'CART';
 
 export type Message = {
   code: string;

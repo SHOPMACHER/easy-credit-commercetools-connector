@@ -38,6 +38,7 @@
  *      .then(builder => {
  *          const widgetElement = builder.build({
  *            amount: 100,
+ *            placement: "PDP", // Optional, else guessed from the page path
  *          });
  *          widgetElement.mount('#widget-component')
  *    });
@@ -163,6 +164,8 @@ export type LabelComponentOptions = {
 
 export type WidgetComponentOptions = {
   amount: number;
+  // Where the widget is mounted. Optional: without it, /cart and /checkout count as CART and every other path as PDP.
+  placement?: 'PDP' | 'CART';
 };
 
 export type ExpressButtonPlacement = 'PDP' | 'CART';

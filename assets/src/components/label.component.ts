@@ -14,7 +14,6 @@ export class ECLabelComponentBuilder implements LabelComponentBuilder {
   build(options: LabelComponentOptions = {}): ECLabelComponent {
     return new ECLabelComponent({
       processorUrl: this.baseOptions.processorUrl,
-      sessionId: this.baseOptions.sessionId,
       paymentType: options.paymentType,
     });
   }
@@ -22,13 +21,11 @@ export class ECLabelComponentBuilder implements LabelComponentBuilder {
 
 export class ECLabelComponent implements LabelComponent {
   private readonly processorUrl: string;
-  private readonly sessionId: string;
   private readonly paymentType?: PaymentType;
 
-  constructor(opts: { processorUrl: string; sessionId: string; paymentType?: PaymentType }) {
+  constructor(opts: { processorUrl: string; paymentType?: PaymentType }) {
     assertPaymentType(opts.paymentType);
     this.processorUrl = opts.processorUrl;
-    this.sessionId = opts.sessionId;
     this.paymentType = opts.paymentType;
   }
 
@@ -52,10 +49,7 @@ export class ECLabelComponent implements LabelComponent {
   }
 
   public async fetchConfig() {
-    const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json', 'X-Session-Id': this.sessionId },
-    });
+    const res = await fetch(`${this.processorUrl}/operations/widget-enabled`, { method: 'GET' });
 
     return await res.json();
   }
