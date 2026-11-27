@@ -96,7 +96,9 @@ export interface SummaryComponentBuilder {
 }
 
 export interface WidgetComponent {
-  mount(selector: string): void;
+  // Resolves true when a widget shows, after it has rendered, and false when none shows. Never rejects.
+  // A later mount of the same container replaces the widget; an overtaken mount resolves with its result.
+  mount(selector: string | Element): Promise<boolean>;
 }
 
 export interface WidgetComponentBuilder {
@@ -182,6 +184,8 @@ export type ExpressButtonBaseOptions = {
     urlCancellation: string;
     urlDenial: string;
   };
+  // true: the button fills the width of its container. Default: easyCredit's fixed width, centered.
+  fullWidth?: boolean;
   onLoading?: () => void;
   onError: (error: ExpressButtonError) => void;
   onSuccess: (response: CreatePaymentResponse) => void;
@@ -197,8 +201,9 @@ export type ExpressButtonComponentOptions = ExpressButtonBaseOptions &
   );
 
 export interface ExpressButtonComponent {
-  // Resolves true when a button was rendered, so the shop can hide the container without a second lookup.
-  mount(selector: string): Promise<boolean>;
+  // Resolves true when a button shows, after it has rendered, so the shop can hide the container without a second
+  // lookup. Resolves false for no button, also for an amount of 0 or less. Never rejects.
+  mount(selector: string | Element): Promise<boolean>;
   // PDP only: updates the amount of the mounted button without a remount. Resolves true when a button is shown.
   setAmount(amount: number): Promise<boolean>;
 }

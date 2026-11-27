@@ -645,43 +645,35 @@ The enabler options require a `sessionId` string. For a widget without a session
 // Browser. File easycredit-widget.ts: product page or cart page. The price is a commercetools Money value.
 import { createEnabler } from './easycredit-enabler';
 
-type EasyCreditWidgetElement = HTMLElement & { componentOnReady?: () => Promise<unknown> };
-
-// Resolves when the widget has rendered, or when no widget shows.
+// Resolves true when the widget has rendered, and false when no widget shows.
 // Abort the signal when the price changes or the page closes. Then a slow earlier call cannot mount an old amount.
 export async function mountWidget(
   price: { centAmount: number; fractionDigits: number },
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   // The widget needs no session. Use this enabler only for the widget.
   const enabler = await createEnabler('');
   const widgetBuilder = await enabler.createWidgetBuilder();
 
   const container = document.getElementById('easycredit-widget');
   if (signal?.aborted || !container) {
-    return;
+    return false;
   }
 
   // easyCredit reads the amount only when the widget renders, so mount again after a price change.
-  container.replaceChildren();
-  await widgetBuilder.build({ amount: price.centAmount / 10 ** price.fractionDigits }).mount('#easycredit-widget');
+  // mount() replaces the widget of an earlier mount and resolves after the new widget has rendered.
+  const shown = await widgetBuilder.build({ amount: price.centAmount / 10 ** price.fractionDigits }).mount(container);
+  container.hidden = !shown;
 
-  // mount() resolves before the easyCredit component has rendered. It inserts nothing when the widget is off.
-  const widget = container.querySelector<EasyCreditWidgetElement>('easycredit-widget');
-  if (widget) {
-    await Promise.race([
-      customElements.whenDefined('easycredit-widget').then(() => widget.componentOnReady?.()),
-      new Promise((resolve) => setTimeout(resolve, 5000)),
-    ]);
-  }
+  return shown;
 }
 ```
 
 `amount` is in EUR major units, for example `599.9`.
 
-**Placeholder.** The widget shows only after the enabler, the easyCredit web components and `GET /operations/widget-enabled` have loaded. On the first page view, this can take several seconds, and the place of the widget stays empty. Show a placeholder, for example a skeleton with the height of the widget, until `mountWidget` resolves. Then remove the placeholder. `mountWidget` also resolves when no widget shows, so the placeholder does not stay on the page.
+**Placeholder.** The widget shows only after the enabler, the easyCredit web components and `GET /operations/widget-enabled` have loaded. On the first page view, this can take several seconds, and the place of the widget stays empty. Show a placeholder, for example a skeleton with the height of the widget, until `mountWidget` resolves. Then remove the placeholder. `mount()` resolves when the widget has rendered, or when no widget shows, so the placeholder does not stay on the page. After 5 seconds without a render, it resolves `true`, and the widget shows when the easyCredit script arrives.
 
-**Cart page.** Call `mountWidget` when the cart has loaded, and again when the cart total changes. Before each call, abort the signal of the previous call. Some shops report a total of 0 while the cart loads. Do not mount the widget for that value, and do not treat it as an empty cart.
+**Cart page.** Call `mountWidget` when the cart has loaded, and again when the cart total changes. Before each call, abort the signal of the previous call. Some shops report a total of 0 while the cart loads. For an amount of 0 or less, `mount()` renders nothing, sends no request and resolves `false`. Do not treat that value as an empty cart.
 
 <br />
 
@@ -709,7 +701,7 @@ The two settings are independent of `WIDGET_ENABLED`. They control only the butt
 
 ### Show the express button
 
-`mount()` resolves to `true` if it rendered a button and to `false` if not. It does not reject. A mount that a newer mount on the same container overtakes also resolves to `false`. Thus use only the result of the latest mount, and set `hidden` in both directions. On the product page, call `setAmount()` when the shopper selects another variant instead of mounting again. For all rules, see [Express button component](./WebComponents.md#express-button-component).
+`mount()` resolves to `true` when the button has rendered and to `false` if no button shows. It does not reject. A mount that a newer mount on the same container overtakes resolves with the result of the newer one, so you can apply every result. Set `hidden` in both directions. On the product page, call `setAmount()` when the shopper selects another variant instead of mounting again. For all rules, see [Express button component](./WebComponents.md#express-button-component).
 
 ```ts
 // Browser. File easycredit-express-button.ts: express button on the product page (PDP) or the cart page (CART).
@@ -766,6 +758,8 @@ export async function mountExpressButton(placement: Placement, amount: number, p
       const origin = window.location.origin;
       const common: ExpressButtonBaseOptions = {
         amount,
+        // Optional: fill the width of the container, for example to match the add-to-cart button.
+        fullWidth: true,
         // The shop routes these URLs itself. The names are examples. Express links must be absolute.
         redirectLinks: {
           urlSuccess: `${origin}/checkout?step=review&express=1`,
@@ -809,14 +803,21 @@ export async function mountExpressButton(placement: Placement, amount: number, p
     console.error('Cannot mount the express button', error);
   }
 
-  // Only the latest run shows or hides the container. An overtaken mount resolves to false.
+  // Only the latest run shows or hides the container. An overtaken mount resolves with the latest result.
   if (run === latestRun.get(containerId)) {
     showContainer(containerId, rendered);
   }
 }
 ```
 
-The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. Do not put it inside a `<form>`.
+The container must exist when you call `mount()` and stay in the DOM until `mount()` resolves. Do not put it inside a `<form>`. `mount()` also accepts the container element instead of a selector, for example a React ref.
+
+**Layout.** We suggest this layout, which the easyCredit demo store also uses:
+
+- On the product page, put the container below the add-to-cart button. In the cart, put it below the widget.
+- Keep 20 px of space above the container.
+- Pass `fullWidth: true`, so the button has the width of the add-to-cart button. Without it, the button is 350 px wide and centered.
+- Show a placeholder, for example a skeleton with the height of the button, until `mountExpressButton` resolves. `mount()` and `setAmount()` resolve when the button has rendered, and the old button stays until then. With one payment type, the button and its link "Mehr Informationen" are 76 px high. In the cart, also show the placeholder while the checkout session loads.
 
 **Product page.** Pass the gross price of one unit of the selected variant, the `productTypeId` of the product (`product.productType.id`) and a function that returns the selected SKU.
 
@@ -827,7 +828,7 @@ The container must exist when you call `mount()` and stay in the DOM until `moun
 - **Click time.** `prepareCart` runs when the shopper clicks. It must read the selected variant at that time, as `getSku` does. Do not close over the SKU at build time, or the cart gets the variant that was selected at mount.
 - **After `onError`.** Reload the cart in the page, because `prepareCart` can already have replaced it. The component has replaced the button, so the shopper can click again.
 
-**Cart page.** Mount the button when the cart has loaded, and again when the cart total changes. Do not mount it for a total of 0. The button in the cart needs the session of the cart, because it checks the payment types with `GET /payments/express/payment-method`, see [Check the payment types](./CreateExpressPayment.md#check-the-payment-types).
+**Cart page.** Mount the button when the cart has loaded, and again when the cart total changes. For a total of 0 or less, `mount()` renders nothing and resolves `false`. The button in the cart needs the session of the cart, because it checks the payment types with `GET /payments/express/payment-method`, see [Check the payment types](./CreateExpressPayment.md#check-the-payment-types).
 
 **Time limit.** After the shopper accepts in the easyCredit modal, easyCredit waits 10 seconds. If the page has not navigated away by then, easyCredit shows its own alert and closes the modal. Thus `prepareCart`, `POST /payments/express` and the redirect in `onSuccess` must finish within 10 seconds. The component swallows this alert for 11 seconds after every accept, not only when a request fails, so the shopper never sees it. It does this with a wrapper around `window.alert`. This is a workaround until easyCredit offers a way to cancel the alert. Keep `prepareCart` to one cart read, one cart update and the session token. Do not read the cart again or load its shipping methods after the update: `prepareCart` only needs the cart ID and the session.
 
