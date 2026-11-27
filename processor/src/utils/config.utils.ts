@@ -34,6 +34,7 @@ export const readConfiguration = () => {
     },
     easyCredit: {
       widgetEnabled: process.env.WIDGET_ENABLED as string,
+      widgetVisibility: withDefault(process.env.WIDGET_VISIBILITY, 'PDP_AND_CART'),
       webShopId: process.env.WEBSHOP_ID as string,
       apiPassword: process.env.API_PASSWORD as string,
       debug: process.env.DEBUG as string,

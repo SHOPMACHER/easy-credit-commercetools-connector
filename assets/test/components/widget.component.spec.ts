@@ -1,6 +1,6 @@
 /* eslint-disable no-global-assign */
 import { findElement, importEasyCreditScript } from '../../src/utils/app.utils';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ECWidgetComponent, ECWidgetComponentBuilder } from '../../src/components/widget.component';
 
 // Mocking utilities and global objects
@@ -35,8 +35,6 @@ describe('ECWidgetComponentBuilder', () => {
     expect(component).toBeInstanceOf(ECWidgetComponent);
 
     expect((component as any).processorUrl).toBe(mockWebComponentOptions.processorUrl);
-
-    expect((component as any).sessionId).toBe(mockWebComponentOptions.sessionId);
   });
 });
 
@@ -46,7 +44,6 @@ describe('ECWidgetComponent', () => {
   beforeEach(() => {
     component = new ECWidgetComponent({
       processorUrl: mockWebComponentOptions.processorUrl,
-      sessionId: mockWebComponentOptions.sessionId,
       widgetComponentOptions: mockWidgetComponentOptions,
     });
 
@@ -70,7 +67,7 @@ describe('ECWidgetComponent', () => {
     await component.mount('#widget-element');
 
     expect(fetch).toHaveBeenCalledWith(
-      `${mockWebComponentOptions.processorUrl}/operations/widget-enabled`,
+      `${mockWebComponentOptions.processorUrl}/operations/widget-enabled?placement=PDP`,
       expect.anything(),
     );
     expect(importEasyCreditScript).toHaveBeenCalled();
@@ -160,6 +157,65 @@ describe('ECWidgetComponent', () => {
     const config = await component.fetchConfig();
 
     expect(config).toEqual(mockWidgetConfigEnabled);
+  });
+
+  describe('placement', () => {
+    const widgetUrl = `${mockWebComponentOptions.processorUrl}/operations/widget-enabled`;
+    const build = (placement?: unknown) =>
+      new ECWidgetComponent({
+        processorUrl: mockWebComponentOptions.processorUrl,
+        widgetComponentOptions: { amount: 100, placement: placement as never },
+      });
+
+    beforeEach(() => {
+      (fetch as jest.Mock).mockImplementation(async () =>
+        // @ts-expect-error test
+        Promise.resolve({ ok: true, json: jest.fn().mockResolvedValueOnce(mockWidgetConfigDisabled) }),
+      );
+    });
+
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('should send placement when it is set', async () => {
+      window.history.pushState({}, '', '/cart');
+
+      await build('PDP').fetchConfig();
+
+      expect(fetch).toHaveBeenCalledWith(`${widgetUrl}?placement=PDP`, expect.anything());
+    });
+
+    it.each([
+      ['/cart?coupon=x#top', 'CART'],
+      ['/cart/', 'CART'],
+      ['/checkout', 'CART'],
+      ['/p/sku', 'PDP'],
+      ['/de/cart', 'PDP'],
+      ['/warenkorb', 'PDP'],
+      ['/', 'PDP'],
+    ])('should guess the placement of %s as %s when placement is not set', async (path, placement) => {
+      window.history.pushState({}, '', path);
+
+      await build().fetchConfig();
+
+      expect(fetch).toHaveBeenCalledWith(`${widgetUrl}?placement=${placement}`, expect.anything());
+    });
+
+    it('should guess the placement for an unknown placement', async () => {
+      window.history.pushState({}, '', '/checkout');
+
+      await build('cart').fetchConfig();
+
+      expect(fetch).toHaveBeenCalledWith(`${widgetUrl}?placement=CART`, expect.anything());
+    });
+
+    // Without custom headers the GET is a simple request, so the browser sends no CORS preflight.
+    it('should send no custom headers', async () => {
+      await build('PDP').fetchConfig();
+
+      expect(fetch).toHaveBeenCalledWith(expect.any(String), { method: 'GET' });
+    });
   });
 
   it('should return the correct HTML template for the widget', () => {

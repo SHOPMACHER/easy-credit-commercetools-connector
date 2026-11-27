@@ -30,8 +30,6 @@ describe('ECLabelComponentBuilder', () => {
     expect(component).toBeInstanceOf(ECLabelComponent);
 
     expect((component as any).processorUrl).toBe(mockWebComponentOptions.processorUrl);
-
-    expect((component as any).sessionId).toBe(mockWebComponentOptions.sessionId);
   });
 
   it('should reject an unknown payment type', () => {
@@ -48,7 +46,6 @@ describe('ECLabelComponent', () => {
   beforeEach(() => {
     component = new ECLabelComponent({
       processorUrl: mockWebComponentOptions.processorUrl,
-      sessionId: mockWebComponentOptions.sessionId,
     });
   });
 
@@ -72,10 +69,10 @@ describe('ECLabelComponent', () => {
 
     await component.mount('#widget-element');
 
-    expect(fetch).toHaveBeenCalledWith(
-      `${mockWebComponentOptions.processorUrl}/operations/widget-enabled`,
-      expect.anything(),
-    );
+    // Without custom headers the GET is a simple request, so the browser sends no CORS preflight.
+    expect(fetch).toHaveBeenCalledWith(`${mockWebComponentOptions.processorUrl}/operations/widget-enabled`, {
+      method: 'GET',
+    });
     expect(importEasyCreditScript).toHaveBeenCalled();
     expect(findElement).toHaveBeenCalledWith('#widget-element');
     expect(findElement('#widget-element').insertAdjacentHTML).toHaveBeenCalledWith(

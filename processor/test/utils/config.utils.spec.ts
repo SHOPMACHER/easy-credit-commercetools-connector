@@ -35,6 +35,30 @@ describe('readConfiguration', () => {
     expect(easyCredit.webshopCacheTtl).toBe('300');
   });
 
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+  ])('should default WIDGET_VISIBILITY to PDP_AND_CART if it is %s', (_, value) => {
+    process.env.WIDGET_VISIBILITY = value;
+    if (value === undefined) {
+      delete process.env.WIDGET_VISIBILITY;
+    }
+
+    expect(readConfiguration().easyCredit.widgetVisibility).toBe('PDP_AND_CART');
+  });
+
+  it.each(['PDP_AND_CART', 'PDP', 'CART'])('should read WIDGET_VISIBILITY=%s', (value) => {
+    process.env.WIDGET_VISIBILITY = value;
+
+    expect(readConfiguration().easyCredit.widgetVisibility).toBe(value);
+  });
+
+  it.each(['NONE', 'pdp'])('should reject WIDGET_VISIBILITY=%s', (value) => {
+    process.env.WIDGET_VISIBILITY = value;
+
+    expect(() => readConfiguration()).toThrow('InvalidWidgetVisibility');
+  });
+
   it.each(['2', 'x', 'true'])('should reject BILL_PAYMENT_ENABLED=%s', (value) => {
     process.env.BILL_PAYMENT_ENABLED = value;
 

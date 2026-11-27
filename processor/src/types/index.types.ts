@@ -9,6 +9,7 @@ export type ConnectorEnvVars = {
   };
   easyCredit: {
     widgetEnabled: string;
+    widgetVisibility: string;
     webShopId: string;
     apiPassword: string;
     debug: string;
@@ -21,6 +22,8 @@ export type ConnectorEnvVars = {
     installmentPaymentExcludedCustomLineItems: string[];
   };
 };
+
+export type WidgetVisibility = 'PDP_AND_CART' | 'PDP' | 'CART';
 
 export type Message = {
   code: string;

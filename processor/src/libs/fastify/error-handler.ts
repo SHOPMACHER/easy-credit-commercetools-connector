@@ -19,7 +19,10 @@ function isFastifyValidationError(error: Error): error is FastifyError {
 
 export const errorHandler = (error: Error, req: FastifyRequest, reply: FastifyReply) => {
   if (isFastifyValidationError(error) && error.validation) {
-    return handleErrors(transformValidationErrors(error.validation, getValidatedInput(error, req)), reply);
+    return handleErrors(
+      transformValidationErrors(error.validation, getValidatedInput(error, req), error.validationContext),
+      reply,
+    );
   } else if (error instanceof ErrorAuthErrorResponse) {
     return handleAuthError(error, reply);
   } else if (error instanceof Errorx) {
@@ -99,7 +102,11 @@ const getValidatedInput = (error: FastifyError, req: FastifyRequest): unknown =>
   }
 };
 
-const transformValidationErrors = (errors: FastifySchemaValidationError[], input: unknown): Errorx[] => {
+const transformValidationErrors = (
+  errors: FastifySchemaValidationError[],
+  input: unknown,
+  context?: string,
+): Errorx[] => {
   const errorxList: Errorx[] = [];
 
   for (const err of errors) {
@@ -119,9 +126,14 @@ const transformValidationErrors = (errors: FastifySchemaValidationError[], input
     }
   }
 
-  // If we cannot map the validation error to a CoCo error then return a general InvalidJsonError
+  // Unmapped errors: query and path parameters are not JSON, so report the field instead of InvalidJsonInput.
   if (errorxList.length === 0) {
-    errorxList.push(new ErrorInvalidJsonInput());
+    const field = errors.find((err) => err.instancePath)?.instancePath;
+    errorxList.push(
+      context && context !== 'body' && field
+        ? new ErrorInvalidField(getKeys(field).join('.'), String(getPropertyFromPath(field, input)), '')
+        : new ErrorInvalidJsonInput(),
+    );
   }
 
   return errorxList;

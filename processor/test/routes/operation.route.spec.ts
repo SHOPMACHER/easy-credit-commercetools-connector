@@ -1,5 +1,5 @@
 import { setupFastify } from '../../src/server/server';
-import { describe, expect, it, jest } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { paymentSDK } from '../../src/payment-sdk';
 import { initEasyCreditClient } from '../../src/client/easycredit.client';
 
@@ -75,6 +75,57 @@ describe('test operationRoute', () => {
       isEnabled: process.env.WIDGET_ENABLED === '1',
       webShopId: process.env.WEBSHOP_ID,
       paymentTypes: process.env.WIDGET_ENABLED === '1' ? ['INSTALLMENT_PAYMENT', 'BILL_PAYMENT'] : [],
+    });
+  });
+
+  describe('widget placement', () => {
+    const originalVisibility = process.env.WIDGET_VISIBILITY;
+
+    afterEach(() => {
+      process.env.WIDGET_VISIBILITY = originalVisibility;
+    });
+
+    it('should reject an unknown placement', async () => {
+      const server = await setupFastify();
+
+      const response = await server.inject({ method: 'GET', url: '/operations/widget-enabled?placement=cart' });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().errors[0]).toEqual(
+        expect.objectContaining({ code: 'InvalidField', fields: expect.objectContaining({ field: 'placement' }) }),
+      );
+    });
+
+    it('should show the label without a query, whatever WIDGET_VISIBILITY is', async () => {
+      process.env.WIDGET_VISIBILITY = 'CART';
+      const server = await setupFastify();
+
+      const response = await server.inject({ method: 'GET', url: '/operations/widget-enabled' });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).isEnabled).toBe(true);
+    });
+
+    it('should pass placement to the service', async () => {
+      process.env.WIDGET_VISIBILITY = 'PDP';
+      const server = await setupFastify();
+
+      const cart = await server.inject({ method: 'GET', url: '/operations/widget-enabled?placement=CART' });
+      const pdp = await server.inject({ method: 'GET', url: '/operations/widget-enabled?placement=PDP' });
+
+      expect(cart.statusCode).toBe(200);
+      expect(JSON.parse(cart.body).isEnabled).toBe(false);
+      expect(JSON.parse(pdp.body).isEnabled).toBe(true);
+    });
+
+    it('should ignore other query parameters', async () => {
+      process.env.WIDGET_VISIBILITY = 'PDP';
+      const server = await setupFastify();
+
+      const response = await server.inject({ method: 'GET', url: '/operations/widget-enabled?path=%2Fcart' });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).isEnabled).toBe(true);
     });
   });
 });

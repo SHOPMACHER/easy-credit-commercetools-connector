@@ -19,7 +19,8 @@ You set these values in commercetools Connect when you deploy the connector. To 
 | --- | --- |
 | WEBSHOP_ID | The easyCredit WebShop ID from your portal. The connector needs it to get authorization for calls to the easyCredit APIs. |
 | API_PASSWORD | The easyCredit API password from your portal. The connector needs it to get authorization for calls to the easyCredit APIs. |
-| WIDGET_ENABLED | 0 or 1 (default 1). If this is 0, the widget and the label component do not show. The checkout component and the summary component do not read this value. |
+| WIDGET_ENABLED | 0 or 1 (default 1). Main switch. If this is 0, the widget and the label component do not show anywhere, and `WIDGET_VISIBILITY` is ignored. The checkout component and the summary component do not read this value. |
+| WIDGET_VISIBILITY | `PDP_AND_CART` (default), `PDP` or `CART`. Where the widget shows if `WIDGET_ENABLED` is 1. The widget uses the `placement` that the shop passes. Without it, the paths `/cart` and `/checkout` count as cart and every other path as product page. Shops with other cart routes, for example `/warenkorb` or `/de/cart`, must pass `placement`. See [Placement](../docs/WebComponents.md#placement). The label component ignores this value. |
 | CTP_CLIENT_ID | CommerceTools Composable Commerce client ID. |
 | CTP_CLIENT_SECRET | CommerceTools Composable Commerce client secret. |
 | CTP_PROJECT_KEY | CommerceTools Composable Commerce project key. |

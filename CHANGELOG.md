@@ -2,6 +2,12 @@
 
 This file lists the notable changes to the easyCredit commercetools connector (processor and enabler). The changelog starts with release `1.1.0`. It does not list earlier changes.
 
+## [Unreleased]
+
+### Added
+
+- **Widget visibility per page.** The new setting `WIDGET_VISIBILITY` (`PDP_AND_CART`, `PDP` or `CART`) decides if the widget shows on the product page, in the cart or on both. `WIDGET_ENABLED` stays the main switch. Existing installations need no change: the default `PDP_AND_CART` keeps the current behaviour. The widget accepts an optional `placement` (`PDP` or `CART`). Without it, the widget guesses from the page path: `/cart` and `/checkout` are cart, every other path is PDP. Shops with other cart routes must pass `placement`. See [Placement](docs/WebComponents.md#placement).
+
 ## [1.1.0] - 2026-11-16
 
 This release adds pay by invoice next to installment. It also improves payment creation, authorization, capture and refunds.

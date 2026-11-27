@@ -75,6 +75,16 @@ const envValidators = [
     },
   ),
 
+  standardOneOf(
+    ['easyCredit', 'widgetVisibility'],
+    {
+      code: 'InvalidWidgetVisibility',
+      message: 'Widget visibility should be one of "PDP_AND_CART", "PDP" or "CART".',
+      referencedBy: 'environmentVariables',
+    },
+    ['PDP_AND_CART', 'PDP', 'CART'],
+  ),
+
   standardString(
     ['easyCredit', 'webShopId'],
     {
